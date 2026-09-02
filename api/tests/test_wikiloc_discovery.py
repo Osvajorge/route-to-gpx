@@ -612,7 +612,7 @@ def test_a_row_carries_no_number_and_no_id_of_its_own(monkeypatch):
     ).as_dict()["results"][0]
 
     assert set(row) == {"url", "title", "sport", "start", "thumbnail", "rating",
-        "difficulty", "updatedAt", "publishedBy", "published"}
+        "difficulty", "updatedAt", "trace", "publishedBy", "published"}
 
     # The rule, asserted as the rule: no figure at the top level of a row, where
     # printing it would read as something this tool worked out.

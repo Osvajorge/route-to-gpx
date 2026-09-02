@@ -25,10 +25,11 @@ vocabulary once and a page renders it with the habits it already has.
 """
 
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import unquote, urlencode, urlparse, urlunparse
 
 from . import Published, SourceError, komoot
 from .discovery import Listing, Place, Row, thumbnail
+from . import polyline
 from ..http import ALLOWED_HOST, fetch_json
 
 SOURCE_ID = "komoot"
@@ -330,6 +331,7 @@ def _row(item: Dict[str, Any], identifier: Optional[Any]) -> Optional[Row]:
             or _nested(item, "vector_map_image_preview", "src"),
             "route-map",
         ),
+        trace=_trace(item),
         rating=_rating(item),
         # A word Komoot assigns, not a number we could check. Nearby carries it
         # and search does not, which is why it is nullable rather than a
@@ -421,6 +423,28 @@ def _nested(item: Dict[str, Any], *path: str) -> Any:
             return None
         current = current.get(step)
     return current
+
+
+def _trace(item: Dict[str, Any]) -> Optional[List[List[float]]]:
+    """The route's shape, read out of the address of its own picture.
+
+    Komoot's thumbnail URL is a drawing request, and what it asks to have drawn
+    is encoded into the path. Reading it costs nothing: no request, no key, no
+    third party. The alternative was to load their PNG, which arrives with
+    their blue line already in the pixels.
+    """
+    src = _nested(item, "vector_map_image_preview", "src") or _nested(
+        item, "map_image_preview", "src"
+    )
+    if not isinstance(src, str) or not src:
+        return None
+    encoded = unquote(src.rstrip("/").rsplit("/", 1)[-1])
+    points = polyline.decode(encoded)
+    # Two points is a straight line, which says nothing about a route and would
+    # draw a card that lies about its shape.
+    if len(points) < 3:
+        return None
+    return [[round(lat, 5), round(lng, 5)] for lat, lng in points]
 
 
 def _rating(item: Dict[str, Any]) -> Optional[Dict[str, float]]:

@@ -88,6 +88,16 @@ class Row:
     rating: Optional[Dict[str, float]] = None
     difficulty: Optional[str] = None
     updated_at: Optional[str] = None
+    # The route's own shape, simplified, as [[lat, lng], ...]. Not a
+    # measurement and never presented as one: it is about a hundred points
+    # where the track has thousands, enough to draw a card and nothing like
+    # enough to measure. Measuring still means converting the file.
+    #
+    # It is here so a card can draw the line in this product's colours over the
+    # tiles the report already uses, instead of loading a picture from a third
+    # party with somebody else's line colour baked into it. A source that does
+    # not hand over a shape gets None, and the card is designed for that.
+    trace: Optional[List[List[float]]] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -99,6 +109,7 @@ class Row:
             "rating": self.rating,
             "difficulty": self.difficulty,
             "updatedAt": self.updated_at,
+            "trace": self.trace,
             "publishedBy": self.published_by,
             "published": self.published.as_dict(),
         }

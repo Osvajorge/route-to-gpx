@@ -331,7 +331,7 @@ def test_a_row_carries_no_number_of_its_own(monkeypatch):
     row = komoot_discovery.search(query="montseny").as_dict()["results"][1]
 
     assert set(row) == {"url", "title", "sport", "start", "thumbnail", "rating",
-        "difficulty", "updatedAt", "publishedBy", "published"}
+        "difficulty", "updatedAt", "trace", "publishedBy", "published"}
 
     # The rule this test exists for, asserted as the rule rather than as a list:
     # no figure sits at the top level of a row, where printing it would read as
