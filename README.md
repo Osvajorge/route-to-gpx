@@ -19,7 +19,18 @@ you can see where they disagree.
 | **Wikiloc** | the track embedded in the trail page, base64 over TWKB | needs a browser TLS handshake, see below |
 | **Your own `.gpx`** | dropped on the page, read in the browser | the file never leaves the browser |
 
-Three honest notes.
+Two more ways to arrive at a link, rather than pasting one:
+
+| Surface | What it does | Cost |
+| --- | --- | --- |
+| **Search** | a text query against Komoot, or a place name plus Wikiloc | 1 upstream call for Komoot, 2 for Wikiloc |
+| **Nearby** | routes around a point, by radius and activity | 1 upstream call |
+
+Neither is a discovery product. A result row is a name, what the source claims
+about it, and a link. Picking one sends that link to the same converter, which
+is where the real numbers come from.
+
+Four honest notes.
 
 **Wikiloc needs `curl_cffi`.** Wikiloc answers an ordinary HTTP client with 403
 and a browser with 200, and the difference is the TLS handshake, not the
@@ -43,10 +54,27 @@ inside it. Note also that OpenStreetMap does not refuse a blocked client with an
 error. It answers 200 with a white tile and an `x-blocked` header, so the page
 reads that header and stops asking for the rest of the session.
 
+**Search sends what you typed to a second third party.** A Wikiloc search has
+to turn a place name into coordinates, and Wikiloc's own geocoder is one of the
+two endpoints its `robots.txt` names, so we do not call it. We use
+[Photon](https://photon.komoot.io) instead, which is open source and needs no
+key. That means the words you type reach `photon.komoot.io`. Komoot search does
+its own geocoding, so it does not.
+
+Photon also answers the wrong place surprisingly often: `montserrat` returns a
+village in Valencia before the mountain. That is why the response carries a
+`places` list rather than silently taking the first hit.
+
 **Nothing here defeats a bot check or a login.** A private route stays private,
 and the page says so instead of pretending the track went missing. If a site
 puts a CAPTCHA in front of a page, this tool tells you to export the GPX there
 and drop the file in, which works offline and needs nobody's permission.
+
+The same rule decides what Search and Nearby can offer. Wikiloc will not filter
+by activity, distance, difficulty or date for a caller who is not logged in: it
+answers those with an empty page rather than an error. So the Wikiloc activity
+picker is not the filter Komoot's is, and the README would rather say that than
+have the page pretend otherwise.
 
 ## What it measures
 

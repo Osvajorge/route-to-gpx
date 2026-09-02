@@ -8,8 +8,9 @@ Four rules hold here, and nowhere else has to think about them:
 2. We stop reading at a size limit. A page that never ends must not become this
    service never answering.
 3. Nothing is fetched unless an inbound request is paying for it. Komoot's
-   robots.txt disallows /api for crawlers, which forbids anything that walks
-   the site on its own. A call with no request context is refused outright, so
+   robots.txt disallows /api for crawlers, Photon's disallows everything, and
+   Wikiloc's names crawlers one at a time. All three forbid anything that walks
+   a site on its own. A call with no request context is refused outright, so
    that promise is code rather than a comment.
 4. Every call spends from two budgets, and they do different jobs.
 
@@ -51,10 +52,25 @@ ALLOWED_HOST = re.compile(
     r"^(?:[a-z0-9-]+\.)*(?:komoot\.[a-z.]+|wikiloc\.[a-z.]+)$", re.I
 )
 
+# The place search for Wikiloc, and the third host this service reads. It is
+# already inside the pattern above -- subdomain "photon", domain "komoot.io" --
+# so nothing was added to it, but it is named here because a reader looking for
+# the geocoder in the allowlist has to find it, and because narrowing the komoot
+# branch later would take this with it. A test holds both halves of that.
+GEOCODER_HOST = "photon.komoot.io"
+
 # Which budget a host spends from. Keyed on the site, not the hostname: komoot
 # answers on www.komoot.com, www.komoot.de and api.komoot.de, and giving each
 # its own bucket would multiply the budget for free.
 SITE = re.compile(r"(komoot|wikiloc)\.[a-z.]+$", re.I)
+
+# One hostname that is its own site. Photon runs on a komoot domain but it is
+# not the Komoot the route pages come from: it is a free geocoder whose
+# operators ask callers to keep their volume reasonable. Left to the pattern
+# above it would spend Komoot's budget, so a Wikiloc search would eat into the
+# allowance for Komoot routes and neither limit would mean what it says.
+SITE_BY_HOST = {GEOCODER_HOST: "photon"}
+GEOCODER_SITE = "photon"
 
 # 60 upstream calls a minute, bursting 30. One person using the web page
 # deliberately spends well under ten a minute, since every one of them needs a
@@ -70,6 +86,14 @@ SITE_REFILL_PER_SECOND = 1.0
 CLIENT_CAPACITY = 8
 CLIENT_REFILL_PER_SECOND = 1.0 / 6.0
 
+# Photon is a shared demo server, not an API this service is entitled to. Its
+# terms ask callers to be fair and say extensive use will be throttled, so it
+# gets the tightest bucket here: 30 calls a minute, bursting 10. One visitor
+# search spends exactly one of them, and the geocoder runs out before Wikiloc
+# does, which is the right way round for the free half of the pair.
+GEOCODER_CAPACITY = 10
+GEOCODER_REFILL_PER_SECOND = 0.5
+
 # The designed fan-out is two: a smart-tour convert asks for the tour and then
 # its coordinates. Every other path asks once. Code that needs a third call has
 # to raise this deliberately, and that edit is the review this number exists to
@@ -78,6 +102,7 @@ CLIENT_REFILL_PER_SECOND = 1.0 / 6.0
 FAN_OUT_CEILING = 2
 
 _sites = limits.Buckets(SITE_CAPACITY, SITE_REFILL_PER_SECOND)
+_geocoder = limits.Buckets(GEOCODER_CAPACITY, GEOCODER_REFILL_PER_SECOND)
 _clients = limits.Buckets(CLIENT_CAPACITY, CLIENT_REFILL_PER_SECOND)
 
 
@@ -149,8 +174,16 @@ def _check(url: str) -> None:
 
 
 def _site(url: str) -> str:
-    found = SITE.search(urlparse(url).hostname or "")
+    host = (urlparse(url).hostname or "").lower()
+    if host in SITE_BY_HOST:
+        return SITE_BY_HOST[host]
+    found = SITE.search(host)
     return found.group(1).lower() if found else "other"
+
+
+def _buckets(site: str) -> limits.Buckets:
+    """Which family of buckets a site spends from."""
+    return _geocoder if site == GEOCODER_SITE else _sites
 
 
 def _spend(url: str) -> None:
@@ -167,6 +200,7 @@ def _spend(url: str) -> None:
         raise OutsideRequest("fan-out ceiling reached")
 
     site = _site(url)
+    buckets = _buckets(site)
     now = limits.now()
     with limits.LOCK:
         # Both buckets are asked before either is charged. A visitor refused
@@ -177,7 +211,7 @@ def _spend(url: str) -> None:
             raise BudgetExhausted(
                 "self", "client budget exhausted", max(1, min(6, math.ceil(client_wait)))
             )
-        site_wait = _sites.wait(site, now)
+        site_wait = buckets.wait(site, now)
         if site_wait > 0:
             # A floor under the wait, so a queue of callers does not come back
             # once a second and spend the refill the moment it lands.
@@ -185,7 +219,7 @@ def _spend(url: str) -> None:
                 "shared", f"{site} budget exhausted", max(5, math.ceil(site_wait))
             )
         _clients.spend(budget.client, now)
-        _sites.spend(site, now)
+        buckets.spend(site, now)
 
     budget.remaining -= 1
 

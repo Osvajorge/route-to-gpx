@@ -35,7 +35,14 @@ from pydantic import BaseModel
 from . import http, limits
 from .core import gpx
 from .http import BlockedHost
-from .sources import Route, SourceError, komoot, komoot_discovery, wikiloc
+from .sources import (
+    Route,
+    SourceError,
+    komoot,
+    komoot_discovery,
+    wikiloc,
+    wikiloc_discovery,
+)
 
 app = FastAPI(title="route-to-gpx", docs_url=None, redoc_url=None)
 api = APIRouter(prefix="/api")
@@ -54,12 +61,27 @@ ADAPTERS = {
     r"(^|\.)wikiloc\.[a-z.]+$": wikiloc.fetch,
 }
 
+# Which site answers a list. Komoot when nobody says, so every request written
+# before Wikiloc existed still means what it meant.
+#
+# The two modules are not interchangeable and are not called through one
+# signature: Komoot takes a sport and can be biased towards a point, Wikiloc
+# takes an activity and works out a bounding box. Pretending otherwise would put
+# a Komoot word in a Wikiloc request eventually. So the endpoints below choose in
+# the open, in two lines each.
+DISCOVERY = {
+    komoot_discovery.SOURCE_ID: komoot_discovery,
+    wikiloc_discovery.SOURCE_ID: wikiloc_discovery,
+}
+DEFAULT_SOURCE = komoot_discovery.SOURCE_ID
+
 # Which HTTP status each failure is. One table, so the three endpoints cannot
 # drift apart in what a code means.
 ERROR_STATUS = {
     "query": 400,
     "location": 400,
     "sport": 400,
+    "source": 400,
     "domain": 400,
     "request": 400,
     "notfound": 404,
@@ -103,8 +125,16 @@ class SearchRequest(BaseModel):
     what was really a malformed request.
     """
 
+    # Which site to ask. Left out, it is Komoot.
+    source: Optional[str] = None
     query: Optional[str] = None
+    # The activity dropdown, whichever site it belongs to. One field, because a
+    # page has one dropdown; the words in it come from `/api/sports` for the
+    # source being asked, and the two vocabularies are never mixed.
     sport: Optional[str] = None
+    # Komoot only: it biases a text search towards a point. Wikiloc's search
+    # finds its own place from the words, so a `near` sent with it is not used,
+    # and the echoed `query` says so by having no `near` in it.
     near: Optional[NearPoint] = None
     limit: Optional[int] = None
     page: Optional[int] = None
@@ -115,6 +145,7 @@ class NearbyRequest(BaseModel):
     is. In a POST body it never reaches the access log, a referrer header or a
     proxy cache. In a query string it would reach all three."""
 
+    source: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
     sport: Optional[str] = None
@@ -129,6 +160,18 @@ def adapter_for(url: str):
         if re.search(pattern, host):
             return function
     return None
+
+
+def discovery_for(source: Optional[str]):
+    """Which module answers, checked before anything is spent on it."""
+    if source is None or (isinstance(source, str) and not source.strip()):
+        return DISCOVERY[DEFAULT_SOURCE]
+    module = DISCOVERY.get(source.strip().lower()) if isinstance(source, str) else None
+    if module is None:
+        raise SourceError(
+            "source", f"this service reads {' and '.join(DISCOVERY)}, and no other site"
+        )
+    return module
 
 
 def client_key(request: Request) -> str:
@@ -245,15 +288,34 @@ def health():
 
 
 @api.get("/sports")
-def sports(request: Request):
-    """Komoot's vocabulary, so a sport can be checked before a token is spent.
+def sports(request: Request, source: Optional[str] = None):
+    """One source's vocabulary, so a word can be checked before a token is spent.
 
-    Zero upstream calls. The list is written down in `komoot_discovery`, with
-    the address it came from and how to refresh it.
+    Zero upstream calls, for either source. Both lists are written down in their
+    own module, with the address they came from and how to refresh them.
+
+    This is what fills the activity dropdown, and the dropdown changes with the
+    source: Komoot says `hike` where Wikiloc says `hiking`, and Wikiloc has
+    eighty activities Komoot has no word for at all. The two lists are never
+    merged, because a merged list would offer a visitor words the site they are
+    asking cannot answer.
+
+    Wikiloc's answer carries one extra key, `activities`, which is the same list
+    with a label and a group for each entry. Komoot's has no such key: this
+    service does not know Komoot's display names, and inventing them is how a
+    dropdown starts showing words nobody chose.
     """
     waiting = inbound_wait(client_key(request))
     if waiting:
         return busy_response(waiting)
+
+    try:
+        module = discovery_for(source)
+    except SourceError as error:
+        return error_response(error.code, hint=error.hint, detail=error.detail)
+
+    if module is wikiloc_discovery:
+        return {"ok": True, **wikiloc_discovery.vocabulary()}
     return {
         "ok": True,
         "sports": list(komoot_discovery.SPORTS),
@@ -297,14 +359,23 @@ def search(body: SearchRequest, request: Request):
 
     near = (body.near.lat, body.near.lng) if body.near is not None else None
     try:
+        module = discovery_for(body.source)
         with http.request_budget(client):
-            listing = komoot_discovery.search(
-                query=body.query,
-                sport=body.sport,
-                near=near,
-                limit=body.limit,
-                page=body.page,
-            )
+            if module is wikiloc_discovery:
+                listing = wikiloc_discovery.search(
+                    query=body.query,
+                    activity=body.sport,
+                    limit=body.limit,
+                    page=body.page,
+                )
+            else:
+                listing = komoot_discovery.search(
+                    query=body.query,
+                    sport=body.sport,
+                    near=near,
+                    limit=body.limit,
+                    page=body.page,
+                )
     except Exception as error:
         answer = source_failure(error)
         if answer is None:
@@ -324,15 +395,26 @@ def nearby(body: NearbyRequest, request: Request):
         return busy_response(waiting)
 
     try:
+        module = discovery_for(body.source)
         with http.request_budget(client):
-            listing = komoot_discovery.nearby(
-                lat=body.lat,
-                lng=body.lng,
-                sport=body.sport,
-                radius_m=body.radiusM,
-                limit=body.limit,
-                page=body.page,
-            )
+            if module is wikiloc_discovery:
+                listing = wikiloc_discovery.nearby(
+                    lat=body.lat,
+                    lng=body.lng,
+                    activity=body.sport,
+                    radius_m=body.radiusM,
+                    limit=body.limit,
+                    page=body.page,
+                )
+            else:
+                listing = komoot_discovery.nearby(
+                    lat=body.lat,
+                    lng=body.lng,
+                    sport=body.sport,
+                    radius_m=body.radiusM,
+                    limit=body.limit,
+                    page=body.page,
+                )
     except Exception as error:
         answer = source_failure(error)
         if answer is None:

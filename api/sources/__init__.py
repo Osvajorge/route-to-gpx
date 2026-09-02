@@ -21,7 +21,8 @@ class SourceError(Exception):
     `network`  we never got an answer
     `query`    a search arrived with nothing to look for
     `location` a latitude or longitude that is not a place on earth
-    `sport`    a sport the source site does not have a word for
+    `sport`    a sport or activity the source site does not have a word for
+    `source`   a site this service does not read
 
     An empty list is not one of these. A question with no matches is a question
     that was answered, so search and nearby return an empty `results` with 200.

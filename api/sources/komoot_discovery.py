@@ -24,12 +24,15 @@ travels in a `published` object, under the same name and through the same
 vocabulary once and a page renders it with the habits it already has.
 """
 
-from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from . import Published, SourceError, komoot
+from .discovery import Listing, Place, Row
 from ..http import ALLOWED_HOST, fetch_json
+
+SOURCE_ID = "komoot"
+SOURCE_LABEL = "Komoot"
 
 SEARCH_URL = "https://www.komoot.com/api/search/discover"
 NEARBY_URL = "https://www.komoot.com/api/v007/discover_tours/from_location/"
@@ -89,85 +92,6 @@ QUERY_MIN_CHARS = 2
 LIST_TIMEOUT_SECONDS = 8
 
 
-@dataclass
-class Row:
-    """One route, as a link plus what Komoot says about it.
-
-    The key set is frozen at six, and not one of them is a bare number. A page
-    cannot print a distance without writing `row.published.distanceM`, and that
-    expression reads as a claim at the place it is read. A `row.distanceM` would
-    read as fact, so it does not exist.
-    """
-
-    url: str
-    title: str
-    sport: Optional[str]
-    start: Optional[Dict[str, float]]
-    published: Published
-    # A string, not a flag: the attribution travels with the numbers, so a row
-    # can never be rendered somewhere the source has gone missing. A proper noun
-    # carries no language, so the page keeps all the prose.
-    published_by: str = "Komoot"
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "url": self.url,
-            "title": self.title,
-            "sport": self.sport,
-            "start": self.start,
-            "publishedBy": self.published_by,
-            "published": self.published.as_dict(),
-        }
-
-
-@dataclass
-class Place:
-    """A name and a point, for turning "montseny" into a latitude."""
-
-    name: str
-    lat: float
-    lng: float
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {"name": self.name, "lat": self.lat, "lng": self.lng}
-
-
-@dataclass
-class Listing:
-    """One answered question: the rows, and what was asked to get them."""
-
-    echo: Dict[str, Any]
-    rows: List[Row] = field(default_factory=list)
-    # `None` where there is nothing to geocode, which is how nearby leaves the
-    # key out of its response rather than answering with an empty list.
-    places: Optional[List[Place]] = None
-    has_more: bool = False
-    # `None` means the source did not say, the same way a missing figure is
-    # `None` rather than zero. Never a guess at a total.
-    total_known: Optional[int] = None
-    # Rows Komoot returned whose URL the converter could not have opened. It is
-    # counted because otherwise the failure is invisible: the page would show
-    # "nothing found" for ever while Komoot was answering fine.
-    dropped: int = 0
-
-    def as_dict(self) -> Dict[str, Any]:
-        body: Dict[str, Any] = {
-            "source": {"id": "komoot", "label": "Komoot"},
-            "query": self.echo,
-            "results": [row.as_dict() for row in self.rows],
-        }
-        if self.places is not None:
-            body["places"] = [place.as_dict() for place in self.places]
-        body["paging"] = {
-            "page": self.echo["page"],
-            "pageSize": self.echo["limit"],
-            "hasMore": self.has_more,
-            "totalKnown": self.total_known,
-        }
-        body["droppedRows"] = self.dropped
-        return body
-
-
 def search(
     query: Optional[str] = None,
     sport: Optional[str] = None,
@@ -210,6 +134,8 @@ def search(
     ][:PLACES_MAX]
 
     return Listing(
+        source_id=SOURCE_ID,
+        source_label=SOURCE_LABEL,
         echo={"query": text, "sport": chosen, "limit": size, "page": number},
         rows=rows,
         places=places,
@@ -267,6 +193,8 @@ def nearby(
     total_elements = envelope.get("totalElements")
 
     return Listing(
+        source_id=SOURCE_ID,
+        source_label=SOURCE_LABEL,
         echo={
             "lat": latitude,
             "lng": longitude,
@@ -389,6 +317,7 @@ def _row(item: Dict[str, Any], identifier: Optional[Any]) -> Optional[Row]:
 
     sport = item.get("sport")
     return Row(
+        published_by=SOURCE_LABEL,
         url=url,
         title=title.strip(),
         sport=sport if isinstance(sport, str) and sport else None,
