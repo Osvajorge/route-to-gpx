@@ -23,12 +23,33 @@ Two more ways to arrive at a link, rather than pasting one:
 
 | Surface | What it does | Cost |
 | --- | --- | --- |
-| **Search** | a text query against Komoot, or a place name plus Wikiloc | 1 upstream call for Komoot, 2 for Wikiloc |
-| **Nearby** | routes around a point, by radius and activity | 1 upstream call |
+| **Search** | words, and a place | 1 call for Komoot, 1 or 2 for Wikiloc |
+| **Nearby** | routes around a point, by radius and activity | 1 call for Komoot, up to 4 for Wikiloc |
 
-Neither is a discovery product. A result row is a name, what the source claims
-about it, and a link. Picking one sends that link to the same converter, which
-is where the real numbers come from.
+Both ask **both sites by default**, and interleave the answers one from each in
+turn. That is a fair merge and not a ranking: the moment this code starts
+scoring rows it has become a search engine, which it has no business being.
+
+Neither surface is a discovery product. A result row is a name, what the source
+claims about it, and a link. Picking one sends that link to the same converter,
+which is where the real numbers come from.
+
+**The filter is ours, on both sites.** Wikiloc will not filter for a caller
+without an account and Komoot accepts a difficulty parameter and ignores it, so
+the filtering happens here, over rows already fetched. That has a price worth
+knowing: one window of 25 rows in a box at Montserrat is 91% hiking and 1% via
+ferrata, so filling six via ferrata rows would take about twenty-four calls.
+That is a crawl. The scan stops after four windows instead and the answer says
+how far it looked, because one route out of a hundred examined is a short page
+and also a true thing about that valley.
+
+**A card draws the route, and the drawing is ours.** Komoot's thumbnail URL is
+a request to draw a picture, and the shape to draw is encoded into its path, so
+the geometry arrives with every row already. Reading it means the card draws
+the line in this project's own colours over the same tiles the report uses,
+instead of loading a PNG from a third party with somebody else's blue line in
+the pixels. A hundred points is enough to draw a card and nowhere near enough
+to measure with; measuring still means converting the file.
 
 Four honest notes.
 
@@ -62,8 +83,14 @@ key. That means the words you type reach `photon.komoot.io`. Komoot search does
 its own geocoding, so it does not.
 
 Photon also answers the wrong place surprisingly often: `montserrat` returns a
-village in Valencia before the mountain. That is why the response carries a
-`places` list rather than silently taking the first hit.
+village in the Valencian Community before the mountain in Catalonia, 300 km
+away. Merged with Komoot, which gets the mountain right, that would put routes
+from two different places in one list with nothing saying so.
+
+So the guess is never hidden. The answer names the place it actually used and
+returns the alternatives beside it, and a caller who already knows which one
+was meant passes a point, in which case nothing is guessed and the geocoder is
+not called at all.
 
 **Nothing here defeats a bot check or a login.** A private route stays private,
 and the page says so instead of pretending the track went missing. If a site
