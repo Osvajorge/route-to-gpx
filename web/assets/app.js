@@ -12,6 +12,7 @@ import {
   nearestOnTrace,
   renderProfile,
   renderTrace,
+  tileLayer,
 } from './charts.js';
 
 // Where the link-fetching service lives. A browser cannot read another site
@@ -59,7 +60,7 @@ function formatBytes(bytes) {
 export function classifyLink(raw) {
   const value = raw.trim();
   if (!value) return null;
-  if (/\.gpx($|\?)/i.test(value)) return { id: 'file', label: 'Your file' };
+  if (/\.gpx($|\?)/i.test(value)) return { id: 'file' };
 
   let host;
   try {
@@ -175,7 +176,9 @@ async function convertFromFile(file) {
     track,
     gpxText: text,
     published: null,
-    source: { id: 'file', label: t('lang.name') === 'Español' ? 'Tu fichero' : 'Your file', title: track.name || base, url: null },
+    // The label is looked up when the report is drawn, not stamped here, so a
+    // language switch reaches it like every other string on the page.
+    source: { id: 'file', title: track.name || base, url: null },
     fileName: `${base}-checked.gpx`,
   });
 }
@@ -202,6 +205,8 @@ function reset() {
   state.errorKey = null;
   state.result = null;
   state.hover = null;
+  // The painted ground belongs to the route that is being left behind.
+  hideBasemap();
   setView('idle');
 }
 
@@ -314,7 +319,8 @@ function renderReport() {
 
   el.reportTitle.textContent = source.title || track.name || fileName;
   el.reportSource.textContent = t('source.line', {
-    source: source.label,
+    // A site names itself; a dropped file is named in the visitor's language.
+    source: source.label || t('source.file'),
     when: t('when.today'),
   });
   el.downloadButton.innerHTML = `${icon('download')}<span>${t('step2.download')}</span>`;
@@ -387,10 +393,15 @@ function measureRow(label, value) {
 
 let chartData = null;
 
+// Only the tick counts differ across the breakpoint, so this is read once and
+// the charts are rebuilt when it actually flips, not on every resize event.
+const compactQuery = window.matchMedia('(max-width: 640px)');
+let compactCharts = compactQuery.matches;
+
 function renderCharts() {
   const { track, measurements } = state.result;
   const trace = renderTrace(track.points, measurements, t);
-  const profile = renderProfile(track.points, measurements, t);
+  const profile = renderProfile(track.points, measurements, t, { compact: compactCharts });
   chartData = { trace, profile };
 
   el.traceFigure.querySelector('.chart-title').textContent = t('chart.trace');
@@ -398,19 +409,73 @@ function renderCharts() {
   el.traceFigure.querySelector('.chart-caption').innerHTML = measurements.gapExceedsThreshold
     ? `<span>${t('chart.start')}</span><span class="caption-warn">${t('chart.gapDrawn')}</span>`
     : `<span>${t('chart.start')}</span>`;
+  el.mapToggle.textContent = basemapOn ? t('map.hide') : t('map.show');
+  el.traceCredit.innerHTML = t('map.attribution');
 
   el.profileFigure.querySelector('.chart-title').textContent = t('chart.profile');
   el.profileFigure.querySelector('.chart-svg').innerHTML = profile.svg;
-  el.profileFigure.querySelector('.chart-caption').innerHTML = measurements.gapExceedsThreshold
-    ? `<span>0 km</span><span class="caption-warn">${t('chart.gapLabel', {
-        gap: formatNumber(measurements.largestGapM),
-      })} ${t('gap.at', { km: formatKm(measurements.largestGapAtM, 1) })}</span><span>${formatKm(
-        measurements.distanceM,
-        1,
-      )} km</span>`
-    : `<span>0 km</span><span>${formatKm(measurements.distanceM, 1)} km</span>`;
+  renderAxes(profile.axis);
 
   positionGapLabel();
+  paintBasemap();
+}
+
+/** The profile's axis numbers, written into the gutters either side of the
+ *  plot. charts.js hands out fractions of the plot rather than pixels, because
+ *  that chart is stretched to whatever box it is given: a percentage is exact
+ *  at every size, so none of this is redone when the window moves.
+ *
+ *  charts.js has already dropped any distance tick that would collide with the
+ *  gap label, so the list arrives ready to print. It also hands over the step
+ *  it used, which is why that is not measured from the ticks here: the dropped
+ *  one would make the step look twice its size. */
+function renderAxes(axis) {
+  const { measurements } = state.result;
+  const step = axis.stepM;
+  // Enough decimals to tell one tick from the next, and no more: 5 km steps
+  // read 5, 10, 15, and 250 m steps read 0.25, 0.5, 0.75.
+  const decimals =
+    step % 1000 === 0 ? 0 : step % 100 === 0 ? 1 : step % 50 === 0 ? 2 : 3;
+
+  // The unit is printed once, on the origin. Every other tick is a bare number,
+  // the way a ruler is numbered. The total is never printed at all: it is
+  // already the headline of the distance tile, and the right edge of the plot
+  // is the finish by construction.
+  const marks = axis.x.map((tick, index) =>
+    axisLabel(index === 0 ? '0 km' : formatKm(tick.valueM, decimals), tick.fraction),
+  );
+
+  if (axis.gapFraction !== null && measurements.gapExceedsThreshold) {
+    // Warm, because it changes what you do on the hill. It says the size only:
+    // the axis it sits on already says where.
+    const anchored = axis.gapFraction > 0.85 ? ' axis-gap-end' : '';
+    marks.push(
+      axisLabel(
+        t('chart.gapLabel', { gap: formatNumber(measurements.largestGapM) }),
+        axis.gapFraction,
+        `axis-gap${anchored}`,
+      ),
+    );
+  }
+  el.axisX.innerHTML = marks.join('');
+
+  el.axisY.innerHTML = axis.y
+    .map((tick, index) =>
+      axisLabel(
+        // The top height carries the unit. It has the sky to itself, and it is
+        // what sets the gutter's width.
+        index === axis.y.length - 1
+          ? `${formatNumber(tick.valueM)} m`
+          : formatNumber(tick.valueM),
+        tick.fraction,
+      ),
+    )
+    .join('');
+}
+
+function axisLabel(text, fraction, className = '') {
+  const at = `--at:${(fraction * 100).toFixed(3)}%`;
+  return `<span${className ? ` class="${className}"` : ''} style="${at}">${text}</span>`;
 }
 
 /** The gap label is HTML over the SVG, not <text> inside it: text in the SVG
@@ -435,6 +500,221 @@ function positionGapLabel() {
   });
   label.style.left = `${left}px`;
   label.style.top = `${top}px`;
+  // A gap at the top of the bounding box, which is where a there-and-back
+  // recording usually stops, leaves no room above the chord: the canvas clips
+  // its own overflow, and half the label goes with it. Flip it under the chord
+  // rather than let the one label the report exists for get cut in half.
+  label.classList.toggle('gap-label-below', top - label.offsetHeight - 14 < 0);
+}
+
+// -------------------------------------------------------------------- basemap
+//
+// Ground under the trace, and nothing more. It says what the track crosses; it
+// must never argue with the track or with the gap, so it is drawn first, sunk
+// into the background by CSS, and it can be switched off. Losing it is not an
+// error the walker needs to read about, so nothing is ever said when it fails.
+
+// The source is named once, here. The OpenStreetMap tile usage policy asks that
+// it not be hard-coded through the drawing code, so that it can be swapped
+// without one. No subdomains: the policy says to use this host alone and warns
+// the old a/b/c names may be withdrawn.
+const BASEMAP = {
+  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  maxZoom: 19,
+};
+
+const BASEMAP_STORAGE_KEY = 'route-to-gpx:basemap';
+
+// Roughly two screens' worth of tiles. Enough that resizing a window repaints
+// from memory instead of from the network, small enough that a page left open
+// all day does not hold every tile it has ever drawn.
+const TILE_CACHE_MAX = 128;
+const tileCache = new Map();
+
+// Tiles blown up more than this are mush. It happens only on a recording with
+// almost no extent, where the finest zoom still cannot fill the plate.
+const MAX_TILE_STRETCH = 4;
+
+let basemapOn = readBasemapChoice();
+let basemapToken = 0;
+let basemapKey = '';
+
+function readBasemapChoice() {
+  try {
+    return localStorage.getItem(BASEMAP_STORAGE_KEY) !== 'off';
+  } catch {
+    // A private window, or site data blocked. The map is the default.
+    return true;
+  }
+}
+
+function rememberBasemapChoice(on) {
+  try {
+    localStorage.setItem(BASEMAP_STORAGE_KEY, on ? 'on' : 'off');
+  } catch {
+    // Not being able to remember the choice is not worth an error.
+  }
+}
+
+function tileUrl(tile) {
+  return BASEMAP.urlTemplate
+    .replace('{z}', tile.z)
+    .replace('{x}', tile.x)
+    .replace('{y}', tile.y);
+}
+
+// Set once OpenStreetMap has told us to stop. It is never cleared: a service
+// that has just asked us to go away is the last thing to poll.
+let basemapBlocked = false;
+
+/** One tile, or null if it did not arrive. This never rejects: a tile that
+ *  fails is a quieter chart, not something to report.
+ *
+ *  Fetched rather than loaded through an Image, because refusal does not look
+ *  like failure here. When OpenStreetMap blocks a client it answers 200 with a
+ *  valid PNG, and that PNG is a white square carrying a notice. An Image would
+ *  report that as a successful load and the chart would paint white ground
+ *  under the track. The refusal is only legible in the headers, and only fetch
+ *  can read them. */
+function loadTile(url) {
+  const pending = tileCache.get(url);
+  if (pending) return pending;
+
+  const request = (async () => {
+    try {
+      // CORS keeps the canvas readable rather than tainted. OpenStreetMap
+      // sends access-control-allow-origin, so the headers arrive with it.
+      const response = await fetch(url, { mode: 'cors', credentials: 'omit' });
+      if (response.headers.has('x-blocked')) {
+        basemapBlocked = true;
+        return null;
+      }
+      if (!response.ok) return null;
+      return await createImageBitmap(await response.blob());
+    } catch {
+      // A lost signal, a decode that failed, or a browser without
+      // createImageBitmap. All of them mean the same thing to this page.
+      return null;
+    }
+  })();
+
+  if (tileCache.size >= TILE_CACHE_MAX) tileCache.clear();
+  tileCache.set(url, request);
+  return request.then((image) => {
+    // A tile that failed is dropped rather than remembered, so a later frame
+    // can try again once the signal is back. A blocked one is kept, because
+    // asking again is the behaviour that earned the block.
+    if (image === null && !basemapBlocked) tileCache.delete(url);
+    return image;
+  });
+}
+
+/** Back to the drawing on its own, which is exactly what the page was before
+ *  the map existed. Bumping the token abandons anything still in the air. */
+function hideBasemap() {
+  basemapKey = '';
+  basemapToken++;
+  if (!el.traceMap) return;
+  el.traceMap.hidden = true;
+  el.traceCredit.hidden = true;
+  delete el.traceCanvas.dataset.map;
+}
+
+async function paintBasemap() {
+  if (!basemapOn || basemapBlocked || !chartData || state.view !== 'report') {
+    hideBasemap();
+    return;
+  }
+
+  const rect = el.traceCanvas.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return;
+
+  const frame = chartData.trace.frame;
+  const layer = tileLayer(frame, {
+    width: rect.width,
+    height: rect.height,
+    devicePixelRatio: window.devicePixelRatio,
+    maxZoom: BASEMAP.maxZoom,
+  });
+
+  if (layer.tileShrink > MAX_TILE_STRETCH) {
+    // A recording that barely moved. One tile stretched over the whole plate is
+    // worse than no ground at all.
+    hideBasemap();
+    return;
+  }
+
+  // Nothing about the picture moved, so nothing is asked for again. This is
+  // what keeps a language switch, a re-render and a run of resize events from
+  // going back to the tile server.
+  const key = [
+    frame.worldX0,
+    frame.worldY0,
+    frame.unitsPerWorld,
+    layer.zoom,
+    layer.backing.width,
+    layer.backing.height,
+  ].join();
+  if (key === basemapKey) return;
+  basemapKey = key;
+  const token = ++basemapToken;
+
+  const images = await Promise.all(layer.tiles.map((tile) => loadTile(tileUrl(tile))));
+  // The window moved, the language changed or the map was switched off while
+  // these were in the air. Whatever is on screen now belongs to someone else.
+  if (token !== basemapToken) return;
+
+  // A frame goes on whole or not at all. A part-covered plate leaves holes
+  // under the track, and on this page a hole in the ground is what "the
+  // recording is missing here" looks like. It must not be able to mean
+  // "a tile did not load".
+  if (basemapBlocked || images.some((image) => image === null)) {
+    hideBasemap();
+    return;
+  }
+
+  // Composed off screen, so the visible canvas is never seen half built.
+  const buffer = document.createElement('canvas');
+  buffer.width = layer.backing.width;
+  buffer.height = layer.backing.height;
+  const compose = buffer.getContext('2d');
+  const target = el.traceMap.getContext('2d');
+  // A browser that has run out of canvas memory hands back null. Nothing to
+  // draw on is the same outcome as nothing to draw: the chart on its own.
+  if (!compose || !target) {
+    hideBasemap();
+    return;
+  }
+  layer.tiles.forEach((tile, index) => {
+    // Tile rectangles are already in device pixels, so the context is not
+    // scaled by the device pixel ratio: doing both would draw at double size.
+    compose.drawImage(images[index], tile.left, tile.top, tile.width, tile.height);
+  });
+
+  const canvas = el.traceMap;
+  // The trace SVG keeps its aspect ratio and is letterboxed inside the canvas.
+  // The plate is that same rectangle, so the map cannot sit off register from
+  // the track.
+  canvas.style.left = `${layer.plate.left}px`;
+  canvas.style.top = `${layer.plate.top}px`;
+  canvas.style.width = `${layer.plate.width}px`;
+  canvas.style.height = `${layer.plate.height}px`;
+  canvas.width = layer.backing.width;
+  canvas.height = layer.backing.height;
+  target.drawImage(buffer, 0, 0);
+  canvas.hidden = false;
+
+  // The credit appears only now. Attribution for a map that did not load would
+  // be a false statement, and the licence asks for the opposite.
+  el.traceCredit.hidden = false;
+  el.traceCanvas.dataset.map = 'on';
+}
+
+function toggleBasemap() {
+  basemapOn = !basemapOn;
+  rememberBasemapChoice(basemapOn);
+  el.mapToggle.textContent = basemapOn ? t('map.hide') : t('map.show');
+  paintBasemap();
 }
 
 function readingAt(distanceM) {
@@ -496,9 +776,13 @@ function clearHover() {
 }
 
 function renderFooter() {
+  // Three separate facts, in the order the visitor meets them: the file never
+  // leaves, the link is fetched by us, and the map is fetched by them. The map
+  // sentence is not optional dressing: it is the one request this page makes
+  // that our server never sees.
   el.footerProcessing.innerHTML = `<span>${t('footer.processing.file')}</span><span>${t(
     'footer.processing.url',
-  )}</span>`;
+  )}</span><span>${t('footer.processing.map')}</span>`;
   el.footerSource.textContent = t('footer.source');
 }
 
@@ -528,6 +812,12 @@ function collect() {
   el.tiles = document.getElementById('tiles');
   el.traceFigure = document.getElementById('trace');
   el.profileFigure = document.getElementById('profile');
+  el.traceCanvas = el.traceFigure.querySelector('.chart-canvas');
+  el.traceMap = el.traceFigure.querySelector('.chart-map');
+  el.traceCredit = el.traceFigure.querySelector('.chart-attribution');
+  el.mapToggle = document.getElementById('map-toggle');
+  el.axisX = el.profileFigure.querySelector('.axis-x');
+  el.axisY = el.profileFigure.querySelector('.axis-y');
   el.warning = document.getElementById('warning');
   el.secondary = document.getElementById('secondary');
   el.provenance = document.getElementById('provenance');
@@ -632,8 +922,29 @@ function wire() {
     ).distanceM;
   });
 
+  el.mapToggle.addEventListener('click', toggleBasemap);
+
+  let redrawTimer = 0;
   window.addEventListener('resize', () => {
-    if (state.view === 'report') positionGapLabel();
+    if (state.view !== 'report') return;
+    // The label is anchored to a point on the drawing, so it moves with it,
+    // immediately. The map is a full repaint of a canvas, so it waits until the
+    // window has stopped moving.
+    positionGapLabel();
+    clearTimeout(redrawTimer);
+    redrawTimer = setTimeout(paintBasemap, 180);
+  });
+
+  // The axis label positions are percentages and need no help on resize. Only
+  // the number of ticks changes at the breakpoint, so the charts are rebuilt
+  // when it flips and not otherwise.
+  compactQuery.addEventListener('change', (event) => {
+    compactCharts = event.matches;
+    if (state.view !== 'report') return;
+    renderCharts();
+    // The redrawn SVGs have no cursors in them, so the reading beside the title
+    // would be left describing a point nothing is pointing at.
+    clearHover();
   });
 }
 

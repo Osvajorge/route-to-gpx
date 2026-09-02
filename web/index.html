@@ -9,6 +9,9 @@
       content="Paste a Komoot or Wikiloc link and get a GPX file plus the measurements behind it: distance, ascent, and where the recording has holes."
     />
     <meta name="color-scheme" content="dark" />
+    <!-- No Referrer-Policy on purpose: the OpenStreetMap tile usage policy asks
+         that a valid Referer reaches them, and a strict policy is a silent way
+         to get the basemap blocked. -->
     <meta name="theme-color" content="#0d1014" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1014'/%3E%3Cpath d='M6 22 12 12l5 6 3-4 6 8' fill='none' stroke='%236fd7f5' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -79,12 +82,21 @@
           <figure class="chart" id="trace">
             <figcaption class="chart-head">
               <span class="chart-title"></span>
-              <span class="chart-reading"></span>
+              <span class="chart-head-end">
+                <span class="chart-reading"></span>
+                <button id="map-toggle" class="chart-toggle" type="button"></button>
+              </span>
             </figcaption>
+            <!-- The map canvas and the two overlay spans are siblings of
+                 .chart-svg, never children of it: app.js replaces the drawing by
+                 setting .chart-svg's innerHTML, which would wipe anything inside
+                 it. -->
             <div class="chart-canvas">
+              <canvas class="chart-map" aria-hidden="true" hidden></canvas>
               <div class="chart-svg"></div>
               <span class="gap-label" hidden></span>
               <span class="chart-tooltip" hidden></span>
+              <span class="chart-attribution" hidden></span>
             </div>
             <div class="chart-caption"></div>
           </figure>
@@ -94,8 +106,16 @@
               <span class="chart-title"></span>
               <span class="chart-reading"></span>
             </figcaption>
-            <div class="chart-canvas"><div class="chart-svg"></div></div>
-            <div class="chart-caption"></div>
+            <!-- The axis numbers live in gutters beside the plot, not inside the
+                 SVG: this chart is drawn with preserveAspectRatio="none", which
+                 stretches glyphs out of shape. Keeping .chart-canvas as the plot
+                 rectangle, edge to edge, is also what keeps the pointer mapping
+                 and charts.js px() the same linear map. -->
+            <div class="chart-plot">
+              <div class="axis-y" aria-hidden="true"></div>
+              <div class="chart-canvas"><div class="chart-svg"></div></div>
+              <div class="axis-x" aria-hidden="true"></div>
+            </div>
           </figure>
 
           <div id="warning" class="panel-warn warning-line" role="status" hidden></div>

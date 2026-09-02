@@ -590,9 +590,44 @@ h1 {
   color: var(--muted);
 }
 
+.chart-head {
+  flex-wrap: wrap;
+}
+
+/* The hover reading and the map switch share the right-hand end of the head,
+ * so the title keeps the left and nothing lands in the middle. */
+.chart-head-end {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
 .chart-reading {
   color: var(--accent);
   min-height: 1em;
+}
+
+/* Cyan on hover because it is interactive, muted at rest because it is chrome,
+ * not a measurement. The label says what the click does, so the state is
+ * carried by words rather than by colour alone. */
+.chart-toggle {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.65;
+  transition:
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease);
+}
+
+.chart-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .chart-canvas {
@@ -616,6 +651,165 @@ h1 {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* The drawing sits above the map, and the two labels above both. Said in
+ * z-index rather than left to document order, because an absolutely positioned
+ * canvas would otherwise paint over its in-flow sibling. */
+.chart-svg {
+  position: relative;
+  z-index: 1;
+}
+
+/* The map is ground, not data.
+ *
+ * The damping is done here, in CSS, rather than with ctx.filter at draw time:
+ * a browser without ctx.filter would silently paint OpenStreetMap's near-white
+ * tiles at full strength through the middle of the chart, which is the one
+ * failure that would break the colour rule.
+ *
+ * grayscale(1) removes the green woodland and the yellow roads, the only
+ * saturated things on the tile and the only ones that could argue with the
+ * cyan. brightness(0.38) and contrast(0.92) take the paper down to a dark
+ * grey: measured on a real Pyrenees tile this lands the ground at about 48 of
+ * 255 in luminance, against 222 for the cyan track and 16 for the canvas it
+ * sits on, so the map is plainly above the background and plainly below the
+ * data. opacity 0.45 then sinks it into --bg, and that is where the cool tint
+ * comes from: no new colour is introduced, the page's own background shows
+ * through. Roads, rivers and contours survive as faint lines; the cyan track
+ * and the warm red gap stay the loudest things in the frame. */
+.chart-map {
+  position: absolute;
+  z-index: 0;
+  filter: grayscale(1) brightness(0.38) contrast(0.92);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* The 100-unit graticule stands in for a map. With a real one underneath it is
+ * only more lines to read past. */
+.chart-canvas[data-map='on'] .chart-grid {
+  display: none;
+}
+
+/* A licence condition, so it is always on the chart, never behind a control and
+ * never smaller than the page's own fine print: legibility is part of what is
+ * being asked for. Muted, because it is a credit and not a reading. */
+.chart-attribution {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  z-index: 3;
+  padding: 0 6px;
+  border-radius: var(--radius-inner);
+  background: color-mix(in srgb, var(--bg) 74%, transparent);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.chart-attribution a {
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--field-border);
+}
+
+.chart-attribution a:hover {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------ profile axes */
+
+/* The plot keeps .chart-canvas edge to edge: its full width is the pointer
+ * target that maps linearly to distance, and charts.js px() is the same map.
+ * The numbers go in gutters outside it, so neither is disturbed. */
+.chart-plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+}
+
+.axis-y {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 6ch;
+}
+
+#profile .chart-canvas {
+  grid-area: 1 / 2;
+}
+
+.axis-x {
+  grid-area: 2 / 2;
+  position: relative;
+  height: 20px;
+}
+
+/* Positioned by percentage, not by pixels. The profile SVG is stretched to
+ * whatever box it is given, so a fraction of the plot is exact at every size
+ * and no resize handler is needed to keep a label on its line. */
+.axis-y span,
+.axis-x span {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.axis-y span {
+  right: 0;
+  top: var(--at);
+  transform: translateY(-50%);
+}
+
+.axis-x span {
+  left: var(--at);
+  top: 6px;
+  transform: translateX(-50%);
+}
+
+/* The origin is the one label a centred transform would push off the card, so
+ * it hangs from the left edge instead and its tick moves with it. */
+.axis-x span:first-child {
+  transform: none;
+}
+
+.axis-x span::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 1px;
+  height: 5px;
+  background: var(--grid);
+}
+
+.axis-x span:first-child::before {
+  left: 0;
+}
+
+/* The gap label under the plot: text and a tick, not a boxed chip. A 20px
+ * gutter has no room for a box, and the band it names is already drawn. */
+.axis-gap {
+  color: var(--warn-text);
+}
+
+.axis-gap::before {
+  background: var(--warn);
+}
+
+/* A gap near the finish would hang its label past the right edge. */
+.axis-gap-end {
+  transform: translateX(-100%);
+}
+
+.axis-gap-end::before {
+  left: calc(100% - 1px);
 }
 
 .chart-caption {
@@ -702,6 +896,7 @@ h1 {
 
 .gap-label {
   position: absolute;
+  z-index: 3;
   transform: translate(-50%, calc(-100% - 14px));
   padding: 3px 8px;
   background: var(--warn-bg);
@@ -714,8 +909,13 @@ h1 {
   pointer-events: none;
 }
 
+.gap-label-below {
+  transform: translate(-50%, 14px);
+}
+
 .chart-tooltip {
   position: absolute;
+  z-index: 4;
   transform: translate(-50%, calc(-100% - 12px));
   padding: 4px 8px;
   background: var(--bg);
@@ -750,6 +950,17 @@ h1 {
   vector-effect: non-scaling-stroke;
   stroke-dasharray: 4200;
   animation: draw 1.3s var(--ease) both;
+}
+
+/* --surface-line, not --grid: --grid against --chart-area is a six-unit
+ * difference that vanishes inside the terrain, and a level line you can only
+ * read in the sky cannot be used to read the height of a ridge.
+ * non-scaling-stroke for the same reason .profile-line carries it: this SVG is
+ * scaled by about 0.65 vertically, which would take a 1px hairline sub-pixel. */
+.profile-grid line {
+  stroke: var(--surface-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .profile-gap-band {
@@ -1014,6 +1225,15 @@ body:has(#app[data-dragging='true']) .drop-veil {
 
   #profile .chart-canvas {
     height: 130px;
+  }
+
+  /* Three heights instead of four, so the gutter can lose a character. */
+  .axis-y {
+    min-width: 5ch;
+  }
+
+  .axis-x {
+    height: 18px;
   }
 
   .secondary {

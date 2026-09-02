@@ -17,15 +17,31 @@ you can see where they disagree.
 | --- | --- | --- |
 | **Komoot** | the public read-only tour endpoint the site's own pages call | yes |
 | **Wikiloc** | the track embedded in the trail page, base64 over TWKB | needs a browser TLS handshake, see below |
-| **Your own `.gpx`** | dropped on the page, read in the browser | no network at all |
+| **Your own `.gpx`** | dropped on the page, read in the browser | the file never leaves the browser |
 
-Two honest notes.
+Three honest notes.
 
 **Wikiloc needs `curl_cffi`.** Wikiloc answers an ordinary HTTP client with 403
 and a browser with 200, and the difference is the TLS handshake, not the
 headers. `curl_cffi` reproduces a browser handshake. That is why the link
 service is a small Python process rather than an edge function: a Cloudflare
 Worker cannot choose its TLS fingerprint.
+
+**The map background is a third party.** The charts draw over OpenStreetMap
+tiles, which the visitor's browser fetches straight from
+`tile.openstreetmap.org`. So even a dropped file, which is otherwise read
+entirely in the browser, causes requests that show OpenStreetMap an IP address
+and roughly where the route is. The page says so in its footer, credits
+OpenStreetMap on the chart as the licence requires, and carries a switch that
+turns the map off and is remembered. With it off, no tile is requested at all.
+
+If you deploy this, the [OSM tile usage
+policy](https://operations.osmfoundation.org/policies/tiles/) is yours to
+respect, and it is not generous: it covers ordinary browsing, not heavy or
+automated use. One report is one fixed view, a handful of tiles, which is well
+inside it. Note also that OpenStreetMap does not refuse a blocked client with an
+error. It answers 200 with a white tile and an `x-blocked` header, so the page
+reads that header and stops asking for the rest of the session.
 
 **Nothing here defeats a bot check or a login.** A private route stays private,
 and the page says so instead of pretending the track went missing. If a site

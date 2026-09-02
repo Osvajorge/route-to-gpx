@@ -88,6 +88,13 @@ const STRINGS = {
     'chart.noData': 'no data',
     'chart.gapLabel': 'gap {gap} m',
 
+    'map.hide': 'Hide map',
+    'map.show': 'Show map',
+    // The licence condition, not a nicety: attribution to OpenStreetMap, with
+    // the name linking to the copyright page so the licence is one click away.
+    'map.attribution':
+      '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+
     'warning.gap':
       '{gap} m unrecorded at km {km}. Your watch will cut straight across. Check that stretch before you go.',
 
@@ -95,12 +102,15 @@ const STRINGS = {
       'The original link is written into the file, in <code>&lt;metadata&gt;&lt;link&gt;</code> and in the track name.',
     'provenance.file': '{name} · {size}',
     'source.line': '{source} · read {when}',
+    'source.file': 'Your file',
     'when.today': 'today',
 
     'footer.processing.file':
       'GPX files you drop are read in this browser and never uploaded.',
     'footer.processing.url':
-      'Links are fetched by our server, because a browser is not allowed to read another site directly. The page is parsed, measured and thrown away. Nothing is stored, and there are no accounts.',
+      'Links are fetched by our server, because a browser is not allowed to read pages on another site directly. The page is parsed and thrown away. Nothing is stored, and there are no accounts.',
+    'footer.processing.map':
+      'The map background is loaded by your browser directly from OpenStreetMap, so their servers see your IP address and roughly where your route is. You can turn it off on the trace chart.',
     'footer.source': 'Source code',
   },
 
@@ -185,6 +195,11 @@ const STRINGS = {
     'chart.noData': 'sin datos',
     'chart.gapLabel': 'salto de {gap} m',
 
+    'map.hide': 'Ocultar mapa',
+    'map.show': 'Mostrar mapa',
+    'map.attribution':
+      '© colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+
     'warning.gap':
       '{gap} m sin grabar en el km {km}. Tu reloj trazará una recta por ahí. Mira ese tramo antes de ir.',
 
@@ -192,12 +207,15 @@ const STRINGS = {
       'El enlace original queda escrito en el fichero, en <code>&lt;metadata&gt;&lt;link&gt;</code> y en el nombre del track.',
     'provenance.file': '{name} · {size}',
     'source.line': '{source} · leído {when}',
+    'source.file': 'Tu fichero',
     'when.today': 'hoy',
 
     'footer.processing.file':
       'Los GPX que sueltas se leen en este navegador y no se suben a ningún sitio.',
     'footer.processing.url':
-      'Los enlaces los descarga nuestro servidor, porque un navegador no puede leer otra web directamente. La página se analiza, se mide y se descarta. No se guarda nada y no hay cuentas.',
+      'Los enlaces los descarga nuestro servidor, porque un navegador no puede leer directamente las páginas de otra web. La página se analiza y se descarta. No se guarda nada y no hay cuentas.',
+    'footer.processing.map':
+      'Tu navegador carga el fondo del mapa directamente desde OpenStreetMap, así que sus servidores ven tu dirección IP y aproximadamente dónde está tu ruta. Puedes desactivarlo en el gráfico del trazado.',
     'footer.source': 'Código fuente',
   },
 };
