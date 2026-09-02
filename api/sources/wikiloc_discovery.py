@@ -104,7 +104,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlencode, urlparse
 
 from . import Published, SourceError, wikiloc
-from .discovery import Listing, Place, Row
+from .discovery import Listing, Place, Row, thumbnail
 from ..http import ALLOWED_HOST, fetch_json
 
 SOURCE_ID = "wikiloc"
@@ -685,6 +685,17 @@ def _row(spa: Dict[str, Any]) -> Optional[Row]:
         # displaying words nobody chose.
         sport=SLUG_BY_PICTO.get(picto) if isinstance(picto, int) else None,
         start=_start(spa),
+        # Wikiloc photographs the path; it does not draw the route. So this
+        # slot holds a walker's picture, and `kind` says so, because a card
+        # that treats the two as the same thing would show the shape of the
+        # walk for one source and somebody's view of a rock for the other
+        # without ever admitting the difference.
+        thumbnail=thumbnail(_first_thumb(spa), "photo"),
+        rating=_rating(spa),
+        difficulty=DIFFICULTY_BY_SKILL.get(spa.get("skill")),
+        # Wikiloc's rows carry no date the way Komoot's do. Left null rather
+        # than filled from the upload date, which is a different fact.
+        updated_at=None,
         published=Published(
             # Wikiloc's own figures, in Wikiloc's own units, turned into metres
             # and nothing else. Nothing is rounded here and nothing is worked
@@ -768,6 +779,32 @@ def _metres(value: Any, unit: Any) -> Optional[float]:
     if spelling is None:
         return None
     return wikiloc._number(f"{value} {spelling}")
+
+
+# Checked against the trail pages themselves: skill 1, 2 and 3 render as Easy,
+# Moderate and Difficult. Wikiloc's scale may go further, and anything outside
+# these three gets no word rather than a guessed one.
+DIFFICULTY_BY_SKILL = {1: "easy", 2: "moderate", 3: "difficult"}
+
+
+def _first_thumb(spa: Dict[str, Any]) -> Optional[str]:
+    thumbs = spa.get("thumbs")
+    if not isinstance(thumbs, list) or not thumbs:
+        return None
+    first = thumbs[0]
+    return first.get("url") if isinstance(first, dict) else None
+
+
+def _rating(spa: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    """Both halves or neither, the same rule the other source follows."""
+    score = spa.get("rating")
+    count = spa.get("numRatings")
+    try:
+        score = float(score)
+        count = int(count)
+    except (TypeError, ValueError):
+        return None
+    return {"score": round(score, 2), "count": count}
 
 
 def _start(spa: Dict[str, Any]) -> Optional[Dict[str, float]]:

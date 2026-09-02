@@ -47,6 +47,16 @@ FIND_PAGE_0 = {
             "uomslope": "f",
             "distance": "5.17",
             "slope": "2838",
+            # The card fields, as this row really carries them. Verified live
+            # on 2026-09-02, and the skill word checked against the trail page
+            # itself, which reads "Moderate".
+            "rating": 4.92,
+            "numRatings": 13,
+            "skill": 2,
+            "thumbs": [
+                {"url": "https://s2.wklcdn.com/image_57/1717832/184968972/114797162_tn.jpg",
+                 "id": 114797162},
+            ],
         },
         {
             "id": 187574628,
@@ -564,13 +574,24 @@ def test_a_row_carries_no_number_and_no_id_of_its_own(monkeypatch):
         lat=MONASTERY[0], lng=MONASTERY[1], radius_m=FIVE_KM
     ).as_dict()["results"][0]
 
-    assert set(row) == {"url", "title", "sport", "start", "publishedBy", "published"}
+    assert set(row) == {"url", "title", "sport", "start", "thumbnail", "rating",
+        "difficulty", "updatedAt", "publishedBy", "published"}
+
+    # The rule, asserted as the rule: no figure at the top level of a row, where
+    # printing it would read as something this tool worked out.
+    for key, value in row.items():
+        assert not isinstance(value, (int, float)), f"{key} is a bare number"
+
     assert row["publishedBy"] == "Wikiloc"
     assert row["sport"] == "hiking"
     assert row["start"] == {"lat": 41.609337, "lng": 1.767302}
-    # Wikiloc's own ranking never leaves: `trailrank`, `rating` and `isTrending`
-    # are a discovery product's furniture, and this is not one.
-    for absent in ("id", "trailrank", "rating", "numRatings", "isTrending", "author"):
+    # The score other walkers gave now reaches the page, because the owner asked
+    # for it on the card. It is the one claim that can never be recomputed, so
+    # it can only ever read as the source's. The rest of Wikiloc's ranking still
+    # never leaves: `trailrank` and `isTrending` are a discovery product's
+    # furniture, and this is not one.
+    assert row["rating"] == {"score": 4.92, "count": 13}
+    for absent in ("id", "trailrank", "numRatings", "isTrending", "author"):
         assert absent not in row
 
 

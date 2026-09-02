@@ -28,7 +28,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from . import Published, SourceError, komoot
-from .discovery import Listing, Place, Row
+from .discovery import Listing, Place, Row, thumbnail
 from ..http import ALLOWED_HOST, fetch_json
 
 SOURCE_ID = "komoot"
@@ -322,6 +322,20 @@ def _row(item: Dict[str, Any], identifier: Optional[Any]) -> Optional[Row]:
         title=title.strip(),
         sport=sport if isinstance(sport, str) and sport else None,
         start=_start(item),
+        # Komoot draws the route itself, so its picture is the shape of the
+        # walk. The small variant: a card is a card, and the big one is four
+        # times the bytes for pixels nobody sees at this size.
+        thumbnail=thumbnail(
+            _nested(item, "map_image_preview", "src")
+            or _nested(item, "vector_map_image_preview", "src"),
+            "route-map",
+        ),
+        rating=_rating(item),
+        # A word Komoot assigns, not a number we could check. Nearby carries it
+        # and search does not, which is why it is nullable rather than a
+        # default.
+        difficulty=_nested(item, "difficulty", "grade"),
+        updated_at=item.get("changed_at") if isinstance(item.get("changed_at"), str) else None,
         published=Published(
             # Metres and seconds, as given. Nothing is rounded, converted or
             # worked out from a neighbour: rounding is a small measurement, and
@@ -396,6 +410,30 @@ def _expected_link(identifier: str) -> Tuple[str, str]:
 
 def _without_query(url: str) -> str:
     return urlunparse(urlparse(url)._replace(query="", fragment=""))
+
+
+
+def _nested(item: Dict[str, Any], *path: str) -> Any:
+    """A value from a nested object, or None the moment a step is missing."""
+    current: Any = item
+    for step in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(step)
+    return current
+
+
+def _rating(item: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    """What other walkers scored it, or nothing.
+
+    Both halves or neither: a score with no count cannot be weighed, and a
+    count with no score says nothing at all.
+    """
+    score = komoot._number(item.get("rating_score"))
+    count = komoot._number(item.get("rating_count"))
+    if score is None or count is None:
+        return None
+    return {"score": round(score, 2), "count": int(count)}
 
 
 def _start(item: Dict[str, Any]) -> Optional[Dict[str, float]]:

@@ -330,7 +330,18 @@ def test_a_row_carries_no_number_of_its_own(monkeypatch):
     _answers(monkeypatch, SEARCH_PAYLOAD)
     row = komoot_discovery.search(query="montseny").as_dict()["results"][1]
 
-    assert set(row) == {"url", "title", "sport", "start", "publishedBy", "published"}
+    assert set(row) == {"url", "title", "sport", "start", "thumbnail", "rating",
+        "difficulty", "updatedAt", "publishedBy", "published"}
+
+    # The rule this test exists for, asserted as the rule rather than as a list:
+    # no figure sits at the top level of a row, where printing it would read as
+    # something this tool worked out. `rating` is the one exception and it is a
+    # dict, not a number, because it is the single claim we can never recompute:
+    # there is nothing to compare an opinion against, so it can only ever be
+    # the source's.
+    for key, value in row.items():
+        assert not isinstance(value, (int, float)), f"{key} is a bare number"
+
     assert row["publishedBy"] == "Komoot"
     assert row["title"] == "Montseny circular"
     assert row["start"] == {"lat": 41.640649, "lng": 1.788649}

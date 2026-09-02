@@ -14,20 +14,54 @@ A row is a link, never a track. Nothing in this file returns coordinates, a GPX
 or a measurement of any kind.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from . import Published
+
+# A thumbnail URL is written by the source, and the page puts it in an <img>.
+# That makes the source the one deciding whose server sees the visitor's
+# address, which is not a decision a source gets to make here. Only these hosts
+# are handed on, and anything else becomes no thumbnail at all.
+THUMBNAIL_HOST = re.compile(
+    r"^(?:[a-z0-9-]+\.)*(?:komoot\.(?:net|de|com)|wklcdn\.com)$", re.I
+)
+
+
+def thumbnail(url: Any, kind: str) -> Optional[Dict[str, str]]:
+    """A picture the page may load, or nothing.
+
+    `kind` says what it is a picture OF, because the two sites do not agree:
+    Komoot draws the route on a map, Wikiloc hands over a walker's photograph
+    of the path. They belong in the same slot on a card and they are not the
+    same claim, so the page is told which it has rather than guessing from the
+    host.
+    """
+    if not isinstance(url, str) or not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return None
+    if not THUMBNAIL_HOST.match(parsed.hostname):
+        return None
+    return {"url": url, "kind": kind}
 
 
 @dataclass
 class Row:
     """One route, as a link plus what the source site says about it.
 
-    The key set is frozen at six, and not one of them is a bare number. A page
-    cannot print a distance without writing `row.published.distanceM`, and that
-    expression reads as a claim at the place it is read. A `row.distanceM` would
-    read as fact, so it does not exist.
+    No measurement sits at the top level. A page cannot print a distance without
+    writing `row.published.distanceM`, and that expression reads as a claim at
+    the place it is read. A `row.distanceM` would read as fact, so it does not
+    exist.
+
+    The fields beside `published` are not measurements at all: a picture, a
+    score other walkers gave, a grade the site assigns, a date it last changed.
+    They are the site's own record of itself, they are all optional, and a site
+    that does not keep one gets `None` rather than a zero or a dash.
 
     `sport` is one word from the source's own vocabulary, and the vocabularies
     are not the same: Komoot says `hike`, Wikiloc says `hiking`. The key is
@@ -46,12 +80,25 @@ class Row:
     # prose.
     published_by: str
 
+    # Nullable, every one of them, and asymmetric between the two sites on
+    # purpose. Komoot's nearby carries all four; its search carries none but the
+    # picture; Wikiloc carries a rating and a grade but photographs the path
+    # rather than drawing the route. A card renders what is there.
+    thumbnail: Optional[Dict[str, str]] = None
+    rating: Optional[Dict[str, float]] = None
+    difficulty: Optional[str] = None
+    updated_at: Optional[str] = None
+
     def as_dict(self) -> Dict[str, Any]:
         return {
             "url": self.url,
             "title": self.title,
             "sport": self.sport,
             "start": self.start,
+            "thumbnail": self.thumbnail,
+            "rating": self.rating,
+            "difficulty": self.difficulty,
+            "updatedAt": self.updated_at,
             "publishedBy": self.published_by,
             "published": self.published.as_dict(),
         }
