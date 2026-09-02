@@ -26,6 +26,24 @@ Two more ways to arrive at a link, rather than pasting one:
 | **Search** | words, and a place | 1 call for Komoot, 1 or 2 for Wikiloc |
 | **Nearby** | routes around a point, by radius and activity | 1 call for Komoot, up to 4 for Wikiloc |
 
+And one thing to do with a route once you have it:
+
+| Surface | What it does |
+| --- | --- |
+| **Re-arrange** | move a closed ring's start, or reverse the direction |
+
+Moving the start of a ring that does not quite close puts the unclosed part
+into the middle of the file, as a straight line your watch will cut across. So
+the re-arranger measures that seam and says how long it is and where, and the
+gap tile turns to the warning skin for it like any other gap. A ring is a ring
+when its ends are within 2% of the route's length, floored at 30 m and capped
+at 1 km, because half a kilometre is a quarter of a 2 km stroll and a third of
+a percent of a 140 km ride.
+
+Changing the order of a recording makes its times wrong, whichever change you
+make, so a re-arranged file carries no times and none are invented to replace
+them. The page says how many it is about to drop before you press anything.
+
 Both ask **both sites by default**, and interleave the answers one from each in
 turn. That is a fair merge and not a ranking: the moment this code starts
 scoring rows it has become a search engine, which it has no business being.
@@ -97,11 +115,23 @@ and the page says so instead of pretending the track went missing. If a site
 puts a CAPTCHA in front of a page, this tool tells you to export the GPX there
 and drop the file in, which works offline and needs nobody's permission.
 
-The same rule decides what Search and Nearby can offer. Wikiloc will not filter
-by activity, distance, difficulty or date for a caller who is not logged in: it
-answers those with an empty page rather than an error. So the Wikiloc activity
-picker is not the filter Komoot's is, and the README would rather say that than
-have the page pretend otherwise.
+**Your browser talks to Google on every page load.** The two typefaces come
+from Google Fonts, so Google sees an IP address before anything is pressed. The
+footer says so. Cards fetch nothing at all: a card's route drawing is drawn
+here, from geometry that arrived with the row.
+
+**Komoot cannot be pointed at a place on a text search.** Measured on the live
+API, not assumed: the same query with a point 600 km away returns a
+byte-identical row, and `bbox`, `map_bounds`, `max_distance` and `radius`
+change nothing either. The `lat`/`lng` pair nudges the ranking; it does not
+choose where to look. It is not dead, though: with a query naming nowhere
+(`trail`) the same point does move the results. It is only a search whose words
+name a place that cannot be aimed somewhere else.
+
+That matters because Wikiloc obeys a point exactly. So on a merged search where
+you picked a place, one site went where you pointed and the other looked up
+your words. The page says which did which, per source, rather than claiming
+over the whole list that nothing was guessed.
 
 ## What it measures
 
