@@ -25,7 +25,7 @@ const STRINGS = {
     'action.converting': 'Working',
     'action.example': 'Load an example',
     'step1.hint':
-      'komoot.com/tour/… · wikiloc.com/trail/… · or drop a .gpx anywhere on this page',
+      'komoot.com/tour/… · komoot.com/smarttour/… · any wikiloc.com trail page · or drop a .gpx anywhere on this page',
     'step1.drop': 'Drop the .gpx to measure it',
 
     'stage.fetch': 'Reading the page',
@@ -39,13 +39,22 @@ const STRINGS = {
 
     'error.domain.title': 'We do not recognise that link.',
     'error.domain.body':
-      'We read komoot.com/tour/… and wikiloc.com/trail/…, and nothing else yet. If your route lives somewhere else, export its GPX there and drop the file on this page. We measure it exactly the same.',
+      'We read Komoot tour and smarttour links, and any Wikiloc trail page. If your route lives somewhere else, export its GPX there and drop the file on this page. We measure it exactly the same.',
     'error.track.title': 'That page no longer carries the track where we expected it.',
     'error.track.body':
       'The page loaded and there is a map on it, but no coordinate block. Usually that means the route is private, or the site changed its format. Open the route, export the GPX there, and drop the file here.',
     'error.private.title': 'That route is private.',
     'error.private.body':
       'Its owner has not published the track, so there is nothing for us to read. If it is your own route, export the GPX from your account and drop the file here.',
+    'error.highlight.title': 'That link is a highlight, not a route.',
+    'error.highlight.body':
+      'A Komoot highlight is a single place: a viewpoint, a spring, a hut. Open it, pick one of the tours that pass through it, and paste that link instead.',
+    'error.collection.title': 'That link is a collection, not a single route.',
+    'error.collection.body':
+      'A Komoot collection is a list of tours, often the stages of one long route. Open the stage you want and paste its link.',
+    'error.guide.title': 'That link is a region guide, not a route.',
+    'error.guide.body':
+      'A Komoot guide lists many routes for an area. Open the one you want and paste its link.',
     'error.notfound.title': 'That route does not exist.',
     'error.notfound.body':
       'The link points at an ID the site does not know. Check it against the address bar on the route page itself.',
@@ -113,7 +122,7 @@ const STRINGS = {
     'action.converting': 'Trabajando',
     'action.example': 'Cargar un ejemplo',
     'step1.hint':
-      'komoot.com/tour/… · wikiloc.com/trail/… · o suelta un .gpx en cualquier punto de la página',
+      'komoot.com/tour/… · komoot.com/smarttour/… · cualquier página de ruta de wikiloc.com · o suelta un .gpx en cualquier punto de la página',
     'step1.drop': 'Suelta el .gpx para medirlo',
 
     'stage.fetch': 'Leyendo la página',
@@ -127,13 +136,22 @@ const STRINGS = {
 
     'error.domain.title': 'No reconocemos ese enlace.',
     'error.domain.body':
-      'Leemos komoot.com/tour/… y wikiloc.com/trail/…, y de momento nada más. Si tu ruta vive en otro sitio, exporta allí el GPX y suelta el fichero en esta página. Lo medimos exactamente igual.',
+      'Leemos enlaces de tour y de smarttour de Komoot, y cualquier página de ruta de Wikiloc. Si tu ruta vive en otro sitio, exporta allí el GPX y suelta el fichero en esta página. Lo medimos exactamente igual.',
     'error.track.title': 'Esa página ya no lleva el track donde lo esperábamos.',
     'error.track.body':
       'La página cargó y tiene un mapa, pero no hay bloque de coordenadas. Suele significar que la ruta es privada, o que el sitio cambió de formato. Abre la ruta, exporta allí el GPX y suelta el fichero aquí.',
     'error.private.title': 'Esa ruta es privada.',
     'error.private.body':
       'Quien la subió no ha publicado el track, así que no hay nada que leer. Si es tuya, exporta el GPX desde tu cuenta y suelta el fichero aquí.',
+    'error.highlight.title': 'Ese enlace es un highlight, no una ruta.',
+    'error.highlight.body':
+      'Un highlight de Komoot es un sitio concreto: un mirador, una fuente, un refugio. Ábrelo, elige una de las rutas que pasan por ahí y pega ese enlace.',
+    'error.collection.title': 'Ese enlace es una colección, no una ruta suelta.',
+    'error.collection.body':
+      'Una colección de Komoot es una lista de rutas, muchas veces las etapas de una travesía. Abre la etapa que quieras y pega su enlace.',
+    'error.guide.title': 'Ese enlace es una guía de zona, no una ruta.',
+    'error.guide.body':
+      'Una guía de Komoot lista muchas rutas de una zona. Abre la que quieras y pega su enlace.',
     'error.notfound.title': 'Esa ruta no existe.',
     'error.notfound.body':
       'El enlace apunta a un identificador que el sitio no conoce. Compáralo con la barra de direcciones en la página de la ruta.',

@@ -19,12 +19,18 @@ class SourceError(Exception):
     `private`  the route exists but its track is not published
     `track`    the page loaded but carried no coordinates
     `network`  we never got an answer
+
+    `hint` narrows a code without adding one. A Komoot collection and an
+    unreadable domain are both `domain`, but only one of them can be explained,
+    and the explanation has to reach the visitor in their own language. The web
+    page translates the hint; the detail stays English, for the log.
     """
 
-    def __init__(self, code: str, detail: str = ""):
+    def __init__(self, code: str, detail: str = "", hint: Optional[str] = None):
         super().__init__(detail or code)
         self.code = code
         self.detail = detail
+        self.hint = hint
 
 
 @dataclass

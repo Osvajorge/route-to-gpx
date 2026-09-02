@@ -4,8 +4,10 @@ The parts that talk to Komoot and Wikiloc are exercised by
 `api/tests/test_live.py`, which is skipped unless you ask for it.
 """
 
+import pytest
+
 from api.core import gpx, twkb
-from api.sources import komoot, wikiloc
+from api.sources import SourceError, komoot, wikiloc
 
 
 def test_komoot_reads_the_tour_id_from_every_domain():
@@ -14,6 +16,66 @@ def test_komoot_reads_the_tour_id_from_every_domain():
     assert komoot.tour_id("https://www.komoot.de/smarttour/42") == "42"
     assert komoot.tour_id("https://www.komoot.com/discover") is None
 
+
+def test_komoot_reads_the_tour_id_from_every_link_shape():
+    # The shape a visitor reported as rejected: locale segment, a smart tour id
+    # with its "e" prefix, a slug and a query string, all in one link.
+    assert (
+        komoot.tour_id(
+            "https://www.komoot.com/es-es/smarttour/e1389649060/montee-au-tossal"
+            "-de-l-aliga-et-a-la-roca-salvatge-circuit-depuis-la-nouvelle-maison"
+            "-del-obac?openSendToDialog=true"
+        )
+        == "1389649060"
+    )
+    assert komoot.tour_id("https://www.komoot.com/smarttour/e1389649060") == "1389649060"
+    assert komoot.tour_id("https://www.komoot.com/smarttour/20807594") == "20807594"
+    assert komoot.tour_id("https://www.komoot.com/de-de/tour/1389649060/") == "1389649060"
+    assert komoot.tour_id("https://www.komoot.com/tour/1389649060#overview") == "1389649060"
+    assert komoot.tour_id("www.komoot.com/tour/1389649060") == "1389649060"
+    # The share link Komoot sends by mail, and the API address a curious visitor
+    # may have found. Same id space, different words in the path.
+    assert komoot.tour_id("https://www.komoot.com/invite-tour/1389649060") == "1389649060"
+    assert komoot.tour_id("https://api.komoot.de/v007/tours/1389649060") == "1389649060"
+    # Every Komoot page carries this in its markup. It is not a tour.
+    assert komoot.tour_id("https://www.komoot.com/images/tour/placeholder.webp") is None
+
+
+def test_komoot_keeps_the_two_id_spaces_apart():
+    """The "e" picks the endpoint, so dropping it hands back another route.
+
+    A bare /smarttour/ id is usually a valid /tour/ id as well, belonging to
+    somebody else, and that answers 200. Getting this wrong is silent.
+    """
+    assert komoot._link("https://www.komoot.com/smarttour/e1389649060") == (
+        "tour",
+        "1389649060",
+    )
+    assert komoot._link("https://www.komoot.com/smarttour/20807594") == (
+        "smart_tour",
+        "20807594",
+    )
+    assert komoot._link("https://www.komoot.com/tour/1389649060") == ("tour", "1389649060")
+
+
+def test_komoot_says_what_a_link_that_is_not_a_tour_actually_is(monkeypatch):
+    """A highlight, a collection and a guide are all rejected before any request."""
+
+    def never(url):
+        raise AssertionError(f"asked Komoot for {url} instead of reading the link")
+
+    monkeypatch.setattr(komoot, "fetch_json", never)
+
+    for url, expected in [
+        ("https://www.komoot.com/highlight/113497", "a single place"),
+        ("https://www.komoot.com/es-es/collection/1869707", "a list of tours"),
+        ("https://www.komoot.com/guide/12491", "a region guide"),
+    ]:
+        assert komoot.tour_id(url) is None
+        with pytest.raises(SourceError) as raised:
+            komoot.fetch(url)
+        assert raised.value.code == "domain"
+        assert expected in raised.value.detail
 
 def test_wikiloc_reads_the_trail_id_from_the_slug():
     assert (
@@ -172,3 +234,70 @@ def test_gpx_carries_its_own_provenance():
 def test_gpx_leaves_out_elevation_it_does_not_have():
     document = gpx.build([(1.0, 2.0, None), (1.1, 2.1, None)], name="No elevation")
     assert "<ele>" not in document
+
+
+def test_wikiloc_still_reads_the_old_link_shapes():
+    """The legacy links still work on Wikiloc, so they still work here.
+
+    The adapter never needs the id to fetch anything: it asks for the URL it was
+    given and reads the track out of the page. Refusing these was the gate
+    turning away links the rest of the adapter handles fine.
+    """
+    assert wikiloc.trail_id("https://www.wikiloc.com/wikiloc/view.do?id=8001213") == "8001213"
+    assert (
+        wikiloc.trail_id(
+            "https://www.wikiloc.com/wikiloc/spatialArtifacts.do?event=view&id=8001213"
+        )
+        == "8001213"
+    )
+
+
+def test_wikiloc_does_not_mistake_a_number_in_the_path_for_a_trail():
+    assert wikiloc.trail_id("https://www.wikiloc.com/user-12345/trails") is None
+    assert wikiloc.trail_id("https://www.wikiloc.com/outdoor-navigation-app") is None
+    assert wikiloc.trail_id("https://www.wikiloc.com/") is None
+
+
+def test_komoot_keeps_the_two_id_spaces_apart():
+    """A smart tour id is usually a valid tour id as well, belonging to somebody
+    else's route. Sending it to the wrong endpoint answers 200 with the wrong
+    mountain, so the prefix has to pick the endpoint."""
+    assert komoot._link("https://www.komoot.com/es-es/smarttour/e1389649060/slug") == (
+        "tour",
+        "1389649060",
+    )
+    assert komoot._link("https://www.komoot.com/smarttour/20807594") == (
+        "smart_tour",
+        "20807594",
+    )
+    assert komoot._link("https://www.komoot.com/tour/5000000") == ("tour", "5000000")
+    assert komoot._link("https://www.komoot.de/de-de/tour/5000000/embed") == (
+        "tour",
+        "5000000",
+    )
+    # Every Komoot page carries this in its markup. An unanchored match on
+    # "/tour/" would read it as a route.
+    assert komoot._link("https://www.komoot.com/images/tour/placeholder.webp") is None
+
+
+def test_komoot_names_the_link_the_visitor_actually_pasted():
+    for kind, url in [
+        ("highlight", "https://www.komoot.com/highlight/113497"),
+        ("collection", "https://www.komoot.com/es-es/collection/1869707"),
+        ("guide", "https://www.komoot.com/guide/12491"),
+    ]:
+        with pytest.raises(SourceError) as raised:
+            komoot.fetch(url)
+        assert raised.value.code == "domain"
+        # The hint is what the page translates; the detail is for the log.
+        assert raised.value.hint == kind
+        assert kind in raised.value.detail
+
+
+def test_komoot_reads_the_climb_under_either_name():
+    """A tour publishes `elevation_up`, a smart tour publishes `uphill`."""
+    assert komoot._first({"elevation_up": 429.7}, "elevation_up", "uphill") == 429.7
+    assert komoot._first({"uphill": 1126.1}, "elevation_up", "uphill") == 1126.1
+    # A flat route publishes 0.0, which is an answer and not a missing field.
+    assert komoot._first({"uphill": 0.0}, "elevation_up", "uphill") == 0.0
+    assert komoot._first({}, "elevation_up", "uphill") is None

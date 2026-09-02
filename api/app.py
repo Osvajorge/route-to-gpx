@@ -124,7 +124,13 @@ def convert(body: ConvertRequest, request: Request):
     except SourceError as error:
         status = 404 if error.code in ("notfound", "private") else 422
         return JSONResponse(
-            {"ok": False, "error": error.code, "detail": error.detail}, status_code=status
+            {
+                "ok": False,
+                "error": error.code,
+                "hint": error.hint,
+                "detail": error.detail,
+            },
+            status_code=status,
         )
     except BlockedHost as error:
         return JSONResponse(

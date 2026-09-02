@@ -16,12 +16,19 @@ import html
 import re
 import unicodedata
 from typing import Dict, Optional
+from urllib.parse import urlparse
 
 from . import Published, Route, SourceError
 from ..core import twkb
 from ..http import fetch_text
 
-TRAIL_ID = re.compile(r"-(\d+)(?:$|[/?#])")
+# The id is the last thing in the slug: /rutas-alpinismo/aneto-...-8001213.
+# Anchored to the end of the path, because an unanchored search over the whole
+# link also matches an id sitting in a username or a tracking parameter.
+TRAIL_ID_IN_PATH = re.compile(r"/[^/]*?-(\d+)/?$")
+# The old links still work and still carry the track, so they are still read:
+# /wikiloc/view.do?id=8001213 and /wikiloc/spatialArtifacts.do?event=view&id=...
+TRAIL_ID_IN_QUERY = re.compile(r"(?:^|&)id=(\d+)(?:&|$)")
 GEOM = re.compile(r'"geom"\s*:\s*"([A-Za-z0-9+/=]+)"')
 NAME = re.compile(r'"nom"\s*:\s*"([^"]+)"')
 STAT_ROW = re.compile(
@@ -47,7 +54,12 @@ UNIT_IN_METRES = {"km": 1000.0, "m": 1.0, "mi": 1609.344, "ft": 0.3048}
 
 
 def trail_id(url: str) -> Optional[str]:
-    found = TRAIL_ID.search(url.split("?")[0])
+    """The trail id, from the slug or from a legacy query string."""
+    parts = urlparse(url if "//" in url else f"//{url}")
+    found = TRAIL_ID_IN_PATH.search(parts.path)
+    if found:
+        return found.group(1)
+    found = TRAIL_ID_IN_QUERY.search(parts.query)
     return found.group(1) if found else None
 
 
@@ -55,7 +67,9 @@ def fetch(url: str) -> Route:
     identifier = trail_id(url)
     if not identifier:
         raise SourceError(
-            "domain", "a Wikiloc link ends in the trail id, as in ...-8001213"
+            "domain",
+            "that Wikiloc link is not a trail page. A trail link ends in its id, "
+            "as in /rutas-alpinismo/aneto-desde-artiga-de-lin-8001213",
         )
 
     status, page = fetch_text(url)

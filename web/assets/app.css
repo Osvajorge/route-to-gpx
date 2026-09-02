@@ -209,8 +209,22 @@ h1 {
   transition: border-color 0.18s var(--ease);
 }
 
+/* The link field is one control assembled from a prefix, an input and two
+ * buttons, so focus is shown on the container rather than on the piece that
+ * happens to hold it. */
 .field:focus-within {
   border-color: var(--accent);
+}
+
+/* Recolouring a 1px border is half the thickness WCAG 2.2 asks a focus
+ * indicator to have, so the container adds a ring of its own. The offset is 0
+ * so ring and border touch and read as one 3px edge; a gap would bring back
+ * the pair of nested rectangles this replaces. Only the input gets the ring:
+ * Paste and Convert draw their own, and ringing the whole field for them too
+ * would not say which of the three is focused. */
+.field:has(#route-url:focus) {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
 }
 
 .field-prefix {
@@ -228,6 +242,23 @@ h1 {
   color: var(--text);
   font-family: var(--font-mono);
   font-size: clamp(13.5px, 2.4vw, 15.5px);
+}
+
+/* The container above draws this input's focus ring. Left to itself the input
+ * draws a second one, and since it is transparent, borderless and sits well
+ * inside the field, that ring lands in open space and looks like a rectangle
+ * floating inside the box.
+ *
+ * Suppressed only where the replacement exists. The container's ring is a
+ * `:has()` rule, so a browser without `:has()` would drop the replacement and
+ * keep this suppression, leaving the input with no focus indicator at all. A
+ * spare rectangle is a cosmetic complaint; no indicator is a keyboard user
+ * losing their place. Written on :focus rather than :focus-visible so that
+ * browsers which ring a text field on plain focus are covered too. */
+@supports selector(:has(*)) {
+  #route-url:focus {
+    outline: none;
+  }
 }
 
 #route-url::placeholder {

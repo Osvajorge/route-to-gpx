@@ -84,6 +84,17 @@ function setStage(stage) {
   if (state.view === 'working') renderStages();
 }
 
+// Hints the service sends to narrow a `domain` failure. Each has its own
+// sentence in both languages; anything else falls back to the plain code, so a
+// new hint on the service can never leave the page with a missing string.
+const HINTS = new Set(['highlight', 'collection', 'guide']);
+
+function errorKeyFor(payload) {
+  if (!payload) return 'track';
+  if (payload.hint && HINTS.has(payload.hint)) return payload.hint;
+  return payload.error ?? 'track';
+}
+
 function fail(errorKey) {
   state.errorKey = errorKey;
   setView('error');
@@ -111,7 +122,7 @@ async function convertFromUrl(url) {
   }
 
   if (!payload || payload.ok !== true) {
-    return fail(payload?.error ?? 'track');
+    return fail(errorKeyFor(payload));
   }
 
   setStage(2);
