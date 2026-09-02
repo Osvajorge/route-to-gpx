@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+node_modules/
+.DS_Store
+*.gpx
+!web/test/fixtures/*.gpx

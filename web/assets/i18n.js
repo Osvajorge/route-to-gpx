@@ -1,0 +1,217 @@
+// English is the source language. Spanish is a full translation, not a
+// fallback: every key exists in both, and the toggle is remembered.
+//
+// House rule for both languages: say what the number means for the walk.
+// No motivation, no celebration, no jargon.
+
+export const LANGUAGES = ['en', 'es'];
+
+const STRINGS = {
+  en: {
+    'lang.name': 'English',
+    'lang.switch': 'Cambiar a español',
+
+    'doc.title': 'Route to GPX',
+    'skip.main': 'Skip to the link field',
+
+    'step1.heading': 'Get a GPX file, and the numbers behind it.',
+    'step1.sub':
+      'Paste a Komoot or Wikiloc link. We rebuild the track, measure it, and show you where the recording has holes.',
+    'field.prefix': 'URL',
+    'field.label': 'Route link',
+    'field.placeholder': 'Paste the route link here',
+    'action.paste': 'Paste',
+    'action.convert': 'Convert',
+    'action.converting': 'Working',
+    'action.example': 'Load an example',
+    'step1.hint':
+      'komoot.com/tour/… · wikiloc.com/trail/… · or drop a .gpx anywhere on this page',
+    'step1.drop': 'Drop the .gpx to measure it',
+
+    'stage.fetch': 'Reading the page',
+    'stage.extract': 'Extracting the track',
+    'stage.measure': 'Measuring',
+    'stage.fetch.active': 'request in flight',
+    'stage.extract.active': 'locating the coordinate block',
+    'stage.measure.active': 'ascent, gaps, spacing',
+    'stage.pending': 'waiting',
+    'stage.progress': 'Converting the route',
+
+    'error.domain.title': 'We do not recognise that link.',
+    'error.domain.body':
+      'We read komoot.com/tour/… and wikiloc.com/trail/…, and nothing else yet. If your route lives somewhere else, export its GPX there and drop the file on this page. We measure it exactly the same.',
+    'error.track.title': 'That page no longer carries the track where we expected it.',
+    'error.track.body':
+      'The page loaded and there is a map on it, but no coordinate block. Usually that means the route is private, or the site changed its format. Open the route, export the GPX there, and drop the file here.',
+    'error.private.title': 'That route is private.',
+    'error.private.body':
+      'Its owner has not published the track, so there is nothing for us to read. If it is your own route, export the GPX from your account and drop the file here.',
+    'error.notfound.title': 'That route does not exist.',
+    'error.notfound.body':
+      'The link points at an ID the site does not know. Check it against the address bar on the route page itself.',
+    'error.file.title': 'That file is not a GPX track.',
+    'error.file.body':
+      'We opened it and found no track points. GPX exported from a watch or a route planner will work; a KML, a FIT or a screenshot will not.',
+    'error.network.title': 'We could not reach the source site.',
+    'error.network.body':
+      'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site and drop the file here.',
+
+    'step2.download': 'Download GPX',
+    'step2.reset': 'New link',
+    'measure.distance': 'Distance',
+    'measure.ascent': 'Ascent',
+    'measure.gap': 'Largest gap',
+    'measure.rawAscent': 'Raw ascent',
+    'measure.points': 'Points',
+    'measure.spacing': 'Mean spacing',
+    'measure.elevation': 'Elevation',
+    'compare.matches': 'matches',
+    'compare.source': 'source',
+    'compare.notPublished': 'not published by the source',
+    'gap.at': 'at km {km}',
+    'gap.threshold': 'threshold {threshold} m',
+    'gap.none': 'no gap over {threshold} m',
+
+    'chart.trace': 'Route trace',
+    'chart.profile': 'Elevation profile',
+    'chart.start': 'start / finish',
+    'chart.gapDrawn': 'gap drawn straight',
+    'chart.noData': 'no data',
+    'chart.gapLabel': 'gap {gap} m',
+
+    'warning.gap':
+      '{gap} m unrecorded at km {km}. Your watch will cut straight across. Check that stretch before you go.',
+
+    'provenance':
+      'The original link is written into the file, in <code>&lt;metadata&gt;&lt;link&gt;</code> and in the track name.',
+    'provenance.file': '{name} · {size}',
+    'source.line': '{source} · read {when}',
+    'when.today': 'today',
+
+    'footer.processing.file':
+      'GPX files you drop are read in this browser and never uploaded.',
+    'footer.processing.url':
+      'Links are fetched by our server, because a browser is not allowed to read another site directly. The page is parsed, measured and thrown away. Nothing is stored, and there are no accounts.',
+    'footer.source': 'Source code',
+  },
+
+  es: {
+    'lang.name': 'Español',
+    'lang.switch': 'Switch to English',
+
+    'doc.title': 'Ruta a GPX',
+    'skip.main': 'Ir al campo del enlace',
+
+    'step1.heading': 'Consigue el GPX, y los números que hay detrás.',
+    'step1.sub':
+      'Pega un enlace de Komoot o de Wikiloc. Reconstruimos el track, lo medimos y te enseñamos dónde tiene agujeros la grabación.',
+    'field.prefix': 'URL',
+    'field.label': 'Enlace de la ruta',
+    'field.placeholder': 'Pega aquí el enlace de la ruta',
+    'action.paste': 'Pegar',
+    'action.convert': 'Convertir',
+    'action.converting': 'Trabajando',
+    'action.example': 'Cargar un ejemplo',
+    'step1.hint':
+      'komoot.com/tour/… · wikiloc.com/trail/… · o suelta un .gpx en cualquier punto de la página',
+    'step1.drop': 'Suelta el .gpx para medirlo',
+
+    'stage.fetch': 'Leyendo la página',
+    'stage.extract': 'Extrayendo el track',
+    'stage.measure': 'Midiendo',
+    'stage.fetch.active': 'petición en curso',
+    'stage.extract.active': 'buscando el bloque de coordenadas',
+    'stage.measure.active': 'desnivel, saltos, espaciado',
+    'stage.pending': 'en espera',
+    'stage.progress': 'Convirtiendo la ruta',
+
+    'error.domain.title': 'No reconocemos ese enlace.',
+    'error.domain.body':
+      'Leemos komoot.com/tour/… y wikiloc.com/trail/…, y de momento nada más. Si tu ruta vive en otro sitio, exporta allí el GPX y suelta el fichero en esta página. Lo medimos exactamente igual.',
+    'error.track.title': 'Esa página ya no lleva el track donde lo esperábamos.',
+    'error.track.body':
+      'La página cargó y tiene un mapa, pero no hay bloque de coordenadas. Suele significar que la ruta es privada, o que el sitio cambió de formato. Abre la ruta, exporta allí el GPX y suelta el fichero aquí.',
+    'error.private.title': 'Esa ruta es privada.',
+    'error.private.body':
+      'Quien la subió no ha publicado el track, así que no hay nada que leer. Si es tuya, exporta el GPX desde tu cuenta y suelta el fichero aquí.',
+    'error.notfound.title': 'Esa ruta no existe.',
+    'error.notfound.body':
+      'El enlace apunta a un identificador que el sitio no conoce. Compáralo con la barra de direcciones en la página de la ruta.',
+    'error.file.title': 'Ese fichero no es un track GPX.',
+    'error.file.body':
+      'Lo abrimos y no tiene puntos de track. Sirve un GPX exportado de un reloj o de un planificador; no sirve un KML, un FIT ni una captura.',
+    'error.network.title': 'No pudimos llegar al sitio de origen.',
+    'error.network.body':
+      'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suelta el fichero aquí.',
+
+    'step2.download': 'Descargar GPX',
+    'step2.reset': 'Otro enlace',
+    'measure.distance': 'Distancia',
+    'measure.ascent': 'Desnivel positivo',
+    'measure.gap': 'Salto mayor',
+    'measure.rawAscent': 'Desnivel crudo',
+    'measure.points': 'Puntos',
+    'measure.spacing': 'Espaciado medio',
+    'measure.elevation': 'Altitud',
+    'compare.matches': 'coincide',
+    'compare.source': 'origen',
+    'compare.notPublished': 'el origen no lo publica',
+    'gap.at': 'en el km {km}',
+    'gap.threshold': 'umbral {threshold} m',
+    'gap.none': 'ningún salto de más de {threshold} m',
+
+    'chart.trace': 'Trazado',
+    'chart.profile': 'Perfil de altitud',
+    'chart.start': 'salida / llegada',
+    'chart.gapDrawn': 'salto dibujado recto',
+    'chart.noData': 'sin datos',
+    'chart.gapLabel': 'salto de {gap} m',
+
+    'warning.gap':
+      '{gap} m sin grabar en el km {km}. Tu reloj trazará una recta por ahí. Mira ese tramo antes de ir.',
+
+    'provenance':
+      'El enlace original queda escrito en el fichero, en <code>&lt;metadata&gt;&lt;link&gt;</code> y en el nombre del track.',
+    'provenance.file': '{name} · {size}',
+    'source.line': '{source} · leído {when}',
+    'when.today': 'hoy',
+
+    'footer.processing.file':
+      'Los GPX que sueltas se leen en este navegador y no se suben a ningún sitio.',
+    'footer.processing.url':
+      'Los enlaces los descarga nuestro servidor, porque un navegador no puede leer otra web directamente. La página se analiza, se mide y se descarta. No se guarda nada y no hay cuentas.',
+    'footer.source': 'Código fuente',
+  },
+};
+
+const STORAGE_KEY = 'route-to-gpx:lang';
+
+export function detectLanguage() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (LANGUAGES.includes(stored)) return stored;
+  } catch {
+    // Private windows and blocked site data both land here. English is fine.
+  }
+  return 'en';
+}
+
+export function rememberLanguage(lang) {
+  try {
+    localStorage.setItem(STORAGE_KEY, lang);
+  } catch {
+    // Not being able to remember the choice is not worth an error.
+  }
+}
+
+/** Looks up `key` in `lang`, filling {placeholders} from `values`. */
+export function translate(lang, key, values) {
+  const table = STRINGS[lang] || STRINGS.en;
+  let text = table[key] ?? STRINGS.en[key] ?? key;
+  if (values) {
+    for (const [name, value] of Object.entries(values)) {
+      text = text.replaceAll(`{${name}}`, value);
+    }
+  }
+  return text;
+}
