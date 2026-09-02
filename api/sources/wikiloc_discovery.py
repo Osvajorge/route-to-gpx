@@ -294,18 +294,36 @@ def search(
     limit: Optional[Any] = None,
     page: Optional[Any] = None,
     windows: int = FILTER_WINDOWS,
+    near: Optional[Tuple[Any, Any]] = None,
 ) -> Listing:
-    """Words in, links out. Two upstream calls, and never a third.
+    """Words in, links out.
 
-    The place search is the first and `find.do` is the second, which is exactly
-    the fan-out ceiling in `api/http.py`. Nothing else may be added to this
-    path without that ceiling being raised on purpose.
+    Two upstream calls when the place has to be looked up, and one when it does
+    not, which is what `near` is for.
+
+    THE PLACE IS THE WHOLE PROBLEM WITH THIS SURFACE. Wikiloc searches a box,
+    so words have to become a box, and the geocoder is asked to guess which
+    place the words meant. It guesses badly: `montserrat` returns a village in
+    Valencia before the mountain in Catalonia, which is 300 km away, so a
+    merged answer would put routes from two different places in one list with
+    nothing saying so.
+
+    So the guess is never hidden. The place actually used is echoed, the
+    alternatives come back in `places`, and a caller that already knows which
+    one the visitor meant passes `near` and no guessing happens at all.
     """
     text = _query_text(query)
     chosen = _activity(activity)
     size = _clamp(limit, 1, LIMIT_MAX, LIMIT_DEFAULT)
     number = _clamp(page, 0, PAGE_MAX, 0)
     echo = {"query": text, "sport": chosen, "limit": size, "page": number}
+
+    chosen_point = _point(near)
+    if chosen_point is not None:
+        # Somebody already said which place they meant, so nothing is guessed
+        # and the geocoder is not asked. One call instead of two.
+        here = Place(name=text, lat=chosen_point[0], lng=chosen_point[1])
+        return _look(here, None, text, chosen, size, number, windows, places=[])
 
     found = _geocode(text)
     if not found:
@@ -324,7 +342,33 @@ def search(
             set_aside={"otherActivity": 0, "outsideRadius": 0},
         )
 
+    # The first answer, because there is nothing better to go on, but never
+    # silently: the caller is told which one was used and what the others were.
     place, extent = found[0]
+    return _look(
+        place,
+        extent,
+        text,
+        chosen,
+        size,
+        number,
+        windows,
+        places=[each for each, _ in found][:PLACES_MAX],
+    )
+
+
+def _look(
+    place: Place,
+    extent: Optional[Tuple[float, float, float, float]],
+    text: str,
+    chosen: str,
+    size: int,
+    number: int,
+    windows: int,
+    places: List[Place],
+) -> Listing:
+    """One place, read."""
+    echo = {"query": text, "sport": chosen, "limit": size, "page": number}
     southwest, northeast = _place_box(place, extent)
     payload = _answer(_find_url(southwest, northeast, number, size), SOURCE_LABEL)
     spas = _spas(payload)
@@ -335,9 +379,15 @@ def search(
     return Listing(
         source_id=SOURCE_ID,
         source_label=SOURCE_LABEL,
-        echo={**echo, "box": _box_as_dict(southwest, northeast)},
+        echo={
+            **echo,
+            "box": _box_as_dict(southwest, northeast),
+            # Which place these rows are from. Without it a list of routes in
+            # Valencia looks exactly like a list of routes in Catalonia.
+            "place": {"name": place.name, "lat": place.lat, "lng": place.lng},
+        },
         rows=rows,
-        places=[each for each, _ in found][:PLACES_MAX],
+        places=places,
         attribution=ATTRIBUTION,
         # A full window is the evidence there is more, and it is counted before
         # our own filtering: a short page after filtering says nothing about
@@ -557,6 +607,20 @@ def _box(
     west = max(-180.0, longitude - half_lng)
     east = min(180.0, longitude + half_lng)
     return (south, west), (north, east)
+
+
+def _point(near: Optional[Tuple[Any, Any]]) -> Optional[Tuple[float, float]]:
+    """A caller's chosen point, or nothing. Bad numbers are nothing, not an
+    error: the words are still a question worth answering by other means."""
+    if not near:
+        return None
+    try:
+        lat, lng = float(near[0]), float(near[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return lat, lng
 
 
 def _place_box(

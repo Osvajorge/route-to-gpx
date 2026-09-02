@@ -307,6 +307,12 @@ def search(
         limit=half,
         page=page,
         windows=SEARCH_WINDOWS,
+        # The same point Komoot was biased towards, so both sites answer about
+        # the same place. Without it Wikiloc geocodes the words on its own and
+        # the two halves can be 300 km apart: `montserrat` gives Komoot the
+        # mountain in Catalonia and the geocoder a village in Valencia, and one
+        # interleaved list would show both with nothing saying so.
+        near=near,
     )
 
     echo = {
@@ -320,6 +326,11 @@ def search(
         echo,
         size,
     )
+    # Which place each half is about. Only Wikiloc has to resolve one, so this
+    # is what lets a page say "Wikiloc looked near Montserrat, Valencia" and
+    # offer the others, instead of quietly mixing two valleys into one list.
+    if wikiloc_got is not None and wikiloc_got.echo.get("place"):
+        listing.echo["placeUsed"] = wikiloc_got.echo["place"]
     # Only Komoot geocodes as a side effect of searching, so its places are the
     # ones there are. Wikiloc's came from Photon and are the same places.
     for got in (komoot_got, wikiloc_got):
