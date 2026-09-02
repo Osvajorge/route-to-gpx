@@ -1,16 +1,26 @@
 import {
   activityWord,
   cardFigures,
-  cardImage,
+  cardTrace,
   durationParts,
+  sourceOwnWord,
   starPortion,
   updatedMonth,
 } from './cards.js';
 import {
+  activityChoices,
   appendPage,
   catalogueFrom,
   claimSentence,
-  sourcesFrom,
+  nearbyRequest,
+  placeAtPoint,
+  placeChoices,
+  pointHonoured,
+  samePoint,
+  searchRequest,
+  sourceChosen,
+  sourcesMissing,
+  sourcesOffered,
   sportAfterSource,
 } from './discovery.js';
 import { detectLanguage, rememberLanguage, translate } from './i18n.js';
@@ -23,12 +33,24 @@ import {
   TrackError,
 } from './measure.js';
 import {
+  fitFrame,
   indexAtDistance,
   nearestOnTrace,
+  projectInFrame,
   renderProfile,
   renderTrace,
   tileLayer,
 } from './charts.js';
+import { closeDialog, dialogIsOpen, openDialog } from './modal.js';
+import {
+  arrange,
+  changedFileName,
+  countTimes,
+  LOOP_CEILING_M,
+  LOOP_FLOOR_M,
+  loopCheck,
+  ringLength,
+} from './rotate.js';
 
 // Where the link-fetching service lives. A browser cannot read another site
 // directly, so links go through this; dropped files never do.
@@ -153,9 +175,18 @@ function fail(errorKey) {
   setView('error');
 }
 
-async function convertFromUrl(url) {
+/** Fetches one link, rebuilds the track and measures it. Hands back the
+ *  result, or null when something went wrong and the error panel is already
+ *  saying what.
+ *
+ *  Where the result ends up is the caller's business: the link field puts it on
+ *  the report, and a card puts it in a dialog without moving the list. */
+async function convertRoute(url) {
   const source = classifyLink(url);
-  if (!source || source.id === 'file') return fail('domain');
+  if (!source || source.id === 'file') {
+    fail('domain');
+    return null;
+  }
 
   state.url = url;
   state.errorKey = null;
@@ -171,11 +202,13 @@ async function convertFromUrl(url) {
     });
     payload = await response.json();
   } catch {
-    return fail('network');
+    fail('network');
+    return null;
   }
 
   if (!payload || payload.ok !== true) {
-    return fail(errorKeyFor(payload));
+    fail(errorKeyFor(payload));
+    return null;
   }
 
   setStage(2);
@@ -185,13 +218,14 @@ async function convertFromUrl(url) {
   try {
     track = parseGpx(payload.gpx);
   } catch {
-    return fail('track');
+    fail('track');
+    return null;
   }
 
   setStage(3);
   await yieldToPaint();
 
-  showReport({
+  return makeResult({
     track,
     gpxText: payload.gpx,
     published: payload.published ?? null,
@@ -200,17 +234,35 @@ async function convertFromUrl(url) {
   });
 }
 
+async function convertFromUrl(url) {
+  const result = await convertRoute(url);
+  if (result) showReport(result);
+}
+
+/** A card asked for a dialog. Same conversion, but the list stays where it was:
+ *  pressing map on the fourth of nine routes and finding the other eight gone
+ *  is what makes a list not worth using. */
+async function convertForDialog(url, open, opener) {
+  const result = await convertRoute(url);
+  if (!result) return;
+  setView('idle');
+  open(result, opener);
+}
+
 /** The file, handed to the browser. One place, because two buttons ask for it:
  *  the one on the report and the one on every card. */
-function downloadResult() {
-  if (!state.result) return;
-  const { gpxText, fileName } = state.result;
-  const url = URL.createObjectURL(new Blob([gpxText], { type: 'application/gpx+xml' }));
+function handOverFile(text, fileName) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/gpx+xml' }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadResult() {
+  if (!state.result) return;
+  handOverFile(state.result.gpxText, state.result.fileName);
 }
 
 /** What a card's GPX button does: the same conversion the link field runs, and
@@ -254,7 +306,7 @@ async function convertFromFile(file) {
   await yieldToPaint();
 
   const base = file.name.replace(/\.gpx$/i, '');
-  showReport({
+  showReport(makeResult({
     track,
     gpxText: text,
     published: null,
@@ -262,13 +314,19 @@ async function convertFromFile(file) {
     // language switch reaches it like every other string on the page.
     source: { id: 'file', title: track.name || base, url: null },
     fileName: `${base}-checked.gpx`,
-  });
+  }));
 }
 
-function showReport({ track, gpxText, published, source, fileName }) {
+/** One converted route: the track, our measurement of it, the file we would
+ *  hand over, and where it came from.
+ *
+ *  The report holds one of these and so does each dialog, separately. A dialog
+ *  opened from a card must never read the report's: the two can be different
+ *  routes at the same moment. */
+function makeResult({ track, gpxText, published, source, fileName }) {
   const measurements = measure(track, DEFAULT_GAP_THRESHOLD_M);
   const rebuilt = source.url ? buildGpx(track, source) : gpxText;
-  state.result = {
+  return {
     track,
     measurements,
     published,
@@ -277,6 +335,10 @@ function showReport({ track, gpxText, published, source, fileName }) {
     gpxText: rebuilt,
     sizeBytes: new Blob([rebuilt]).size,
   };
+}
+
+function showReport(result) {
+  state.result = result;
   state.hover = null;
   setView('report');
 }
@@ -288,7 +350,7 @@ function reset() {
   state.result = null;
   state.hover = null;
   // The painted ground belongs to the route that is being left behind.
-  hideBasemap();
+  hideBasemap(surfaces.trace);
   setView('idle');
 }
 
@@ -317,6 +379,7 @@ function render() {
   renderStages();
   renderError();
   renderReport();
+  renderDialogs();
   renderFooter();
 }
 
@@ -409,42 +472,17 @@ function renderReport() {
     when: t('when.today'),
   });
   el.downloadButton.innerHTML = `${icon('download')}<span>${t('step2.download')}</span>`;
+  el.reportAdjust.innerHTML = icon('sliders');
+  el.reportAdjust.title = t('card.adjust');
+  el.reportAdjust.setAttribute('aria-label', t('card.adjust'));
   el.resetButton.innerHTML = `${icon('back')}<span>${t('step2.reset')}</span>`;
 
-  el.tiles.innerHTML = `
-    ${tile(
-      t('measure.distance'),
-      formatKm(measurements.distanceM),
-      'km',
-      comparison(measurements.distanceM, published?.distanceM ?? null, 'km', 2),
-      false,
-    )}
-    ${tile(
-      t('measure.ascent'),
-      formatNumber(measurements.ascentM),
-      'm',
-      comparison(measurements.ascentM, published?.ascentM ?? null, 'm', 0),
-      false,
-    )}
-    ${tile(
-      t('measure.gap'),
-      formatNumber(measurements.largestGapM),
-      'm',
-      warn
-        ? `${t('gap.at', { km: formatKm(measurements.largestGapAtM, 1) })} · ${t('gap.threshold', { threshold: measurements.gapThresholdM })}`
-        : t('gap.none', { threshold: measurements.gapThresholdM }),
-      warn,
-    )}`;
+  el.tiles.innerHTML = measuredTiles(measurements, published);
 
   renderCharts();
 
   el.warning.hidden = !warn;
-  if (warn) {
-    el.warning.innerHTML = `${icon('warning', 'icon-warning')}<p>${t('warning.gap', {
-      gap: formatNumber(measurements.largestGapM),
-      km: formatKm(measurements.largestGapAtM, 1),
-    })}</p>`;
-  }
+  if (warn) el.warning.innerHTML = gapWarningMarkup(measurements);
 
   const elevation =
     measurements.elevationMinM === null
@@ -456,10 +494,17 @@ function renderReport() {
     ${measureRow(t('measure.spacing'), `${formatNumber(measurements.meanSpacingM, 1)} m`)}
     ${measureRow(t('measure.elevation'), elevation)}`;
 
-  el.provenance.innerHTML = `${t('provenance')}<br><span class="provenance-file">${t(
-    'provenance.file',
-    { name: fileName, size: formatBytes(sizeBytes) },
-  )}</span>`;
+  // A converted link is rebuilt here, so the link goes into the file and the
+  // sentence is about that. A dropped file is handed back exactly as it
+  // arrived: nothing is written into it, and there is no original link to
+  // write. The sentence about provenance would be false precisely where there
+  // is no provenance to keep, so the other one is said instead.
+  el.provenance.innerHTML = `${
+    source.url ? t('provenance') : t('provenance.none')
+  }<br><span class="provenance-file">${t('provenance.file', {
+    name: fileName,
+    size: formatBytes(sizeBytes),
+  })}</span>`;
 }
 
 function tile(label, value, unit, note, warn) {
@@ -474,35 +519,120 @@ function measureRow(label, value) {
   return `<div class="measure-row"><dt>${label}</dt><dd>${value}</dd></div>`;
 }
 
+/** The three headline figures, ours, with the source's own beside each where
+ *  the source published one. Written once and used on the report and in the
+ *  preview dialog, so the two can never drift into saying different things
+ *  about the same file. */
+function measuredTiles(measurements, published) {
+  const warn = measurements.gapExceedsThreshold;
+  return `
+    ${tile(
+      t('measure.distance'),
+      formatKm(measurements.distanceM),
+      'km',
+      comparison(measurements.distanceM, published?.distanceM ?? null, 'km', 2),
+      false,
+    )}
+    ${tile(
+      t('measure.ascent'),
+      formatNumber(measurements.ascentM),
+      'm',
+      comparison(measurements.ascentM, published?.ascentM ?? null, 'm', 0),
+      false,
+    )}
+    ${tile(t('measure.gap'), formatNumber(measurements.largestGapM), 'm', gapNote(measurements), warn)}`;
+}
+
+function gapNote(measurements) {
+  return measurements.gapExceedsThreshold
+    ? `${t('gap.at', { km: formatKm(measurements.largestGapAtM, 1) })} · ${t('gap.threshold', {
+        threshold: measurements.gapThresholdM,
+      })}`
+    : t('gap.none', { threshold: measurements.gapThresholdM });
+}
+
+function gapWarningMarkup(measurements) {
+  return `${icon('warning', 'icon-warning')}<p>${t('warning.gap', {
+    gap: formatNumber(measurements.largestGapM),
+    km: formatKm(measurements.largestGapAtM, 1),
+  })}</p>`;
+}
+
 // --------------------------------------------------------------------- charts
 
+// Three figures on this page draw a route trace, and they are the same
+// drawing: the report's, the preview dialog's, and the re-arranger's. Each one
+// gets a surface, which is the figure plus what it last drew and what it has in
+// flight. They are kept apart because a dialog opening over the report must not
+// be able to cancel the report's own map halfway through painting it.
 let chartData = null;
+const surfaces = {};
 
 // Only the tick counts differ across the breakpoint, so this is read once and
 // the charts are rebuilt when it actually flips, not on every resize event.
 const compactQuery = window.matchMedia('(max-width: 640px)');
 let compactCharts = compactQuery.matches;
 
-function renderCharts() {
-  const { track, measurements } = state.result;
-  const trace = renderTrace(track.points, measurements, t);
-  const profile = renderProfile(track.points, measurements, t, { compact: compactCharts });
-  chartData = { trace, profile };
+function chartSurface(figure) {
+  return {
+    figure,
+    canvas: figure.querySelector('.chart-canvas'),
+    svg: figure.querySelector('.chart-svg'),
+    map: figure.querySelector('.chart-map'),
+    credit: figure.querySelector('.chart-attribution'),
+    gapLabel: figure.querySelector('.gap-label'),
+    toggle: figure.querySelector('[data-map-toggle]'),
+    drawn: null,
+    measurements: null,
+    key: '',
+    token: 0,
+  };
+}
 
-  el.traceFigure.querySelector('.chart-title').textContent = t('chart.trace');
-  el.traceFigure.querySelector('.chart-svg').innerHTML = trace.svg;
-  el.traceFigure.querySelector('.chart-caption').innerHTML = measurements.gapExceedsThreshold
+/** Whether something is actually on the screen. A closed dialog is still in the
+ *  document, and so is the report while the list is showing, so asking the
+ *  element itself is the only reliable question. */
+function onScreen(node) {
+  return node.offsetParent !== null;
+}
+
+function liveTraceSurfaces() {
+  return [surfaces.trace, surfaces.preview, surfaces.rotate].filter((surface) =>
+    onScreen(surface.figure),
+  );
+}
+
+/** One trace, drawn into one figure, with the ground under it. */
+function drawTrace(surface, points, measurements) {
+  const drawn = renderTrace(points, measurements, t);
+  surface.drawn = drawn;
+  surface.measurements = measurements;
+  surface.svg.innerHTML = drawn.svg;
+  surface.figure.querySelector('.chart-title').textContent = t('chart.trace');
+  surface.figure.querySelector('.chart-caption').innerHTML = measurements.gapExceedsThreshold
     ? `<span>${t('chart.start')}</span><span class="caption-warn">${t('chart.gapDrawn')}</span>`
     : `<span>${t('chart.start')}</span>`;
-  el.mapToggle.textContent = basemapOn ? t('map.hide') : t('map.show');
-  el.traceCredit.innerHTML = t('map.attribution');
+  if (surface.toggle) surface.toggle.textContent = basemapOn ? t('map.hide') : t('map.show');
+  surface.credit.innerHTML = t('map.attribution');
+  positionGapLabel(surface);
+  paintBasemap(surface);
+  return drawn;
+}
 
-  el.profileFigure.querySelector('.chart-title').textContent = t('chart.profile');
-  el.profileFigure.querySelector('.chart-svg').innerHTML = profile.svg;
-  renderAxes(profile.axis);
+function drawProfile(figure, points, measurements) {
+  const profile = renderProfile(points, measurements, t, { compact: compactCharts });
+  figure.querySelector('.chart-title').textContent = t('chart.profile');
+  figure.querySelector('.chart-svg').innerHTML = profile.svg;
+  renderAxes(figure, profile.axis, measurements);
+  return profile;
+}
 
-  positionGapLabel();
-  paintBasemap();
+function renderCharts() {
+  const { track, measurements } = state.result;
+  chartData = {
+    trace: drawTrace(surfaces.trace, track.points, measurements),
+    profile: drawProfile(el.profileFigure, track.points, measurements),
+  };
 }
 
 /** The profile's axis numbers, written into the gutters either side of the
@@ -514,8 +644,7 @@ function renderCharts() {
  *  gap label, so the list arrives ready to print. It also hands over the step
  *  it used, which is why that is not measured from the ticks here: the dropped
  *  one would make the step look twice its size. */
-function renderAxes(axis) {
-  const { measurements } = state.result;
+function renderAxes(figure, axis, measurements) {
   const step = axis.stepM;
   // Enough decimals to tell one tick from the next, and no more: 5 km steps
   // read 5, 10, 15, and 250 m steps read 0.25, 0.5, 0.75.
@@ -542,9 +671,9 @@ function renderAxes(axis) {
       ),
     );
   }
-  el.axisX.innerHTML = marks.join('');
+  figure.querySelector('.axis-x').innerHTML = marks.join('');
 
-  el.axisY.innerHTML = axis.y
+  figure.querySelector('.axis-y').innerHTML = axis.y
     .map((tick, index) =>
       axisLabel(
         // The top height carries the unit. It has the sky to itself, and it is
@@ -565,19 +694,20 @@ function axisLabel(text, fraction, className = '') {
 
 /** The gap label is HTML over the SVG, not <text> inside it: text in the SVG
  *  namespace scales with the viewBox and becomes unreadable on a phone. */
-function positionGapLabel() {
-  const { measurements } = state.result;
-  const label = el.traceFigure.querySelector('.gap-label');
-  if (!measurements.gapExceedsThreshold || !chartData.trace.gapAnchor) {
+function positionGapLabel(surface) {
+  const label = surface.gapLabel;
+  const measurements = surface.measurements;
+  const drawn = surface.drawn;
+  if (!label || !drawn) return;
+  if (!measurements?.gapExceedsThreshold || !drawn.gapAnchor) {
     label.hidden = true;
     return;
   }
-  const canvas = el.traceFigure.querySelector('.chart-canvas');
-  const { width, height } = canvas.getBoundingClientRect();
-  const { w, h } = chartData.trace.viewBox;
+  const { width, height } = surface.canvas.getBoundingClientRect();
+  const { w, h } = drawn.viewBox;
   const k = Math.min(width / w, height / h);
-  const left = (width - w * k) / 2 + chartData.trace.gapAnchor.x * k;
-  const top = (height - h * k) / 2 + chartData.trace.gapAnchor.y * k;
+  const left = (width - w * k) / 2 + drawn.gapAnchor.x * k;
+  const top = (height - h * k) / 2 + drawn.gapAnchor.y * k;
 
   label.hidden = false;
   label.textContent = t('chart.gapLabel', {
@@ -621,8 +751,6 @@ const tileCache = new Map();
 const MAX_TILE_STRETCH = 4;
 
 let basemapOn = readBasemapChoice();
-let basemapToken = 0;
-let basemapKey = '';
 
 function readBasemapChoice() {
   try {
@@ -696,25 +824,26 @@ function loadTile(url) {
 
 /** Back to the drawing on its own, which is exactly what the page was before
  *  the map existed. Bumping the token abandons anything still in the air. */
-function hideBasemap() {
-  basemapKey = '';
-  basemapToken++;
-  if (!el.traceMap) return;
-  el.traceMap.hidden = true;
-  el.traceCredit.hidden = true;
-  delete el.traceCanvas.dataset.map;
+function hideBasemap(surface) {
+  if (!surface) return;
+  surface.key = '';
+  surface.token++;
+  if (!surface.map) return;
+  surface.map.hidden = true;
+  surface.credit.hidden = true;
+  delete surface.canvas.dataset.map;
 }
 
-async function paintBasemap() {
-  if (!basemapOn || basemapBlocked || !chartData || state.view !== 'report') {
-    hideBasemap();
+async function paintBasemap(surface) {
+  const frame = surface?.drawn?.frame;
+  if (!basemapOn || basemapBlocked || !frame || !onScreen(surface.figure)) {
+    hideBasemap(surface);
     return;
   }
 
-  const rect = el.traceCanvas.getBoundingClientRect();
+  const rect = surface.canvas.getBoundingClientRect();
   if (rect.width < 2 || rect.height < 2) return;
 
-  const frame = chartData.trace.frame;
   const layer = tileLayer(frame, {
     width: rect.width,
     height: rect.height,
@@ -725,7 +854,7 @@ async function paintBasemap() {
   if (layer.tileShrink > MAX_TILE_STRETCH) {
     // A recording that barely moved. One tile stretched over the whole plate is
     // worse than no ground at all.
-    hideBasemap();
+    hideBasemap(surface);
     return;
   }
 
@@ -740,21 +869,21 @@ async function paintBasemap() {
     layer.backing.width,
     layer.backing.height,
   ].join();
-  if (key === basemapKey) return;
-  basemapKey = key;
-  const token = ++basemapToken;
+  if (key === surface.key) return;
+  surface.key = key;
+  const token = ++surface.token;
 
   const images = await Promise.all(layer.tiles.map((tile) => loadTile(tileUrl(tile))));
   // The window moved, the language changed or the map was switched off while
   // these were in the air. Whatever is on screen now belongs to someone else.
-  if (token !== basemapToken) return;
+  if (token !== surface.token) return;
 
   // A frame goes on whole or not at all. A part-covered plate leaves holes
   // under the track, and on this page a hole in the ground is what "the
   // recording is missing here" looks like. It must not be able to mean
   // "a tile did not load".
   if (basemapBlocked || images.some((image) => image === null)) {
-    hideBasemap();
+    hideBasemap(surface);
     return;
   }
 
@@ -763,11 +892,11 @@ async function paintBasemap() {
   buffer.width = layer.backing.width;
   buffer.height = layer.backing.height;
   const compose = buffer.getContext('2d');
-  const target = el.traceMap.getContext('2d');
+  const target = surface.map.getContext('2d');
   // A browser that has run out of canvas memory hands back null. Nothing to
   // draw on is the same outcome as nothing to draw: the chart on its own.
   if (!compose || !target) {
-    hideBasemap();
+    hideBasemap(surface);
     return;
   }
   layer.tiles.forEach((tile, index) => {
@@ -776,7 +905,7 @@ async function paintBasemap() {
     compose.drawImage(images[index], tile.left, tile.top, tile.width, tile.height);
   });
 
-  const canvas = el.traceMap;
+  const canvas = surface.map;
   // The trace SVG keeps its aspect ratio and is letterboxed inside the canvas.
   // The plate is that same rectangle, so the map cannot sit off register from
   // the track.
@@ -791,15 +920,19 @@ async function paintBasemap() {
 
   // The credit appears only now. Attribution for a map that did not load would
   // be a false statement, and the licence asks for the opposite.
-  el.traceCredit.hidden = false;
-  el.traceCanvas.dataset.map = 'on';
+  surface.credit.hidden = false;
+  surface.canvas.dataset.map = 'on';
 }
 
+/** One choice, kept for every drawing on the page. A visitor who switched the
+ *  ground off on the report has switched it off in the dialogs too. */
 function toggleBasemap() {
   basemapOn = !basemapOn;
   rememberBasemapChoice(basemapOn);
-  el.mapToggle.textContent = basemapOn ? t('map.hide') : t('map.show');
-  paintBasemap();
+  for (const surface of liveTraceSurfaces()) {
+    if (surface.toggle) surface.toggle.textContent = basemapOn ? t('map.hide') : t('map.show');
+    paintBasemap(surface);
+  }
 }
 
 /** Turns the ground back on, for a visitor who asked for the map by name.
@@ -876,20 +1009,340 @@ function renderFooter() {
   // Four separate facts, in the order the visitor meets them: the file never
   // leaves, the link is fetched by us, and two things are fetched straight from
   // somebody else. Those last two are not optional dressing: they are the only
-  // requests this page makes that our server never sees, and the second of them
-  // is new with the cards. A Komoot card shows Komoot's drawing of the route,
-  // which means Komoot's image server is handed the visitor's address before
-  // they have pressed anything. A Wikiloc card shows no picture, so no such
-  // request is made, and the sentence says both halves.
+  // requests this page makes that our server never sees.
+  //
+  // The typefaces are named because they are the earliest of the four: the
+  // stylesheet is in the head, so the visitor's browser has already spoken to
+  // Google before a word of this page is on screen and before anything has been
+  // pressed. Naming only the requests a visitor causes would leave the one they
+  // cannot avoid unnamed.
+  //
+  // There is no sentence about card pictures any more, and that is not an
+  // omission. Cards draw the route from the shape that came with the row, so
+  // nothing at all is fetched for them.
   el.footerProcessing.innerHTML = [
     'footer.processing.file',
     'footer.processing.url',
     'footer.processing.map',
-    'footer.processing.thumbnail',
+    'footer.processing.fonts',
   ]
     .map((key) => `<span>${t(key)}</span>`)
     .join('');
   el.footerSource.textContent = t('footer.source');
+}
+
+// -------------------------------------------------------------- the dialogs
+//
+// Two of them, and both are this page doing its own work instead of handing
+// the visitor to somebody else. The competitor's version of the first embeds
+// the source site's own map widget: that puts the visitor in front of the
+// source's servers and shows the source's figures, which are the figures this
+// product exists to doubt. Ours converts the link, measures the file and draws
+// it with the two charts the report already uses, gap and all, drawn the same
+// way.
+
+let previewSubject = null;
+let rotateSubject = null;
+
+/** What the re-arranger is showing: the points that would be written, what
+ *  they measure, and what the change cost. The download button reads this and
+ *  nothing else, so the file that arrives is exactly the one the numbers above
+ *  the button describe. */
+let rotateDraft = null;
+const rotateChoice = { reverse: false, startIndex: 0 };
+
+// How long the drawing lags the slider. Short enough that it reads as the
+// picture following the thumb, long enough that a long recording is measured
+// twenty times a second and not two hundred.
+const ROTATE_REDRAW_MS = 50;
+let rotateTimer = 0;
+
+/** A distance in the unit a walker would say it in. */
+function metresOrKm(metres) {
+  return metres >= 1000 ? `${formatKm(metres, 1)} km` : `${formatNumber(metres)} m`;
+}
+
+/** A seam. Under ten metres it needs a decimal to be a number at all; over ten
+ *  a decimal is noise. */
+function formatSeam(metres) {
+  return formatNumber(metres, metres < 10 ? 1 : 0);
+}
+
+function renderDialogs() {
+  if (dialogIsOpen(el.previewDialog)) renderPreview();
+  if (dialogIsOpen(el.rotateDialog)) renderRotate();
+}
+
+function dressCloseButton(button) {
+  button.innerHTML = icon('close');
+  button.title = t('dialog.close');
+  button.setAttribute('aria-label', t('dialog.close'));
+}
+
+// --------------------------------------------------------------- the preview
+
+function openPreview(result, opener) {
+  previewSubject = result;
+  // Shown before it is filled, on purpose: both charts measure their own box,
+  // and a box inside a hidden dialog measures zero. Nothing paints between
+  // these two calls, so nothing is ever seen empty.
+  openDialog(el.previewDialog, {
+    returnFocusTo: opener,
+    onClose: () => {
+      hideBasemap(surfaces.preview);
+      previewSubject = null;
+    },
+  });
+  renderPreview();
+}
+
+function renderPreview() {
+  if (!previewSubject) return;
+  const { track, measurements, published, source, fileName } = previewSubject;
+  const warn = measurements.gapExceedsThreshold;
+
+  el.previewKicker.textContent = t('preview.kicker');
+  el.previewTitle.textContent = source.title || track.name || fileName;
+  el.previewSource.textContent = t('source.line', {
+    source: source.label || t('source.file'),
+    when: t('when.today'),
+  });
+  dressCloseButton(el.previewClose);
+
+  el.previewTiles.innerHTML = measuredTiles(measurements, published);
+  drawTrace(surfaces.preview, track.points, measurements);
+  drawProfile(el.previewProfile, track.points, measurements);
+
+  el.previewWarning.hidden = !warn;
+  if (warn) el.previewWarning.innerHTML = gapWarningMarkup(measurements);
+
+  el.previewNote.textContent = t('preview.note');
+  el.previewDownload.innerHTML = `${icon('download')}<span>${t('step2.download')}</span>`;
+  el.previewAdjust.innerHTML = `${icon('sliders')}<span>${t('card.adjust')}</span>`;
+  el.previewReport.textContent = t('preview.report');
+}
+
+// ---------------------------------------------------------- the re-arranger
+
+function openRotate(result, opener) {
+  rotateSubject = result;
+  rotateChoice.reverse = false;
+  rotateChoice.startIndex = 0;
+  openDialog(el.rotateDialog, {
+    returnFocusTo: opener,
+    // A press on the veil does not close this one. The preview only shows
+    // something, so losing it by accident costs nothing; this holds an
+    // arrangement the visitor made. Escape and the close button both still
+    // work, and both are deliberate.
+    closeOnBackdrop: false,
+    onClose: () => {
+      hideBasemap(surfaces.rotate);
+      rotateSubject = null;
+      rotateDraft = null;
+    },
+  });
+  renderRotate();
+}
+
+function renderRotate() {
+  if (!rotateSubject) return;
+  const { track, measurements, source, fileName } = rotateSubject;
+  const original = track.points;
+  const ends = loopCheck(original, measurements.distanceM);
+
+  // Moving the start is offered on a ring and nowhere else. On a walk from one
+  // valley to another it would drive the whole distance between the two ends
+  // straight through the middle of the track. The competitor offers it anyway,
+  // and throws the head of the track away to do it, with no way back.
+  const canMove = ends.isLoop;
+  const startIndex = canMove
+    ? Math.min(Math.max(0, rotateChoice.startIndex), ringLength(original) - 1)
+    : 0;
+  const arranged = arrange(original, { reverse: rotateChoice.reverse, startIndex });
+
+  // RE-MEASURED AFTER EVERY CHANGE, from the points that would be written, not
+  // from the recording that arrived. This is the whole reason the dialog is
+  // worth building: the competitor's rotation opens a hole in the middle of the
+  // file and the distance it prints does not include it.
+  const after = measure({ points: arranged.points }, DEFAULT_GAP_THRESHOLD_M);
+  const startM = measurements.cumulative[startIndex] ?? 0;
+  const seamAtM = arranged.seamIndex > 0 ? after.cumulative[arranged.seamIndex - 1] : 0;
+  const changed = arranged.reversed || arranged.startIndex > 0;
+  const times = countTimes(original);
+  const name = changedFileName(fileName, {
+    reversed: arranged.reversed,
+    startKm: arranged.startIndex > 0 ? startM / 1000 : null,
+  });
+
+  rotateDraft = { arranged, after, startM, seamAtM, changed, times, fileName: name };
+
+  el.rotateKicker.textContent = t('rotate.kicker');
+  el.rotateTitle.textContent = source.title || track.name || fileName;
+  el.rotateRoute.textContent = t('rotate.lede');
+  dressCloseButton(el.rotateClose);
+
+  // What was detected, and the rule that decided it. A visitor who finds the
+  // slider missing and is told nothing assumes the page is broken.
+  const shape = ends.closed
+    ? t('rotate.detected.closed')
+    : t(ends.isLoop ? 'rotate.detected.near' : 'rotate.detected.open', {
+        ends: metresOrKm(ends.closingM),
+        tolerance: metresOrKm(ends.toleranceM),
+        km: formatKm(ends.distanceM, 1),
+      });
+  el.rotateDetected.textContent = ends.closed
+    ? shape
+    : `${shape} ${t('rotate.rule', { floor: LOOP_FLOOR_M, ceiling: LOOP_CEILING_M })}`;
+
+  el.rotateReverse.innerHTML = `${icon('reverse')}<span>${t('rotate.reverse')}</span>`;
+  el.rotateReverse.setAttribute('aria-pressed', String(arranged.reversed));
+
+  el.rotateStartBlock.hidden = !canMove;
+  el.rotateStartLabel.textContent = t('rotate.start.label');
+  el.rotateStart.max = String(Math.max(0, ringLength(original) - 1));
+  el.rotateStart.value = String(startIndex);
+  const startWords = t('rotate.start.value', { km: formatKm(startM, 1) });
+  el.rotateStart.setAttribute('aria-valuetext', startWords);
+  el.rotateStartValue.textContent = startWords;
+
+  el.rotateReset.textContent = t('rotate.reset');
+  el.rotateReset.hidden = !changed;
+
+  drawTrace(surfaces.rotate, arranged.points, after);
+
+  el.rotateMeasuredHead.textContent = t('rotate.measured');
+  el.rotateTiles.innerHTML = arrangementTiles(after, measurements);
+
+  el.rotateTimes.textContent =
+    times === 0
+      ? t('rotate.times.none')
+      : times === 1
+        ? t('rotate.times.one')
+        : t('rotate.times.many', { count: formatNumber(times) });
+  el.rotateNoTrim.textContent = t('rotate.notrim');
+
+  renderSeam(arranged.seamM, seamAtM, after.gapThresholdM, changed);
+
+  el.rotateDownload.innerHTML = `${icon('download')}<span>${t('rotate.download')}</span>`;
+  el.rotateFilename.textContent = t('rotate.filename', { name });
+}
+
+/** What this arrangement measures, with the original beside each figure. */
+function arrangementTiles(after, before) {
+  return `
+    ${tile(
+      t('measure.distance'),
+      formatKm(after.distanceM),
+      'km',
+      t('rotate.against', { value: `${formatKm(before.distanceM)} km` }),
+      false,
+    )}
+    ${tile(
+      t('measure.ascent'),
+      formatNumber(after.ascentM),
+      'm',
+      t('rotate.against', { value: `${formatNumber(before.ascentM)} m` }),
+      false,
+    )}
+    ${tile(
+      t('measure.gap'),
+      formatNumber(after.largestGapM),
+      'm',
+      gapNote(after),
+      after.gapExceedsThreshold,
+    )}`;
+}
+
+/** The line above the download button.
+ *
+ *  A seam wider than the threshold this page already calls a gap gets the warm
+ *  panel, because it changes what happens on the hill: a watch will draw a
+ *  straight line across ground nobody walked. A smaller one is stated plainly,
+ *  so the visitor knows it is there and knows it is small.
+ *
+ *  The download is never blocked by either. This product measures and says; it
+ *  does not decide for the person going out. Saying it above the button, in the
+ *  footer that does not scroll away, is what makes that honest. */
+function renderSeam(seamM, seamAtM, thresholdM, changed) {
+  const panel = el.rotateSeam;
+  if (seamM <= 0) {
+    panel.hidden = changed;
+    panel.className = 'dialog-note';
+    panel.textContent = changed ? '' : t('rotate.unchanged');
+    return;
+  }
+  panel.hidden = false;
+  if (seamM > thresholdM) {
+    panel.className = 'panel-warn warning-line';
+    panel.innerHTML = `${icon('warning', 'icon-warning')}<p>${t('rotate.seam.warn', {
+      gap: formatSeam(seamM),
+      km: formatKm(seamAtM, 1),
+    })}</p>`;
+    return;
+  }
+  panel.className = 'dialog-note';
+  panel.textContent = t('rotate.seam.small', { gap: formatSeam(seamM), threshold: thresholdM });
+}
+
+/** The sentence written into the file itself: what was done to the track and
+ *  what it measures now. A downloaded file outlives the tab it came from, and
+ *  the provenance link and the track name go with it either way. */
+function arrangementNotes() {
+  const { arranged, after, startM, seamAtM, times } = rotateDraft;
+  const moved = arranged.startIndex > 0;
+  const km = formatKm(startM, 1);
+  const parts = [];
+
+  if (arranged.reversed && moved) parts.push(t('rotate.desc.both', { km }));
+  else if (arranged.reversed) parts.push(t('rotate.desc.reversed'));
+  else if (moved) parts.push(t('rotate.desc.moved', { km }));
+  else parts.push(t('rotate.desc.none'));
+
+  if (arranged.seamM > 0) {
+    parts.push(t('rotate.desc.seam', { gap: formatSeam(arranged.seamM), km: formatKm(seamAtM, 1) }));
+  }
+  if (times > 0) parts.push(t('rotate.desc.times'));
+  parts.push(
+    t('rotate.desc.measured', {
+      km: formatKm(after.distanceM),
+      ascent: formatNumber(after.ascentM),
+    }),
+  );
+  return parts.join(' ');
+}
+
+function downloadArrangement() {
+  if (!rotateSubject || !rotateDraft) return;
+  const { track, source } = rotateSubject;
+  const gpx = buildGpx(
+    { name: track.name, points: rotateDraft.arranged.points },
+    source,
+    arrangementNotes(),
+  );
+  handOverFile(gpx, rotateDraft.fileName);
+}
+
+/** The readout follows the thumb at once; the measurement and the drawing
+ *  follow a fraction of a second later, so dragging across a twenty thousand
+ *  point recording does not queue a full re-measure per pixel crossed.
+ *
+ *  A timer and not a frame, for the same reason the conversion uses one: a tab
+ *  that is not on screen never paints, and a visitor who drags the slider and
+ *  then looks at something else must not come back to a dialog still
+ *  describing where the start used to be. */
+function scheduleRotateDraw() {
+  if (rotateSubject) {
+    const cumulative = rotateSubject.measurements.cumulative;
+    const index = Math.min(Math.max(0, rotateChoice.startIndex), cumulative.length - 1);
+    const words = t('rotate.start.value', { km: formatKm(cumulative[index], 1) });
+    el.rotateStart.setAttribute('aria-valuetext', words);
+    el.rotateStartValue.textContent = words;
+  }
+  if (rotateTimer) return;
+  rotateTimer = setTimeout(() => {
+    rotateTimer = 0;
+    renderRotate();
+  }, ROTATE_REDRAW_MS);
 }
 
 // -------------------------------------------------------------------- finder
@@ -915,9 +1368,20 @@ const PLACE_PAGE_SIZE = 5;
 
 const RADII_M = [5000, 10000, 20000, 50000, 100000];
 
-// The sites this page can already convert a link from, longest served first.
-// Only the first is offered until the service says it can search another.
+// The sources this page can ask for a list, both sites together first.
+//
+// Both at once is the default because nobody looking for a route near a
+// village cares which website holds it, and asking one at a time is a filing
+// system leaking into a question. A visitor who wants one site can still pick
+// it, and gets that site's whole vocabulary rather than the shorter shared one.
+//
+// Only the first is offered until the service has answered for the others.
+//
+// `key` rather than `label` on the first, because its name is a sentence and
+// not a proper noun: "Komoot and Wikiloc" has to become "Komoot y Wikiloc". The
+// other two are the sites' own names and are never translated.
 const KNOWN_SOURCES = [
+  { id: 'all', key: 'source.both' },
   { id: 'komoot', label: 'Komoot' },
   { id: 'wikiloc', label: 'Wikiloc' },
 ];
@@ -927,20 +1391,23 @@ const KNOWN_SOURCES = [
 //
 // Wikiloc's `find.do` takes an activity parameter and ignores it for a caller
 // with no account: it answers an empty page rather than an error, which is the
-// worst of both. So `api/sources/wikiloc_discovery.py` asks for the whole box
-// and drops the rows that are not the chosen activity, and says how many it
-// dropped in `setAside`.
+// worst of both. So `api/sources/wikiloc_discovery.py` reads several windows of
+// results, keeps the rows that are the chosen activity, and reports both
+// numbers: `examined`, how many rows it read, and `setAside`, how many it
+// dropped and why.
 //
-// The control stays, because it does narrow the list. What it must not do is
-// pretend the source did the narrowing, because the difference is visible: it
-// filters the page that arrived, so six rows can become none while Wikiloc
-// still has more behind them. That is what the note under the dropdown and the
-// count under the results are for.
+// The control stays, because it does narrow the list, and it now narrows it
+// well: a rare activity gives a short page because the activity is rare, and
+// the two counts under the results are what turns that from a page that looks
+// broken into a true thing about that valley.
+//
+// Both sites at once is in here as well, because half of that answer is
+// Wikiloc's and is filtered the same way.
 //
 // Written down here, and named in the note's own wording, because the sentence
 // is about one site by name. A source added later needs a line here and a
 // sentence of its own.
-const LOCAL_ACTIVITY_FILTER = new Set(['wikiloc']);
+const LOCAL_ACTIVITY_FILTER = new Set(['all', 'wikiloc']);
 
 // Where the route re-arranging tool gets attached. Another job builds the
 // modal; it calls `setRouteAdjuster` with a function that opens it for one row.
@@ -953,11 +1420,12 @@ export function setRouteAdjuster(open) {
   adjustRoute = typeof open === 'function' ? open : null;
 }
 
-/** Opens that tool for one row. False when there is nothing to open yet, so the
+/** Opens that tool for one row. `opener` is the control that asked, so the tool
+ *  can send focus back to it. False when there is nothing to open yet, so the
  *  caller can say so rather than leave a button that appears to do nothing. */
-export function openRouteAdjuster(row) {
+export function openRouteAdjuster(row, opener = null) {
   if (!adjustRoute) return false;
-  adjustRoute(row);
+  adjustRoute(row, opener);
   return true;
 }
 
@@ -972,12 +1440,22 @@ const finder = {
   sourceId: KNOWN_SOURCES[0].id,
   // One activity list per source, so switching back and forth costs nothing.
   catalogues: new Map(),
-  // The service's raw answers, kept because two of them side by side are the
-  // evidence that it reads the `source` parameter at all.
-  answers: new Map(),
+  // The sources the service has answered for. Asking it by name and being
+  // answered is the demonstration that it searches that source; a name it does
+  // not know is refused outright.
+  answered: new Set(),
+  // Sources that have been SHOWN to work the place out from the words on their
+  // own, by being handed a point and answering about somewhere else. Discovered
+  // rather than written down, and only ever after the answer proves it, so the
+  // control is offered wherever it works and withdrawn where it does not.
+  placeStuck: new Set(),
   search: {
     query: '',
     sport: '',
+    // The place the visitor picked out of the ones the answer offered, when
+    // they picked one. It is sent as a point, and the service then geocodes
+    // nothing and guesses nothing.
+    placePicked: null,
     status: 'idle',
     errorKey: null,
     shown: null,
@@ -1021,24 +1499,55 @@ function rememberTab(tab) {
 
 const panelState = (mode) => (mode === 'search' ? finder.search : finder.nearby);
 
-function sourceLabel(id) {
-  return finder.sources.find((source) => source.id === id)?.label ?? id;
+/** What to call one source. `fallback` is the name the service gave itself,
+ *  used only for a source this page has no name written down for. */
+function sourceLabel(id, fallback = '') {
+  const known = KNOWN_SOURCES.find((source) => source.id === id);
+  if (known) return known.key ? t(known.key) : known.label;
+  return fallback || id;
 }
 
-/** An activity in the reader's language, or the source's own word for it.
+/** The activities one panel's dropdown offers, and which it starts on. */
+function choicesFor(mode) {
+  return activityChoices(finder.catalogues.get(finder.sourceId), mode);
+}
+
+/** An activity word to show, and whether it is this page's word or the site's.
  *
- *  The list comes from the service and belongs to the source site, so it can
- *  hold a word this page has not learned yet. Printing the slug is honest;
- *  guessing at a translation, or dropping the row, would not be.
+ *  Three places to look, in this order, and the order is the whole design.
  *
- *  Between the two comes the source's own spelling, when it sends one: Wikiloc
- *  says "Trail Running" for the slug "trail-running", and both are its word, so
- *  showing the one meant for reading costs nothing and invents nothing. */
-function sportLabel(slug) {
+ *  First this page's own vocabulary, which is a translation somebody wrote and
+ *  checked. Then the source's own spelling, when the source publishes one:
+ *  Wikiloc says "Trail Running" for the slug "trail-running", and both are its
+ *  word, so showing the one meant for reading costs nothing and invents
+ *  nothing. Last, the slug itself, opened out into something readable by
+ *  `sourceOwnWord` and by nothing cleverer, because guessing at a translation
+ *  for a word nobody here can check is exactly what this page must not do.
+ *
+ *  `ours` is false for both of the last two, and that is what it is for: it is
+ *  the same fact in both cases, that the word on screen belongs to the site and
+ *  not to us, and the sentence under the activity picker says so out loud. */
+function sportWording(slug) {
   const key = `sport.${slug}`;
   const text = t(key);
-  if (text !== key) return text;
-  return finder.catalogues.get(finder.sourceId)?.labels?.[slug] ?? slug;
+  if (text !== key) return { text, ours: true };
+
+  // Every list the service has handed over, not just the one behind the
+  // dropdown. With both sites asked at once the rows carry each site's own
+  // word, so a Wikiloc word can land on a card while the dropdown is showing
+  // the shared list, and Wikiloc's own spelling of it is still the best thing
+  // to print. It is that site's word for that site's slug either way.
+  const here = finder.catalogues.get(finder.sourceId)?.labels?.[slug];
+  if (here) return { text: here, ours: false };
+  for (const catalogue of finder.catalogues.values()) {
+    if (catalogue.labels?.[slug]) return { text: catalogue.labels[slug], ours: false };
+  }
+  return { text: sourceOwnWord(slug), ours: false };
+}
+
+/** An activity in the reader's language, or the source's own word for it. */
+function sportLabel(slug) {
+  return sportWording(slug).text;
 }
 
 /** A grade in the reader's language, or the source's own word for it. Same
@@ -1046,7 +1555,11 @@ function sportLabel(slug) {
 function gradeLabel(slug) {
   const key = `grade.${slug}`;
   const text = t(key);
-  return text === key ? slug : text;
+  // Same last resort as `sportWording`, and for the same reason: a grade we
+  // have no word for still belongs to the source, but it must not reach a
+  // reader as a machine name. No source has sent an unknown grade yet; this is
+  // here so that the day one does, nobody reads a slug.
+  return text === key ? sourceOwnWord(slug) : text;
 }
 
 // ------------------------------------------------------------ finder service
@@ -1071,43 +1584,37 @@ async function loadCatalogue(sourceId) {
     // waits, and choosing a source asks again.
     return;
   }
+  // A source the service does not search is refused by name rather than
+  // answered with somebody else's list, so an answer at all is the proof.
   if (!payload || payload.ok !== true) return;
 
-  finder.answers.set(sourceId, payload);
-  finder.sources = sourcesFrom(payload, KNOWN_SOURCES, otherAnswer(sourceId));
-  const catalogue = catalogueFrom(payload, null);
-  if (!catalogue) return;
+  finder.answered.add(sourceId);
+  finder.sources = sourcesOffered(KNOWN_SOURCES, finder.answered);
+  finder.sourceId = sourceChosen(finder.sources, finder.sourceId);
 
-  finder.catalogues.set(sourceId, catalogue);
-  if (sourceId === finder.sourceId) applyCatalogue(catalogue);
+  const catalogue = catalogueFrom(payload, null);
+  if (catalogue) {
+    finder.catalogues.set(sourceId, catalogue);
+    if (sourceId === finder.sourceId) applyCatalogue();
+  }
   renderFinder();
 }
 
-/** The service's answer about some other site, when it has given one. */
-function otherAnswer(sourceId) {
-  for (const [id, payload] of finder.answers) {
-    if (id !== sourceId) return payload;
-  }
-  return null;
-}
-
-/** Asks the service about the second site this page can convert links from,
- *  once, after the first answer has arrived.
+/** Asks the service about every source this page knows a name for, once.
  *
- *  It costs one request that makes no upstream call at all, and it buys the
- *  answer to a question the page cannot otherwise settle: whether the service
- *  searches one site or two. Two different vocabularies mean it read the
- *  parameter, and the dropdown then offers what the service can actually do.
- *  The list is needed anyway the moment somebody switches, so nothing is
- *  fetched twice. */
-function probeOtherSource() {
-  const next = KNOWN_SOURCES.find((source) => !finder.answers.has(source.id));
-  if (next) loadCatalogue(next.id);
+ *  Each costs one request that makes no upstream call at all, and together they
+ *  settle a question the page cannot otherwise answer: which of the three the
+ *  service actually searches. The lists are needed anyway the moment somebody
+ *  switches, so nothing is fetched twice. */
+function probeSources() {
+  for (const source of KNOWN_SOURCES) {
+    if (!finder.answered.has(source.id)) loadCatalogue(source.id);
+  }
 }
 
-function applyCatalogue(catalogue) {
-  finder.search.sport = sportAfterSource(catalogue, finder.search.sport, true);
-  finder.nearby.sport = sportAfterSource(catalogue, finder.nearby.sport, true);
+function applyCatalogue() {
+  finder.search.sport = sportAfterSource(choicesFor('search'), finder.search.sport, true);
+  finder.nearby.sport = sportAfterSource(choicesFor('nearby'), finder.nearby.sport, true);
 }
 
 /** One list, or the key to a sentence saying why there is none. */
@@ -1134,11 +1641,11 @@ async function askList(path, body) {
 /** The service echoes what it actually used, after its own clamping. Reading
  *  that back into the form is what stops a radius the service will not go to
  *  from looking like one it did. */
-function adoptEcho(panel, echo) {
+function adoptEcho(panel, mode, echo) {
   if (!echo) return;
   if (typeof echo.radiusM === 'number') panel.radiusM = echo.radiusM;
-  const catalogue = finder.catalogues.get(finder.sourceId);
-  if (typeof echo.sport === 'string' && catalogue?.sports.includes(echo.sport)) {
+  const offered = choicesFor(mode).sports;
+  if (typeof echo.sport === 'string' && offered.includes(echo.sport)) {
     panel.sport = echo.sport;
   }
 }
@@ -1194,9 +1701,10 @@ async function runList(mode, { append = false } = {}) {
     return;
   }
 
-  adoptEcho(panel, listing.query);
+  adoptEcho(panel, mode, listing.query);
   const before = append && panel.shown ? panel.shown.rows.length : 0;
   panel.shown = appendPage(append ? panel.shown : null, listing);
+  if (mode === 'search') notePlaceIgnored(panel);
   // The source can answer a later page with nothing this converter can list,
   // while still saying there is more behind it. Said out loud, because a button
   // that visibly does nothing reads as broken.
@@ -1207,35 +1715,24 @@ async function runList(mode, { append = false } = {}) {
 }
 
 function searchBody(panel) {
-  const query = panel.query.trim();
-  if (query.length < 2) return { errorKey: 'query' };
-  return {
-    body: {
-      source: finder.sourceId,
-      query,
-      sport: panel.sport || null,
-      near: null,
-      limit: SEARCH_PAGE_SIZE,
-      page: 0,
-    },
-  };
+  return searchRequest({
+    source: finder.sourceId,
+    query: panel.query,
+    sport: panel.sport,
+    place: panel.placePicked,
+    limit: SEARCH_PAGE_SIZE,
+  });
 }
 
 function nearbyBody(panel) {
-  const lat = readCoordinate(panel.lat, 90);
-  const lng = readCoordinate(panel.lng, 180);
-  if (lat === null || lng === null) return { errorKey: 'location' };
-  return {
-    body: {
-      source: finder.sourceId,
-      lat,
-      lng,
-      sport: panel.sport || null,
-      radiusM: panel.radiusM,
-      limit: NEARBY_PAGE_SIZE,
-      page: 0,
-    },
-  };
+  return nearbyRequest({
+    source: finder.sourceId,
+    lat: readCoordinate(panel.lat, 90),
+    lng: readCoordinate(panel.lng, 180),
+    sport: panel.sport,
+    radiusM: panel.radiusM,
+    limit: NEARBY_PAGE_SIZE,
+  });
 }
 
 /** A typed coordinate, or null when it is not one.
@@ -1336,6 +1833,26 @@ function pickPlace(index) {
   el.nearbySubmit.focus();
 }
 
+/** Runs the same search again, about a different place.
+ *
+ *  BY POINT. Not by position, because the list this button was drawn from is
+ *  redrawn by the answer it asks for, and a position into a replaced list points
+ *  at the wrong place. And not by name either, which is what it used to do:
+ *  `montserrat` answers with a village in Valencia and an island in the
+ *  Caribbean both named `Montserrat`, the first match won, and pressing the
+ *  island searched the village while the page said nothing had been guessed.
+ *
+ *  The point is the only thing that identifies a place, so the point is what
+ *  the button carries and what this reads. `placeChoices` draws the buttons
+ *  from the same rule, so what is offered and what is resolved cannot drift. */
+function pickSearchPlace(point) {
+  const panel = finder.search;
+  const place = placeAtPoint(panel.shown?.places ?? [], point);
+  if (!place) return;
+  panel.placePicked = place;
+  runList('search');
+}
+
 // ------------------------------------------------------------ finder drawing
 
 function chooseTab(tab, focus) {
@@ -1348,8 +1865,10 @@ function chooseTab(tab, focus) {
 function chooseSource(id) {
   if (id === finder.sourceId) return;
   finder.sourceId = id;
-  const catalogue = finder.catalogues.get(id);
-  if (catalogue) applyCatalogue(catalogue);
+  // A place picked for the old source's answer says nothing about the new
+  // one's, so the next search asks the question from the words again.
+  finder.search.placePicked = null;
+  if (finder.catalogues.has(id)) applyCatalogue();
   else {
     // Nothing is shown from the old source's vocabulary while the new one is
     // on its way: the two are different lists, not two spellings of one.
@@ -1401,12 +1920,12 @@ function renderSearchForm() {
   setValue(el.searchQuery, finder.search.query);
   el.searchQuery.disabled = busy;
   fillSources(el.searchSource, el.searchSourceLabel);
-  fillSports(el.searchSport, el.searchSportLabel, finder.search.sport);
+  fillSports(el.searchSport, el.searchSportLabel, 'search', finder.search.sport);
   el.searchSource.disabled = busy;
   el.searchSport.disabled = busy || el.searchSport.options.length === 0;
   el.searchSubmit.textContent = t('search.submit');
   el.searchSubmit.disabled = busy || finder.search.status === 'working';
-  renderActivityNote(el.searchActivityNote, el.searchSport, 'search-activity-note');
+  renderActivityNote(el.searchActivityNote, el.searchSport, 'search', 'search-activity-note');
 }
 
 /** Under the activity dropdown, on a source that will not filter for us.
@@ -1418,12 +1937,40 @@ function renderSearchForm() {
  *  So the control stays and the sentence says where the work happens; the count
  *  under the results then says how much of it happened. On Komoot, whose filter
  *  is real, there is nothing to explain and no line at all. */
-function renderActivityNote(note, select, id) {
-  const show = LOCAL_ACTIVITY_FILTER.has(finder.sourceId);
-  note.hidden = !show;
-  note.textContent = show ? t('activity.notFiltered') : '';
-  if (show) select.setAttribute('aria-describedby', id);
+function renderActivityNote(note, select, mode, id) {
+  const said = [];
+  if (LOCAL_ACTIVITY_FILTER.has(finder.sourceId)) said.push(t('activity.notFiltered'));
+  if (showsSourceWords(mode)) said.push(t('activity.sourceWords'));
+
+  note.hidden = said.length === 0;
+  note.textContent = said.join(' ');
+  if (said.length) select.setAttribute('aria-describedby', id);
   else select.removeAttribute('aria-describedby');
+}
+
+/** Whether any activity word ON SCREEN is the source's own rather than ours.
+ *
+ *  THE DROPDOWN IS NOT THE ANSWER, and testing it alone was the bug. The
+ *  dropdown holds what can be asked for; the cards hold what came back, and the
+ *  two are different lists. On both sites at once the dropdown is Komoot's six,
+ *  every one of them translated, while the cards below carry Wikiloc's own
+ *  words and Komoot's own unlisted ones, so the sentence stayed hidden over a
+ *  page full of exactly what it exists to explain.
+ *
+ *  So both are read, and each is read the way it is drawn: through the same
+ *  `sportWording` that puts the word on the screen. A test that repeats the
+ *  lookup in different words is a test that will disagree with the screen one
+ *  day, and the day it does the page will be lying quietly. */
+function showsSourceWords(mode) {
+  const panel = panelState(mode);
+  const always = LOCAL_ACTIVITY_FILTER.has(finder.sourceId);
+  const onScreen = [
+    ...choicesFor(mode).sports,
+    ...(panel.shown?.rows ?? [])
+      .map((row) => activityWord(row, panel.sport, { always }))
+      .filter(Boolean),
+  ];
+  return onScreen.some((slug) => !sportWording(slug).ours);
 }
 
 function renderNearbyForm() {
@@ -1454,7 +2001,7 @@ function renderNearbyForm() {
   );
 
   fillSources(el.nearbySource, el.nearbySourceLabel);
-  fillSports(el.nearbySport, el.nearbySportLabel, finder.nearby.sport);
+  fillSports(el.nearbySport, el.nearbySportLabel, 'nearby', finder.nearby.sport);
   el.nearbySubmit.textContent = t('nearby.submit');
   for (const control of [
     el.geoHere,
@@ -1468,7 +2015,7 @@ function renderNearbyForm() {
   }
   el.nearbySubmit.disabled = busy || finder.nearby.status === 'working';
   el.nearbySport.disabled = busy || el.nearbySport.options.length === 0;
-  renderActivityNote(el.nearbyActivityNote, el.nearbySport, 'nearby-activity-note');
+  renderActivityNote(el.nearbyActivityNote, el.nearbySport, 'nearby', 'nearby-activity-note');
 }
 
 function renderPlacePanel() {
@@ -1512,17 +2059,16 @@ function fillSources(select, label) {
   label.textContent = t('field.source');
   fillSelect(
     select,
-    finder.sources.map((source) => ({ value: source.id, label: source.label })),
+    finder.sources.map((source) => ({ value: source.id, label: sourceLabel(source.id) })),
     finder.sourceId,
   );
 }
 
-function fillSports(select, label, chosen) {
+function fillSports(select, label, mode, chosen) {
   label.textContent = t('field.activity');
-  const catalogue = finder.catalogues.get(finder.sourceId);
   fillSelect(
     select,
-    (catalogue?.sports ?? []).map((sport) => ({ value: sport, label: sportLabel(sport) })),
+    choicesFor(mode).sports.map((sport) => ({ value: sport, label: sportLabel(sport) })),
     chosen,
   );
 }
@@ -1562,8 +2108,16 @@ function renderResults(mode) {
   const panel = panelState(mode);
   const out = mode === 'search' ? el.searchOut : el.nearbyOut;
   const shown = panel.shown;
-  const source = shown?.source || sourceLabel(finder.sourceId);
+  // Named from the answer's own source, not from the dropdown: changing the
+  // dropdown does not change the rows that are already on screen, and a list of
+  // Komoot routes must not relabel itself the moment Wikiloc is selected.
+  const source = sourceLabel(shown?.sourceId ?? finder.sourceId, shown?.source);
   const parts = [];
+
+  // Which place, and which site is missing: both go above the rows, because
+  // both change what the rows mean and neither can be left to be scrolled to.
+  if (mode === 'search') parts.push(placeUsedMarkup(panel));
+  parts.push(missingSourcesMarkup(shown));
 
   if (panel.status === 'working') {
     parts.push(`<p class="finder-status" role="status">${icon('active')}<span>${t(
@@ -1618,20 +2172,210 @@ function renderResults(mode) {
       </div>`);
   }
 
-  // Said whether the list is full or empty, and especially when it is empty: on
-  // a source that will not filter for us, this count is the entire difference
-  // between "there is nothing there" and "there is plenty there, and none of it
-  // is what you asked for". Without it, choosing an activity looks like a
-  // control that broke the page.
-  const asideCount = shown?.setAside?.otherActivity ?? 0;
-  if (asideCount > 0) {
-    const key = asideCount === 1 ? 'finder.setAside.one' : 'finder.setAside.many';
-    parts.push(`<p class="dropped-note">${t(key, { count: formatNumber(asideCount) })}</p>`);
-  }
+  parts.push(scanMarkup(shown));
   if (panel.status === 'error') parts.push(errorMarkup(panel.errorKey));
 
   out.innerHTML = parts.join('');
   out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
+}
+
+/** What the service read to produce this page, in its own numbers.
+ *
+ *  Said whether the list is full or empty, and especially when it is empty: on
+ *  a source that will not filter for us, these counts are the entire difference
+ *  between "there is nothing there" and "there is plenty there, and none of it
+ *  is what you asked for". Without them, choosing an activity looks like a
+ *  control that broke the page.
+ *
+ *  Every number here is read from the answer and none is inferred. An answer
+ *  that mentions no scan gets no sentence about one: one via ferrata route out
+ *  of a hundred examined is a short page and a true thing about that valley,
+ *  but only a source that counted may be quoted for it. */
+function scanMarkup(shown) {
+  const said = [];
+
+  const examined = shown?.examined ?? null;
+  if (typeof examined === 'number' && examined > 0) {
+    said.push(t('finder.examined', { count: formatNumber(examined) }));
+  }
+
+  const aside = shown?.setAside?.otherActivity ?? 0;
+  if (aside > 0) {
+    said.push(
+      t(aside === 1 ? 'finder.setAside.one' : 'finder.setAside.many', {
+        count: formatNumber(aside),
+      }),
+    );
+  }
+
+  const outside = shown?.setAside?.outsideRadius ?? 0;
+  if (outside > 0) {
+    said.push(
+      t(outside === 1 ? 'finder.outside.one' : 'finder.outside.many', {
+        count: formatNumber(outside),
+      }),
+    );
+  }
+
+  return said.length === 0 ? '' : `<p class="dropped-note">${said.join(' ')}</p>`;
+}
+
+/** The sites that were asked and did not answer.
+ *
+ *  A short list because one site was down reads exactly like a short list
+ *  because a valley is empty, and they are not the same thing. An answer from a
+ *  single site says nothing about sites and gets nothing here: a site that
+ *  fails on its own is an error, and the page already has a panel for that. */
+function missingSourcesMarkup(shown) {
+  const missing = sourcesMissing(shown);
+  if (missing.length === 0) return '';
+  return missing
+    .map((source) => {
+      const key = source.error === 'busy' ? 'finder.siteBusy' : 'finder.siteFailed';
+      return `<p class="panel-warn finder-missing" role="status">${icon(
+        'warning',
+        'icon-warning',
+      )}<span>${escapeText(t(key, { source: sourceLabel(source.id) }))}</span></p>`;
+    })
+    .join('');
+}
+
+/** Whether the point the visitor picked is the one the answer was about.
+ *
+ *  A last resort, and no longer the main evidence. An answer from two sites
+ *  says per site whether the point reached it, which is the fact the page needs
+ *  and the only one that can be true of half a list. This is what is left for a
+ *  single site, which sends no such record: the place it says it used either is
+ *  the point that was sent or it is not.
+ *
+ *  A source shown to ignore a point has its swap buttons taken away, because a
+ *  control that visibly does nothing is worse than no control. */
+function notePlaceIgnored(panel) {
+  const picked = panel.placePicked;
+  const used = panel.shown?.placeUsed;
+  if (!picked || !used || samePoint(picked, used)) return;
+  if (pointHonoured(panel.shown).applied.length > 0) return;
+  finder.placeStuck.add(finder.sourceId);
+  panel.placePicked = null;
+}
+
+/** WHAT TO SAY ABOUT THE PLACE, in one place, so the sentence and the evidence
+ *  for it cannot come apart.
+ *
+ *  THE SENTENCE THAT WAS FALSE. "Nothing was guessed" was said over the whole
+ *  list whenever a place had been picked. On both sites at once that is false
+ *  for half the rows: a Wikiloc search IS a box, so the point becomes the box
+ *  and its rows can only be from there, while Komoot geocodes the words itself
+ *  and its rows land wherever the words point. Picking the Caribbean island of
+ *  Montserrat and being shown routes in Catalonia under a line saying nothing
+ *  was guessed is the page telling the visitor something it could have known
+ *  was untrue.
+ *
+ *  Deleting the sentence would have been the wrong fix. Somebody who pressed a
+ *  place is owed an answer about whether it worked. So the answer now carries
+ *  the fact per site, measured against each site and written down beside the
+ *  code that sends the point, and this reads it and says the true thing: which
+ *  site looked where you pointed, and which looked the words up itself. */
+function placeReport(panel) {
+  const shown = panel.shown;
+  // No answer on screen, so there is nothing to say a place about. A search
+  // that failed after a place was picked still holds the pick, and a sentence
+  // about where the rows came from would be about rows nobody can see.
+  if (!shown) return null;
+
+  const used = shown.placeUsed ?? null;
+  const picked = panel.placePicked ?? null;
+  if (!picked) return used ? { place: used, key: 'place.guessed', names: {} } : null;
+
+  const { applied, ignored } = pointHonoured(shown);
+  const names = {
+    applied: joinList(applied.map((id) => sourceLabel(id))),
+    ignored: joinList(ignored.map((id) => sourceLabel(id))),
+  };
+
+  // No per-site record, so one site answered. Its own echo is the evidence.
+  if (applied.length === 0 && ignored.length === 0) {
+    return samePoint(picked, used)
+      ? { place: picked, key: 'place.picked', names: {} }
+      : {
+          place: picked,
+          key: 'place.pickedNone',
+          names: { ignored: sourceLabel(shown.sourceId ?? finder.sourceId, shown.source) },
+        };
+  }
+  if (ignored.length === 0) return { place: picked, key: 'place.picked', names };
+  if (applied.length === 0) return { place: picked, key: 'place.pickedNone', names };
+  return { place: picked, key: 'place.pickedPartly', names };
+}
+
+/** WHICH PLACE THE ROWS ARE FROM, and how to say a different one.
+ *
+ *  Wikiloc searches a box, so words have to become a box, and a geocoder
+ *  decides which place the words meant. It decides badly often enough to
+ *  matter: "montserrat" gives a village in the Valencian Community, 300 km from
+ *  the mountain in Catalonia, and merged with Komoot, which gets the mountain
+ *  right, that is one list holding two different valleys with nothing on screen
+ *  saying so.
+ *
+ *  So the place goes above the rows, where it cannot be missed, and the places
+ *  it could have been are offered beside it. Picking one sends the point
+ *  itself, and the sentence above the rows then says, per site, what became of
+ *  it.
+ *
+ *  A place the visitor picked says so in different words from a place a
+ *  geocoder guessed, because they are not the same claim. */
+function placeUsedMarkup(panel) {
+  const shown = panel.shown;
+  const report = placeReport(panel);
+  if (!report) return '';
+
+  const line = t(report.key, { place: report.place.name, ...report.names });
+  const stuck = finder.placeStuck.has(finder.sourceId);
+
+  // Each button carries its own point, and the press is resolved by that point.
+  // The name is only something to read: the same place arrives named two ways,
+  // and two different places arrive named the same way.
+  const choices = stuck ? [] : placeChoices(shown?.places ?? [], report.place);
+  const swap = choices.length
+    ? `<p class="place-swap-label">${escapeText(t('place.others'))}</p>
+       <div class="place-swap">${choices.map(placeSwapButton).join('')}</div>`
+    : '';
+
+  return `<section class="place-used" aria-label="${escapeText(t('place.usedLabel'))}">
+      <p class="place-used-line">${icon('crosshair', 'place-used-mark')}<span>${escapeText(
+        line,
+      )}</span></p>
+      ${swap}
+      ${stuck ? `<p class="place-swap-label">${escapeText(t('place.stuck'))}</p>` : ''}
+    </section>`;
+}
+
+/** One place to search instead, with its point on it.
+ *
+ *  The coordinate is printed only where the name does not separate this place
+ *  from another in the same answer. Two buttons reading `Montserrat` are not a
+ *  choice a person can make, and the point is the only thing this page holds
+ *  that tells them apart. Where the names already differ the coordinate would
+ *  be four numbers nobody needs, so it is not there.
+ *
+ *  Written with a middle dot rather than a comma, for the reason the card gives:
+ *  in Spanish the comma is already the decimal mark. */
+function placeSwapButton({ place, ambiguous }) {
+  const lat = formatNumber(place.lat, 4);
+  const lng = formatNumber(place.lng, 4);
+  // A middle dot separates the pair on screen and reads as nothing at all out
+  // loud, so the spoken name says which number is which instead.
+  const point = ambiguous
+    ? `<span class="place-swap-point">${escapeText(`${lat} · ${lng}`)}</span>`
+    : '';
+  const label = ambiguous ? t('place.swapAt', { place: place.name, lat, lng }) : place.name;
+  return `<button
+      class="ghost-button place-swap-button"
+      type="button"
+      aria-label="${escapeText(label)}"
+      data-swap-lat="${escapeText(String(place.lat))}"
+      data-swap-lng="${escapeText(String(place.lng))}"
+    ><span>${escapeText(place.name)}</span>${point}</button>`;
 }
 
 // ----------------------------------------------------------------- the card
@@ -1679,18 +2423,25 @@ function cardMarkup(row, index, mode) {
       : '',
   ].join('');
 
-  const image = cardImage(row);
-  const picture = image
+  // Drawn here, from the shape that arrived with the row, in this page's own
+  // line colour. Nothing is fetched: no request leaves the browser for it, and
+  // no third party learns which routes are being looked at.
+  const drawing = cardTrace(row, { fit: fitFrame, project: projectInFrame });
+  const picture = drawing
     ? `<div class="card-shape">
-        <img
-          class="card-image"
-          src="${escapeText(image.src)}"
-          alt="${escapeText(t('card.thumbAlt', { source }))}"
-          width="${image.width}"
-          height="${image.height}"
-          loading="lazy"
-          decoding="async"
-        />
+        <svg
+          class="card-trace"
+          viewBox="0 0 ${drawing.width} ${drawing.height}"
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label="${escapeText(t('card.shapeAlt', { source }))}"
+        >
+          <path d="${drawing.d}" class="card-trace-halo"/>
+          <path d="${drawing.d}" class="card-trace-line"/>
+          <circle cx="${drawing.start.x.toFixed(1)}" cy="${drawing.start.y.toFixed(
+            1,
+          )}" r="3" class="card-trace-start"/>
+        </svg>
         ${marks ? `<span class="card-marks">${marks}</span>` : ''}
       </div>`
     : '';
@@ -1710,7 +2461,7 @@ function cardMarkup(row, index, mode) {
       ${picture}
       <div class="card-text">
         <h3 class="card-title" id="title-${uid}">${escapeText(row.title)}</h3>
-        ${!image && marks ? `<span class="card-marks card-marks-inline">${marks}</span>` : ''}
+        ${!drawing && marks ? `<span class="card-marks card-marks-inline">${marks}</span>` : ''}
         ${claimBlock(row, source, uid)}
         <div class="card-actions">
           <button class="primary-button card-primary" type="button" data-act="gpx" aria-label="${escapeText(
@@ -1730,6 +2481,15 @@ function cardMarkup(row, index, mode) {
         <p class="card-note" data-note role="status" hidden></p>
       </div>
     </article>`;
+}
+
+/** Finds one card's control again after the list has been redrawn under it. */
+function cardControl(listId, index, action) {
+  if (!listId) return null;
+  return () =>
+    document
+      .getElementById(listId)
+      ?.querySelector(`.route-card[data-index="${index}"] [data-act="${action}"]`) ?? null;
 }
 
 /** One of the three square controls beside the GPX button. The drawing is the
@@ -1946,21 +2706,52 @@ function collect() {
   el.reportTitle = document.getElementById('report-title');
   el.reportSource = document.getElementById('report-source');
   el.downloadButton = document.getElementById('download');
+  el.reportAdjust = document.getElementById('report-adjust');
   el.resetButton = document.getElementById('reset');
   el.tiles = document.getElementById('tiles');
   el.traceFigure = document.getElementById('trace');
   el.profileFigure = document.getElementById('profile');
-  el.traceCanvas = el.traceFigure.querySelector('.chart-canvas');
-  el.traceMap = el.traceFigure.querySelector('.chart-map');
-  el.traceCredit = el.traceFigure.querySelector('.chart-attribution');
-  el.mapToggle = document.getElementById('map-toggle');
-  el.axisX = el.profileFigure.querySelector('.axis-x');
-  el.axisY = el.profileFigure.querySelector('.axis-y');
+  surfaces.trace = chartSurface(el.traceFigure);
   el.warning = document.getElementById('warning');
   el.secondary = document.getElementById('secondary');
   el.provenance = document.getElementById('provenance');
   el.footerProcessing = document.getElementById('footer-processing');
   el.footerSource = document.getElementById('footer-source');
+
+  el.previewDialog = document.getElementById('preview-dialog');
+  el.previewKicker = document.getElementById('preview-kicker');
+  el.previewTitle = document.getElementById('preview-title');
+  el.previewSource = document.getElementById('preview-source');
+  el.previewClose = document.getElementById('preview-close');
+  el.previewTiles = document.getElementById('preview-tiles');
+  el.previewProfile = document.getElementById('preview-profile');
+  el.previewWarning = document.getElementById('preview-warning');
+  el.previewNote = document.getElementById('preview-note');
+  el.previewDownload = document.getElementById('preview-download');
+  el.previewAdjust = document.getElementById('preview-adjust');
+  el.previewReport = document.getElementById('preview-report');
+  surfaces.preview = chartSurface(document.getElementById('preview-trace'));
+
+  el.rotateDialog = document.getElementById('rotate-dialog');
+  el.rotateKicker = document.getElementById('rotate-kicker');
+  el.rotateTitle = document.getElementById('rotate-title');
+  el.rotateRoute = document.getElementById('rotate-route');
+  el.rotateClose = document.getElementById('rotate-close');
+  el.rotateDetected = document.getElementById('rotate-detected');
+  el.rotateReverse = document.getElementById('rotate-reverse');
+  el.rotateStartBlock = document.getElementById('rotate-start-block');
+  el.rotateStart = document.getElementById('rotate-start');
+  el.rotateStartLabel = labelFor('rotate-start');
+  el.rotateStartValue = document.getElementById('rotate-start-value');
+  el.rotateReset = document.getElementById('rotate-reset');
+  el.rotateMeasuredHead = document.getElementById('rotate-measured-head');
+  el.rotateTiles = document.getElementById('rotate-tiles');
+  el.rotateSeam = document.getElementById('rotate-seam');
+  el.rotateTimes = document.getElementById('rotate-times');
+  el.rotateNoTrim = document.getElementById('rotate-notrim');
+  el.rotateDownload = document.getElementById('rotate-download');
+  el.rotateFilename = document.getElementById('rotate-filename');
+  surfaces.rotate = chartSurface(document.getElementById('rotate-trace'));
 }
 
 function submit() {
@@ -2055,17 +2846,24 @@ function wire() {
     ).distanceM;
   });
 
-  el.mapToggle.addEventListener('click', toggleBasemap);
+  // One handler for all three trace figures. The choice is the page's, not the
+  // figure's, so whichever button is pressed moves all of them.
+  for (const button of document.querySelectorAll('[data-map-toggle]')) {
+    button.addEventListener('click', toggleBasemap);
+  }
 
   let redrawTimer = 0;
   window.addEventListener('resize', () => {
-    if (state.view !== 'report') return;
+    const live = liveTraceSurfaces();
+    if (live.length === 0) return;
     // The label is anchored to a point on the drawing, so it moves with it,
     // immediately. The map is a full repaint of a canvas, so it waits until the
     // window has stopped moving.
-    positionGapLabel();
+    for (const surface of live) positionGapLabel(surface);
     clearTimeout(redrawTimer);
-    redrawTimer = setTimeout(paintBasemap, 180);
+    redrawTimer = setTimeout(() => {
+      for (const surface of liveTraceSurfaces()) paintBasemap(surface);
+    }, 180);
   });
 
   // The axis label positions are percentages and need no help on resize. Only
@@ -2073,12 +2871,61 @@ function wire() {
   // when it flips and not otherwise.
   compactQuery.addEventListener('change', (event) => {
     compactCharts = event.matches;
+    renderDialogs();
     if (state.view !== 'report') return;
     renderCharts();
     // The redrawn SVGs have no cursors in them, so the reading beside the title
     // would be left describing a point nothing is pointing at.
     clearHover();
   });
+
+  wireDialogs();
+}
+
+function wireDialogs() {
+  el.reportAdjust.addEventListener('click', () => {
+    if (state.result) openRotate(state.result, el.reportAdjust);
+  });
+
+  el.previewClose.addEventListener('click', () => closeDialog());
+  el.previewDownload.addEventListener('click', () => {
+    if (previewSubject) handOverFile(previewSubject.gpxText, previewSubject.fileName);
+  });
+  el.previewAdjust.addEventListener('click', () => {
+    // Held before the swap: opening the second dialog closes the first, and
+    // closing the first is what clears this.
+    const subject = previewSubject;
+    if (subject) openRotate(subject, null);
+  });
+  el.previewReport.addEventListener('click', () => {
+    const subject = previewSubject;
+    closeDialog();
+    if (!subject) return;
+    showReport(subject);
+    // The card this came from has just been hidden with the rest of the list,
+    // so focus is given a real place to land rather than falling to the top of
+    // the document.
+    el.downloadButton.focus();
+  });
+
+  el.rotateClose.addEventListener('click', () => closeDialog());
+  el.rotateReverse.addEventListener('click', () => {
+    rotateChoice.reverse = !rotateChoice.reverse;
+    renderRotate();
+  });
+  el.rotateStart.addEventListener('input', () => {
+    rotateChoice.startIndex = Number(el.rotateStart.value);
+    scheduleRotateDraw();
+  });
+  el.rotateReset.addEventListener('click', () => {
+    rotateChoice.reverse = false;
+    rotateChoice.startIndex = 0;
+    renderRotate();
+    // The reset button hides itself once there is nothing to reset, so focus
+    // is moved before it goes.
+    el.rotateReverse.focus();
+  });
+  el.rotateDownload.addEventListener('click', downloadArrangement);
 }
 
 function wireFinder() {
@@ -2111,6 +2958,9 @@ function wireFinder() {
   });
   el.searchQuery.addEventListener('input', () => {
     finder.search.query = el.searchQuery.value;
+    // A place was picked for the words that were on screen when it was picked.
+    // New words are a new question, so the next search asks it from scratch.
+    finder.search.placePicked = null;
   });
   // Return runs the search itself rather than leaving it to the form's own
   // handling of the key, which is the same thing the link field does and the
@@ -2182,6 +3032,16 @@ function wireFinder() {
   for (const mode of ['search', 'nearby']) {
     const out = mode === 'search' ? el.searchOut : el.nearbyOut;
     out.addEventListener('click', (event) => {
+      // The point, not the name: two places in one answer can be called the
+      // same thing, and the first of them is not the one that was pressed.
+      const swap = event.target.closest('[data-swap-lat]');
+      if (swap) {
+        pickSearchPlace({
+          lat: Number(swap.dataset.swapLat),
+          lng: Number(swap.dataset.swapLng),
+        });
+        return;
+      }
       if (event.target.closest('[data-more]')) {
         // The list is redrawn wholesale, so the button that was just pressed
         // stops existing. Without this a keyboard visitor is dropped at the top
@@ -2196,19 +3056,6 @@ function wireFinder() {
       const row = panelState(mode).shown?.rows[Number(card.dataset.index)];
       if (row) runCardAction(pressed.dataset.act, row, card);
     });
-
-    // `error` does not bubble, so it is caught on the way down. A picture that
-    // did not arrive leaves the browser's own broken-image mark in the middle
-    // of the card, which reads as this page being broken rather than as one
-    // image being missing. The card closes up around it instead.
-    out.addEventListener(
-      'error',
-      (event) => {
-        const image = event.target;
-        if (image instanceof HTMLImageElement) image.closest('.card-shape')?.remove();
-      },
-      true,
-    );
   }
 }
 
@@ -2222,18 +3069,26 @@ function runCardAction(action, row, card) {
   const note = card.querySelector('[data-note]');
   if (note) note.hidden = true;
 
+  // Where focus goes when the dialog closes. Not the button itself: converting
+  // the route rewrites the whole list, so by then this exact element has been
+  // replaced by an identical one. The card is found again by its place in the
+  // list, which does not move.
+  const home = cardControl(card.closest('.finder-out')?.id, card.dataset.index, action);
+
   if (action === 'gpx') {
     convertAndDownload(row.url);
     return;
   }
   if (action === 'chart') {
-    // The map and the profile ARE the report, so this is the conversion with
-    // the ground turned on. Anything else would be a second, lesser map.
+    // Our map and our profile, over the list, with the ground turned on.
+    // Pressing a button labelled map and getting a bare drawing, because the
+    // ground was switched off a week ago, is the kind of thing that reads as
+    // broken.
     wantBasemap();
-    convertFromUrl(row.url);
+    convertForDialog(row.url, openPreview, home);
     return;
   }
-  if (action === 'adjust' && !openRouteAdjuster(row) && note) {
+  if (action === 'adjust' && !openRouteAdjuster(row, home) && note) {
     // Nothing installed the tool yet. Said on the card that was pressed, in the
     // page's own quiet voice, because a button that swallows a press is the one
     // failure this page must not have.
@@ -2259,6 +3114,11 @@ wireFinder();
 render();
 focusActiveField();
 // The activity list belongs to the source site, so it is asked for rather than
-// written down here. The second site is asked about straight after, which is
-// how the page finds out whether the service can search more than one.
-loadCatalogue(finder.sourceId).then(probeOtherSource);
+// written down here. The default source is asked first because it is the one on
+// screen, then the others, which is how the page finds out which of the three
+// the service actually searches.
+loadCatalogue(finder.sourceId).then(probeSources);
+// The tool the card's third button asks for. It is registered through the same
+// hook an outside module would have used, so the button keeps its one guarantee:
+// it either opens something or says why it did not.
+setRouteAdjuster((row, opener) => convertForDialog(row.url, openRotate, opener));

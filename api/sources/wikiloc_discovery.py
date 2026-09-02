@@ -104,7 +104,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlencode, urlparse
 
 from . import Published, SourceError, wikiloc
-from .discovery import Listing, Place, Row, thumbnail
+from .discovery import Listing, Place, Row, place_name, thumbnail
 from ..http import ALLOWED_HOST, fetch_json
 
 SOURCE_ID = "wikiloc"
@@ -272,6 +272,17 @@ PLACES_MAX = 5
 QUERY_MAX_CHARS = 120
 QUERY_MIN_CHARS = 2
 LIST_TIMEOUT_SECONDS = 8
+
+# WHETHER A POINT CAN AIM A TEXT SEARCH AT A PLACE. Here it is the only thing
+# that can: a Wikiloc search IS a bounding box, so `search(near=...)` turns the
+# point into that box and the rows can be from nowhere else. Nothing was
+# measured to learn this and nothing needs to be -- there is no text of the
+# visitor's anywhere in the request, only the box.
+#
+# The opposite number is `komoot_discovery.POINT_APPLIED`, which is False and
+# carries the measurements. `merged.py` reads both, so a page can say which of
+# the two sites in one list looked where the visitor pointed.
+POINT_APPLIED = True
 
 # Mean Earth radius. A sphere is close enough for a search box: the flattening
 # it ignores moves a 25 km edge by about a hundred metres, and the box is only a
@@ -951,13 +962,27 @@ def _first_thumb(spa: Dict[str, Any]) -> Optional[str]:
 
 
 def _rating(spa: Dict[str, Any]) -> Optional[Dict[str, float]]:
-    """Both halves or neither, the same rule the other source follows."""
+    """Both halves or neither, the same rule the other source follows.
+
+    A COUNT OF ZERO IS NOT A SCORE OF ZERO. Wikiloc sends every unrated trail as
+    `rating` 0.0 with `numRatings` 0, and that pair means nobody rated it, not
+    that everybody rated it nothing. Measured on 2026-09-02 over 100 rows from
+    five searches: 70 arrived that way, `mazunte` alone eight rows out of nine.
+    Passed on as a rating it draws a five-star row filled none of the way and
+    prints "0 (0)" beside it, which is this page claiming other walkers scored
+    a route they never opened.
+
+    Komoot needs no such rule and does not get one: it leaves both fields out
+    of a row nobody has rated, so the check above already returns None.
+    """
     score = spa.get("rating")
     count = spa.get("numRatings")
     try:
         score = float(score)
         count = int(count)
     except (TypeError, ValueError):
+        return None
+    if count <= 0:
         return None
     return {"score": round(score, 2), "count": count}
 
@@ -1022,15 +1047,14 @@ def _place(feature: Dict[str, Any]) -> Optional[Place]:
     if not -90.0 <= latitude <= 90.0 or not -180.0 <= longitude <= 180.0:
         return None
 
-    # Named with what tells the five Montserrats apart, and nothing else. A
-    # postcode or a house number would be somebody's address travelling through
-    # a route search.
-    parts = [name.strip()]
-    for key in ("state", "country"):
-        value = properties.get(key)
-        if isinstance(value, str) and value.strip() and value.strip() not in parts:
-            parts.append(value.strip())
-    return Place(", ".join(parts), latitude, longitude)
+    # Named with what tells the five Montserrats apart, and nothing else. The
+    # rule is `discovery.place_name`, shared with the other site so the two
+    # halves of a merged place list are named the same way.
+    return Place(
+        place_name(name, properties.get("state"), properties.get("country")),
+        latitude,
+        longitude,
+    )
 
 
 def _extent(properties: Any) -> Optional[Tuple[float, float, float, float]]:

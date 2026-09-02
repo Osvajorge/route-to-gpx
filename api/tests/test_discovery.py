@@ -394,6 +394,55 @@ def test_places_ride_in_on_the_same_call_and_carry_no_link(monkeypatch):
     assert "places" not in komoot_discovery.nearby(lat=41.7, lng=2.4, sport="hike").as_dict()
 
 
+def test_a_place_is_named_with_enough_to_tell_it_from_its_namesake(monkeypatch):
+    """Komoot answers `montserrat` with two places called exactly that.
+
+    The village in Valencia and the island in the Caribbean, 2,800 km apart, and
+    the `address_entry` beside each is the only thing in the payload separating
+    them. It travels with the name, by the same rule the other site uses, so a
+    page draws a choice rather than the same word twice.
+
+    The island's country IS Montserrat, so its name stays the bare word: a
+    region repeating the name is left out rather than doubled, and the page
+    carries the coordinate as its own last resort.
+    """
+    _answers(
+        monkeypatch,
+        {
+            "_embedded": {
+                "items": [
+                    {
+                        "name": "Montserrat",
+                        "point": {"x": -0.6031, "y": 39.3576494},
+                        "address_entry": {
+                            # The postcode is in the same object and never
+                            # travels: that is somebody's address.
+                            "zip_code": "46192",
+                            "county": "la Ribera Alta",
+                            "state": "Valencian Community",
+                            "country": "Spain",
+                        },
+                        "content_type": "location",
+                    },
+                    {
+                        "name": "Montserrat",
+                        "point": {"x": -62.1916844, "y": 16.7417041},
+                        "address_entry": {"country": "Montserrat"},
+                        "content_type": "location",
+                    },
+                ]
+            }
+        },
+    )
+    places = komoot_discovery.search(query="montserrat").as_dict()["places"]
+
+    assert places == [
+        {"name": "Montserrat, Valencian Community, Spain", "lat": 39.3576494, "lng": -0.6031},
+        {"name": "Montserrat", "lat": 16.7417041, "lng": -62.1916844},
+    ]
+    assert "46192" not in places[0]["name"]
+
+
 def test_paging_stops_at_the_last_page_this_service_offers(monkeypatch):
     """Without a cap, page=999999 is a crawl with extra steps."""
     _answers(monkeypatch, NEARBY_PAYLOAD)

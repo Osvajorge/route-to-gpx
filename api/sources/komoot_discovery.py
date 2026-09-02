@@ -28,7 +28,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import unquote, urlencode, urlparse, urlunparse
 
 from . import Published, SourceError, komoot
-from .discovery import Listing, Place, Row, thumbnail
+from .discovery import Listing, Place, Row, place_name, thumbnail
 from . import polyline
 from ..http import ALLOWED_HOST, fetch_json
 
@@ -57,7 +57,7 @@ LIMIT_DEFAULT = 10
 LIMIT_MAX = 25
 
 # Five pages. If the route is not in the first hundred-odd results the query is
-# wrong, not the paging — and without a cap, `page=999999` is a crawl with extra
+# wrong, not the paging, and without a cap, `page=999999` is a crawl with extra
 # steps. `hasMore` is forced false here, so the page cannot render a next button
 # into page five.
 PAGE_MAX = 4
@@ -91,6 +91,35 @@ QUERY_MIN_CHARS = 2
 # A list that takes longer than this has already failed the visitor, and a short
 # wait bounds how long a spent token stays in flight.
 LIST_TIMEOUT_SECONDS = 8
+
+# WHETHER A POINT CAN AIM A TEXT SEARCH AT A PLACE. It cannot, and this is what
+# was tried before saying so, all against the live endpoint on 2026-09-02 with
+# the query `montserrat`, which is the whole problem in one word: a mountain in
+# Catalonia, a village in Valencia, and an island in the Caribbean.
+#
+#   no point at all              first tour "View of Montserrat's north face
+#                                ... from Manresa Baixador", start 41.732 1.828
+#   lat/lng at Sanabria,         the same row, the same three tours, in the same
+#   42.117 -6.717, 600 km away   order. Byte-identical.
+#   lat/lng on the island,       three DIFFERENT tours, and every one of them
+#   16.742 -62.192               still in Catalonia, 41.57 to 41.59
+#   bbox=-62.3,16.6,-62.1,16.9   the same three tours as no point at all
+#   map_bounds, same box         the same three tours as no point at all
+#   lat/lng + max_distance       nothing beyond what lat/lng had already done
+#   lat/lng + radius             nothing beyond what lat/lng had already done
+#
+# So `lat`/`lng` nudges the ranking and does not choose a place: Komoot reads
+# the words as a place itself and the words win. The parameter is not dead, and
+# that is worth knowing before anyone calls it broken -- with a query naming
+# nowhere (`trail`) and that same island point, Komoot answered with tours at
+# 18.31 -64.71, in the Caribbean. It is only a search whose words name a place
+# that cannot be pointed at a different one.
+#
+# Komoot does not publish what this endpoint accepts, so the rows above are what
+# was tried, not a proof that nothing else exists. Anyone finding a parameter
+# that does aim the search changes this constant and the table in `merged.py`
+# reads the new value; nothing else has to move.
+POINT_APPLIED = False
 
 
 def search(
@@ -482,7 +511,20 @@ def _place(item: Dict[str, Any]) -> Optional[Place]:
     latitude = komoot._number(point.get("y"))
     if latitude is None or longitude is None:
         return None
-    return Place(name.strip(), latitude, longitude)
+    # The region Komoot already sent, so two places of the same name are two
+    # different answers rather than one printed twice. `montserrat` returns
+    # `Montserrat` for the Valencian village and `Montserrat` for the Caribbean
+    # island, and the `address_entry` beside each is the only thing in the
+    # payload that tells them apart. The rule is shared with the other site, in
+    # `discovery.place_name`, and it takes the region and nothing narrower: the
+    # `zip_code` sitting in the same object is somebody's address.
+    address = item.get("address_entry")
+    address = address if isinstance(address, dict) else {}
+    return Place(
+        place_name(name, address.get("state"), address.get("country")),
+        latitude,
+        longitude,
+    )
 
 
 def _answer(url: str) -> Dict[str, Any]:

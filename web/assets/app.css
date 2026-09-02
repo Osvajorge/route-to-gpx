@@ -593,10 +593,24 @@ h1 {
 
 /* Two to a screen on a laptop, one on a phone, and never three: three would
  * squeeze the 2x2 grid of figures into a column and the card would stop being
- * scannable, which is the only thing it is for. */
+ * scannable, which is the only thing it is for.
+ *
+ * EACH CARD IS AS TALL AS WHAT IS IN IT. A grid stretches its items to the
+ * tallest in the row by default, and a Komoot card carries a drawing of the
+ * route while a Wikiloc card carries none. On a merged list at 1280 that made
+ * every card 515 px and left the Wikiloc ones with 171 px of nothing between
+ * the figures and the buttons, against 10 px on the card beside them. The
+ * buttons lined up across the row, which is worth something, and the void was
+ * worth less: it reads as a card that lost its picture rather than one designed
+ * without one.
+ *
+ * So the stretch goes, and a card without a drawing is simply shorter, which is
+ * the truth about it. Nothing changes on a phone: one column has no row to
+ * stretch to. */
 .results {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: start;
   gap: 12px;
   padding-top: 14px;
 }
@@ -624,25 +638,22 @@ h1 {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--surface-line));
 }
 
-/* THE PICTURE. Only Komoot's, and only because Komoot's is a drawing of the
- * route: see cardImage() for the whole decision.
+/* THE DRAWING. Only where the source handed over the route's own shape, which
+ * today is Komoot: see cardTrace() for the whole decision.
  *
- * Damped the way the basemap under the trace is damped, and for the same
- * reason: what arrives is a bright green raster with a blue line on it, and
- * nine of those at full strength would be the loudest thing on a page whose
- * two colours both mean something.
+ * Drawn here rather than loaded. The earlier version put Komoot's own picture
+ * of the route in an <img> and damped it with a filter, which meant every card
+ * on screen asked Komoot's image server for a file and handed it the visitor's
+ * address. The shape now arrives with the row, so the card draws it in this
+ * page's own line colour, over this page's own ground, and fetches nothing.
  *
- * grayscale first, so no third colour can arrive. Then inverted, and that is
- * the one step worth explaining. Komoot draws a dark route on light paper.
- * Damped without inverting, the route stays the darkest thing in the frame and
- * the paper stays the brightest, which is the exact opposite of how this page
- * reads everywhere else: here the ground is sunk and the track is the bright
- * thing on it. Inverting puts the route back on top of its own ground, so a
- * card and the trace chart it leads to say the same thing the same way. The
- * shape, which is the whole reason the picture is here, is untouched: no pixel
- * moves, only its lightness. Contrast then pushes the two apart and brightness
- * takes the paper down to about a quarter, which lands the ground plainly above
- * the card behind it and plainly below the route on it. */
+ * The result is the trace chart at a smaller size, on purpose and by the same
+ * arithmetic: the same Mercator, the same fit, the same cyan. A card is a
+ * promise about what the report will show, so the two must not disagree.
+ *
+ * No glow and no draw-on animation. Nine of those at once is a page that
+ * shimmers, and there is nothing here worth animating: on the chart the line
+ * is the subject, on a card it is a thumbnail. */
 .card-shape {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -650,13 +661,33 @@ h1 {
   border-bottom: 1px solid var(--surface-line);
 }
 
-.card-image {
+.card-trace {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  filter: grayscale(1) invert(1) contrast(1.3) brightness(0.7);
-  opacity: 0.9;
+}
+
+/* A soft second stroke under the line, so a route that doubles back on itself
+ * still reads as one line rather than as a smudge at this size. */
+.card-trace-halo {
+  fill: none;
+  stroke: var(--accent-neon);
+  stroke-width: 4;
+  stroke-opacity: 0.28;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card-trace-line {
+  fill: none;
+  stroke: var(--accent-bright);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card-trace-start {
+  fill: var(--accent-bright);
 }
 
 /* Over the drawing, where they cost no height at all. Inline under the title
@@ -968,6 +999,85 @@ h1 {
   margin-top: 14px;
 }
 
+/* THE PLACE THE ROWS ARE FROM, above them rather than below.
+ *
+ * Wikiloc searches a box, so words have to become a point, and the geocoder
+ * that turns them into one can land 300 km from the mountain of the same name.
+ * That is not a footnote: it changes what every row underneath means. So it
+ * sits at the top of the results, ruled off with the accent the way anything
+ * this page wants read is, and the places it could have been are buttons
+ * beside it. */
+.place-used {
+  margin-top: 14px;
+  padding: 11px 0 11px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.place-used-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  max-width: 68ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.place-used-mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.place-swap-label {
+  padding-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.place-swap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.place-swap-button {
+  max-width: 100%;
+  text-align: left;
+  /* A long name and a coordinate that must not break sit side by side, so on a
+   * narrow screen the pair wraps rather than pushing past the button's edge. */
+  flex-wrap: wrap;
+}
+
+/* The point, on the buttons where the name alone does not say which place this
+ * is. A search for "montserrat" answers with two places called exactly
+ * "Montserrat" 6,000 km apart, and the coordinate is the only thing this page
+ * holds that separates them. Quieter than the name, because it is there to
+ * disambiguate and not to be read first. */
+.place-swap-point {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* One site of two missing. Warm red, like everything else that changes what
+ * you would do, because a list that is half the answer read as the whole
+ * answer is the failure this line exists to prevent. */
+.finder-missing {
+  align-items: flex-start;
+  margin-top: 14px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: #d6c1bd;
+}
+
 /* Quietly under the list, because it is the difference between "nothing was
  * found" and "we could not read some of what was found". */
 .dropped-note {
@@ -1254,11 +1364,11 @@ h1 {
   touch-action: pan-y;
 }
 
-#trace .chart-canvas {
+[data-chart='trace'] .chart-canvas {
   height: clamp(220px, 34vw, 330px);
 }
 
-#profile .chart-canvas {
+[data-chart='profile'] .chart-canvas {
   height: clamp(150px, 22vw, 210px);
 }
 
@@ -1354,7 +1464,7 @@ h1 {
   min-width: 6ch;
 }
 
-#profile .chart-canvas {
+[data-chart='profile'] .chart-canvas {
   grid-area: 1 / 2;
 }
 
@@ -1728,6 +1838,240 @@ body:has(#app[data-dragging='true']) .drop-veil {
   font-size: 13px;
 }
 
+/* --------------------------------------------------------------- dialogs */
+
+/* Two of them, both over the whole page. The report's own action bar is fixed
+ * to the bottom of a phone screen at z-index 4 and the drop veil sits at 5, so
+ * a dialog covers both rather than arguing with either. */
+
+html.dialog-open,
+html.dialog-open body {
+  overflow: hidden;
+}
+
+/* The width the scrollbar gives up, handed back, so the page behind does not
+ * jump sideways as the dialog arrives. */
+html.dialog-open body {
+  padding-right: var(--scrollbar-gap, 0px);
+}
+
+.dialog-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(3px);
+  animation: veil-in 0.16s var(--ease);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 860px;
+  max-height: calc(100dvh - 44px);
+  background: var(--surface);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-card);
+  animation: dialog-in 0.2s var(--ease);
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialog-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--surface-line);
+}
+
+.dialog-identity {
+  min-width: 0;
+}
+
+.dialog-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dialog-title {
+  margin-top: 2px;
+  font-size: clamp(17px, 2.4vw, 21px);
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+
+.dialog-close {
+  flex: none;
+}
+
+/* The only thing that scrolls. The head keeps the route's name on screen and
+ * the foot keeps the seam warning above the download button, which is the
+ * whole point of the foot. */
+.dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  overscroll-behavior: contain;
+}
+
+.dialog-subhead {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.dialog-note {
+  max-width: 68ch;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.dialog-foot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--surface-line);
+}
+
+.rotate-foot {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.rotate-foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+}
+
+.dialog-filename {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+@keyframes veil-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ------------------------------------------------------------ re-arranging */
+
+.rotate-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+}
+
+.rotate-start {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rotate-start-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.rotate-start-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Pressed is the accent on the edge, not a filled button. The filled thing on
+ * this page is the one that does the work, and here that is Download. */
+.toggle-button {
+  min-height: 44px;
+}
+
+.toggle-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The track is 4px; the control is 44px so a thumb on a phone can find it. */
+.range {
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--field-border);
+}
+
+.range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--field-border);
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border: 3px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.range:disabled {
+  opacity: 0.5;
+}
+
 /* ----------------------------------------------------------------- mobile */
 
 @media (max-width: 640px) {
@@ -1788,6 +2132,19 @@ body:has(#app[data-dragging='true']) .drop-veil {
   .text-input,
   .select {
     font-size: 16px; /* anything smaller makes iOS zoom the page on focus */
+  }
+
+  /* One control per row on a phone, and the reason is the words in them.
+   * "Komoot y Wikiloc" and "Cualquier actividad" both run past half of 375 px
+   * and are cut off mid-word, and a control whose value has to be opened before
+   * it can be read is not a control. The two coordinate boxes are the exception
+   * and keep their pair: they are short numbers that read as one point. */
+  .control {
+    grid-column: 1 / -1;
+  }
+
+  .control-pair {
+    grid-column: auto;
   }
 
   /* The button that spends the request goes full width along the bottom of the
@@ -1889,11 +2246,11 @@ body:has(#app[data-dragging='true']) .drop-veil {
     font-size: 26px;
   }
 
-  #trace .chart-canvas {
+  [data-chart='trace'] .chart-canvas {
     height: 210px;
   }
 
-  #profile .chart-canvas {
+  [data-chart='profile'] .chart-canvas {
     height: 130px;
   }
 
@@ -1927,6 +2284,39 @@ body:has(#app[data-dragging='true']) .drop-veil {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
+  }
+
+  /* A sheet filling the screen, so it covers the report's fixed action bar
+   * instead of leaving two sets of buttons stacked on one thumb. */
+  .dialog-veil {
+    padding: 0;
+  }
+
+  .dialog {
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .dialog-head,
+  .dialog-body,
+  .dialog-foot {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .dialog-foot {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+
+  /* The one that does the work gets a row of its own along the bottom edge,
+   * where a thumb reaches it. The other two share the row above rather than
+   * squeezing its words onto two lines. */
+  .dialog-foot .primary-button {
+    flex: 1 1 100%;
+    min-height: 48px;
   }
 }
 

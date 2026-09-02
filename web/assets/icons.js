@@ -44,6 +44,13 @@ const PATHS = {
     '<path d="M4 8h4"/><path d="M12 8h8"/><path d="M4 16h10"/><path d="M18 16h2"/><circle cx="10" cy="8" r="2"/><circle cx="16" cy="16" r="2"/>',
   external:
     '<path d="M13.5 4.5H19.5V10.5"/><path d="m11 13 8.5-8.5"/><path d="M18.5 14v4.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1H10"/>',
+
+  // The two dialogs.
+  close: '<path d="m6.5 6.5 11 11"/><path d="m17.5 6.5-11 11"/>',
+  // Two runs of the same path, one each way. Not a circular arrow: nothing here
+  // goes round, the walk is simply done in the other order.
+  reverse:
+    '<path d="M4 9h13"/><path d="m13.5 5.5 3.5 3.5-3.5 3.5"/><path d="M20 15H7"/><path d="m10.5 11.5-3.5 3.5 3.5 3.5"/>',
 };
 
 export function icon(name, className = '') {

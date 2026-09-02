@@ -122,7 +122,7 @@ class SearchRequest(BaseModel):
 
     It matches `/api/convert`, it keeps the visitor's words and their
     approximate position out of the access log and out of any intermediary
-    cache, and nothing caches a POST — which is how "keeps nothing" stays true
+    cache, and nothing caches a POST, which is how "keeps nothing" stays true
     from end to end.
 
     Every field is permissive here and range-checked by hand further in. A
@@ -138,9 +138,14 @@ class SearchRequest(BaseModel):
     # page has one dropdown; the words in it come from `/api/sports` for the
     # source being asked, and the two vocabularies are never mixed.
     sport: Optional[str] = None
-    # Komoot only: it biases a text search towards a point. Wikiloc's search
-    # finds its own place from the words, so a `near` sent with it is not used,
-    # and the echoed `query` says so by having no `near` in it.
+    # The place the caller already knows they meant, so nothing has to be
+    # guessed from the words. The two sites do very different things with it,
+    # and neither is a matter of opinion: a Wikiloc search IS a box, so the
+    # point becomes that box; Komoot geocodes the words itself and takes the
+    # point only as a nudge to the ranking. Both are written down beside the
+    # code that acts on them, as `POINT_APPLIED` in each site's module, with
+    # what was measured to establish it. An answer from both sites reports it
+    # per site, on the `sources` rows, because it is not the same for both.
     near: Optional[NearPoint] = None
     limit: Optional[int] = None
     page: Optional[int] = None
@@ -185,7 +190,7 @@ def client_key(request: Request) -> str:
 
     `X-Forwarded-For` is never read here, not even as a fallback. Any caller can
     send that header, so trusting it in this file would hand every visitor an
-    unlimited share for the price of a random string — worse than the state
+    unlimited share for the price of a random string, worse than the state
     where everyone behind a proxy shares one bucket.
 
     The trust decision belongs to the deployment instead: uvicorn rewrites this
@@ -385,6 +390,14 @@ def search(body: SearchRequest, request: Request):
                     activity=body.sport,
                     limit=body.limit,
                     page=body.page,
+                    # Passed on, because Wikiloc is the site the point works on:
+                    # its search is a box and the point becomes that box.
+                    # Dropping it here spent the visitor's pick and then let the
+                    # geocoder choose the place anyway, which the page could
+                    # only read as Wikiloc refusing to be pointed. It was this
+                    # endpoint refusing, and blaming a source site for our own
+                    # doing is the worst version of getting this wrong.
+                    near=near,
                 )
             else:
                 listing = komoot_discovery.search(

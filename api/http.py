@@ -20,7 +20,7 @@ Four rules hold here, and nowhere else has to think about them:
    The per-client bucket is FAIRNESS. It stops one visitor drinking the shared
    bucket. Everything else follows from that split: per-client state can be
    thrown away under memory pressure, and a misconfigured deployment can even
-   let a client key be forged, and neither is a safety failure — forging or
+   let a client key be forged, and neither is a safety failure: forging or
    losing a client key can only empty the shared bucket faster, never spend
    past it.
 
@@ -169,7 +169,7 @@ def request_budget(client: str, calls: int = FAN_OUT_CEILING) -> Iterator[Reques
     """Opens the window in which outbound calls are allowed at all.
 
     Every endpoint that reads a source site wraps its work in this, and a test
-    that reaches the network has to as well — which is the rule stated once
+    that reaches the network has to as well, which is the rule stated once
     more, every time somebody reads the tests.
 
     The object is mutated in place and never rebound, because FastAPI runs a

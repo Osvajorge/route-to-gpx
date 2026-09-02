@@ -61,11 +61,16 @@ export function worldYToLat(worldY) {
   return (Math.atan(Math.sinh(Math.PI * (1 - 2 * worldY))) * 180) / Math.PI;
 }
 
-/** How the track sits in the trace viewBox: the world point that lands at
- *  viewBox (0, 0), and how many viewBox units one world unit covers. Mercator
- *  keeps angles, so one factor serves both axes, and that single factor is
- *  what lets the tile layer register with the drawing exactly. */
-export function traceFrame(points) {
+/** How a shape sits in a box: the world point that lands at (0, 0), and how
+ *  many box units one world unit covers. Mercator keeps angles, so one factor
+ *  serves both axes, and that single factor is what lets the tile layer
+ *  register with the drawing exactly.
+ *
+ *  The box is a parameter because the same shape is drawn at two sizes now:
+ *  the report's chart, and the small drawing on a card. Two fits written out
+ *  twice would disagree eventually, and a card that disagrees with the chart it
+ *  leads to is worse than a card with no drawing on it. */
+export function fitFrame(points, box) {
   let minWX = Infinity;
   let maxWX = -Infinity;
   let minWY = Infinity;
@@ -86,11 +91,11 @@ export function traceFrame(points) {
   const spanX = maxWX - minWX || 1e-12;
   const spanY = maxWY - minWY || 1e-12;
   const unitsPerWorld = Math.min(
-    (TRACE_W - 2 * TRACE_PAD) / spanX,
-    (TRACE_H - 2 * TRACE_PAD) / spanY,
+    (box.width - 2 * box.pad) / spanX,
+    (box.height - 2 * box.pad) / spanY,
   );
-  const offsetX = (TRACE_W - spanX * unitsPerWorld) / 2;
-  const offsetY = (TRACE_H - spanY * unitsPerWorld) / 2;
+  const offsetX = (box.width - spanX * unitsPerWorld) / 2;
+  const offsetY = (box.height - spanY * unitsPerWorld) / 2;
 
   return {
     worldX0: minWX - offsetX / unitsPerWorld,
@@ -99,7 +104,13 @@ export function traceFrame(points) {
   };
 }
 
-function projectInFrame(points, frame) {
+/** The report chart's own fit. The tile layer reads this frame, so the box it
+ *  is measured in is the one the basemap is cut to. */
+export function traceFrame(points) {
+  return fitFrame(points, { width: TRACE_W, height: TRACE_H, pad: TRACE_PAD });
+}
+
+export function projectInFrame(points, frame) {
   return points.map((p) => ({
     x: (lonToWorldX(p.lon) - frame.worldX0) * frame.unitsPerWorld,
     y: (latToWorldY(p.lat) - frame.worldY0) * frame.unitsPerWorld,

@@ -644,6 +644,58 @@ def test_an_activity_wikiloc_has_added_since_is_left_null(monkeypatch):
     assert row["published"]["distanceM"] is None
 
 
+def test_a_trail_nobody_rated_carries_no_rating_at_all(monkeypatch):
+    """A count of zero is the absence of a rating, not a score of zero.
+
+    Wikiloc sends every unrated trail as `rating` 0.0 with `numRatings` 0.
+    Measured on 2026-09-02 over 100 rows from five searches, 70 arrived that
+    way; on `mazunte` it was eight rows of nine. Passed on, a card draws five
+    empty stars and prints "0 (0)" beside them, which is this service saying
+    people scored a route nobody opened.
+    """
+    _answers(
+        monkeypatch,
+        find={"spas": [{"id": 7, "prettyURL": "/hiking-trails/w-7", "name": "Mazunte West",
+                        "picto": 1, "lat": 41.6, "lon": 1.8,
+                        "rating": 0.0, "numRatings": 0}]},
+    )
+    row = wikiloc_discovery.nearby(lat=41.6, lng=1.8).as_dict()["results"][0]
+    assert row["rating"] is None
+
+
+def test_a_single_rating_is_a_rating_and_survives(monkeypatch):
+    """The line the rule above must not cross."""
+    _answers(
+        monkeypatch,
+        find={"spas": [{"id": 7, "prettyURL": "/hiking-trails/w-7", "name": "Mazunte-Puerto Angel",
+                        "picto": 1, "lat": 41.6, "lon": 1.8,
+                        "rating": 4.33, "numRatings": 1}]},
+    )
+    row = wikiloc_discovery.nearby(lat=41.6, lng=1.8).as_dict()["results"][0]
+    assert row["rating"] == {"score": 4.33, "count": 1}
+
+
+def test_a_place_is_named_with_enough_to_tell_it_from_its_namesake(monkeypatch):
+    """Two of these five Montserrats are called exactly that and nothing more.
+
+    The region Photon already sent travels with the name, so a page draws a
+    choice rather than the same word twice. A region repeating the name is left
+    out: the island is in the country called Montserrat, and "Montserrat,
+    Montserrat" tells nobody anything, which is why the page carries the
+    coordinate as its own last resort.
+    """
+    _answers(monkeypatch, find=EMPTY_FIND, photon=PHOTON)
+    places = wikiloc_discovery.search(query="montserrat").as_dict()["places"]
+
+    assert [place["name"] for place in places] == [
+        "Montserrat, Catalonia, Spain",
+        "Montserrat",
+        "Montserrat, Galicia, Spain",
+    ]
+    # Named the same, and 2,800 km apart. Only the point separates them.
+    assert places[1]["lat"] == 16.7417041
+
+
 # --- paging -------------------------------------------------------------------
 
 

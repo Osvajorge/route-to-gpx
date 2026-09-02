@@ -147,11 +147,19 @@
 
               <form class="finder-form" id="nearby-form">
                 <div class="control-grid">
-                  <p class="control">
+                  <!-- The one pair that stays side by side on a phone: two short
+                       numbers that belong together and read as one point. Every
+                       other control takes the whole row there, because a value
+                       cut off mid-word has to be opened before it can be read. -->
+                  <p class="control control-pair">
                     <label class="control-label" for="nearby-lat"></label>
                     <input class="text-input" id="nearby-lat" type="text" inputmode="decimal" autocomplete="off" />
                   </p>
-                  <p class="control">
+                  <!-- The one pair that stays side by side on a phone: two short
+                       numbers that belong together and read as one point. Every
+                       other control takes the whole row there, because a value
+                       cut off mid-word has to be opened before it can be read. -->
+                  <p class="control control-pair">
                     <label class="control-label" for="nearby-lng"></label>
                     <input class="text-input" id="nearby-lng" type="text" inputmode="decimal" autocomplete="off" />
                   </p>
@@ -205,20 +213,24 @@
               <h1 id="report-title"></h1>
               <p class="source-line" id="report-source"></p>
             </div>
+            <!-- The re-arranger is reachable from here and not only from a
+                 card, because the link field is the way most routes arrive and
+                 a tool nobody can find is a tool nobody has. -->
             <div class="report-actions">
               <button id="download" class="primary-button" type="button"></button>
+              <button id="report-adjust" class="icon-button" type="button"></button>
               <button id="reset" class="link-button" type="button"></button>
             </div>
           </div>
 
           <div id="tiles" class="tiles"></div>
 
-          <figure class="chart" id="trace">
+          <figure class="chart" id="trace" data-chart="trace">
             <figcaption class="chart-head">
               <span class="chart-title"></span>
               <span class="chart-head-end">
                 <span class="chart-reading"></span>
-                <button id="map-toggle" class="chart-toggle" type="button"></button>
+                <button id="map-toggle" class="chart-toggle" type="button" data-map-toggle></button>
               </span>
             </figcaption>
             <!-- The map canvas and the two overlay spans are siblings of
@@ -235,7 +247,7 @@
             <div class="chart-caption"></div>
           </figure>
 
-          <figure class="chart" id="profile">
+          <figure class="chart" id="profile" data-chart="profile">
             <figcaption class="chart-head">
               <span class="chart-title"></span>
               <span class="chart-reading"></span>
@@ -270,6 +282,166 @@
     </div>
 
     <div class="drop-veil" aria-hidden="true"><span class="drop-note"></span></div>
+
+    <!-- Both dialogs are siblings of .shell, never inside it: modal.js sets
+         .shell inert while one is open, and a dialog inside an inert ancestor
+         is inert with it. -->
+
+    <!-- Each dialog is named by its kicker and the route together, so it
+         announces itself as "Re-arrange <route>" rather than as a bare route
+         name that says nothing about what the dialog is for. -->
+
+    <!-- THE PREVIEW. Our conversion, our measurement, our two drawings. The
+         competitor puts the source site's own widget in this box, which hands
+         the visitor to a third party and shows them the numbers this product
+         exists to doubt. -->
+    <div
+      class="dialog-veil"
+      id="preview-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="preview-kicker preview-title"
+      hidden
+    >
+      <div class="dialog" tabindex="-1">
+        <header class="dialog-head">
+          <div class="dialog-identity">
+            <p class="dialog-kicker" id="preview-kicker"></p>
+            <h2 class="dialog-title" id="preview-title"></h2>
+            <p class="source-line" id="preview-source"></p>
+          </div>
+          <button class="icon-button dialog-close" id="preview-close" type="button"></button>
+        </header>
+
+        <div class="dialog-body">
+          <div class="tiles" id="preview-tiles"></div>
+
+          <figure class="chart" id="preview-trace" data-chart="trace">
+            <figcaption class="chart-head">
+              <span class="chart-title"></span>
+              <span class="chart-head-end">
+                <button class="chart-toggle" type="button" data-map-toggle></button>
+              </span>
+            </figcaption>
+            <div class="chart-canvas">
+              <canvas class="chart-map" aria-hidden="true" hidden></canvas>
+              <div class="chart-svg"></div>
+              <span class="gap-label" hidden></span>
+              <span class="chart-attribution" hidden></span>
+            </div>
+            <div class="chart-caption"></div>
+          </figure>
+
+          <figure class="chart" id="preview-profile" data-chart="profile">
+            <figcaption class="chart-head"><span class="chart-title"></span></figcaption>
+            <div class="chart-plot">
+              <div class="axis-y" aria-hidden="true"></div>
+              <div class="chart-canvas"><div class="chart-svg"></div></div>
+              <div class="axis-x" aria-hidden="true"></div>
+            </div>
+          </figure>
+
+          <div id="preview-warning" class="panel-warn warning-line" role="status" hidden></div>
+          <p class="dialog-note" id="preview-note"></p>
+        </div>
+
+        <footer class="dialog-foot">
+          <button class="primary-button" id="preview-download" type="button"></button>
+          <button class="ghost-button" id="preview-adjust" type="button"></button>
+          <button class="link-button" id="preview-report" type="button"></button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- THE RE-ARRANGER. Reverse, and on a ring, start somewhere else. The
+         order in the body is the order the argument runs: what was detected,
+         the two controls, the drawing, what the result measures, and last of
+         all, above the download button, what the change cost. -->
+    <div
+      class="dialog-veil"
+      id="rotate-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rotate-kicker rotate-title"
+      hidden
+    >
+      <div class="dialog" tabindex="-1">
+        <header class="dialog-head">
+          <div class="dialog-identity">
+            <p class="dialog-kicker" id="rotate-kicker"></p>
+            <h2 class="dialog-title" id="rotate-title"></h2>
+            <p class="source-line" id="rotate-route"></p>
+          </div>
+          <button class="icon-button dialog-close" id="rotate-close" type="button"></button>
+        </header>
+
+        <div class="dialog-body">
+          <p class="field-note" id="rotate-detected"></p>
+
+          <div class="rotate-controls">
+            <button
+              class="ghost-button toggle-button"
+              id="rotate-reverse"
+              type="button"
+              aria-pressed="false"
+            ></button>
+
+            <div class="rotate-start" id="rotate-start-block">
+              <span class="rotate-start-head">
+                <label class="control-label" for="rotate-start"></label>
+                <!-- The reading is repeated for the eye only. The control
+                     itself carries the same words in aria-valuetext, so its
+                     name stays the name of the control while its value moves. -->
+                <span class="rotate-start-value" id="rotate-start-value" aria-hidden="true"></span>
+              </span>
+              <input
+                class="range"
+                id="rotate-start"
+                type="range"
+                min="0"
+                max="0"
+                step="1"
+                value="0"
+              />
+            </div>
+
+            <button class="link-button" id="rotate-reset" type="button"></button>
+          </div>
+
+          <figure class="chart" id="rotate-trace" data-chart="trace">
+            <figcaption class="chart-head">
+              <span class="chart-title"></span>
+              <span class="chart-head-end">
+                <button class="chart-toggle" type="button" data-map-toggle></button>
+              </span>
+            </figcaption>
+            <div class="chart-canvas">
+              <canvas class="chart-map" aria-hidden="true" hidden></canvas>
+              <div class="chart-svg"></div>
+              <span class="gap-label" hidden></span>
+              <span class="chart-attribution" hidden></span>
+            </div>
+            <div class="chart-caption"></div>
+          </figure>
+
+          <h3 class="dialog-subhead" id="rotate-measured-head"></h3>
+          <div class="tiles" id="rotate-tiles"></div>
+
+          <p class="dialog-note" id="rotate-times"></p>
+          <p class="dialog-note" id="rotate-notrim"></p>
+        </div>
+
+        <footer class="dialog-foot rotate-foot">
+          <!-- Above the button, not beside it and not after it. A seam this
+               tool opened is the last thing read before the file is taken. -->
+          <div id="rotate-seam" class="panel-warn warning-line" role="status" hidden></div>
+          <div class="rotate-foot-row">
+            <button class="primary-button" id="rotate-download" type="button"></button>
+            <p class="dialog-filename" id="rotate-filename"></p>
+          </div>
+        </footer>
+      </div>
+    </div>
 
     <script type="module" src="assets/app.js"></script>
   </body>

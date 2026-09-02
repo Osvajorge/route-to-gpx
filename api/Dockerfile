@@ -21,7 +21,7 @@ EXPOSE 8000
 #
 # Set FORWARDED_ALLOW_IPS only when a proxy sits on another host or container,
 # to that proxy's exact address. Leave it unset for a direct run or a proxy on
-# this host: uvicorn already trusts 127.0.0.1. Never set it to "*" — that
+# this host: uvicorn already trusts 127.0.0.1. Never set it to "*": that
 # believes every sender, and a visitor can then forge the header and take a
 # fresh share of the budget on every request by rotating it.
 CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

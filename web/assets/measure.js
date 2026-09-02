@@ -56,7 +56,13 @@ export function parseGpx(xmlText) {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     const eleNode = node.getElementsByTagName('ele')[0];
     const ele = eleNode ? Number(eleNode.textContent) : null;
-    points.push({ lat, lon, ele: Number.isFinite(ele) ? ele : null });
+    // Read but never measured with. It is here so the re-arranger can say how
+    // many points carry a recorded time before it drops them: changing the
+    // order of a recording makes its times wrong, and losing them silently is
+    // the failure this page is not allowed to have.
+    const timeNode = node.getElementsByTagName('time')[0];
+    const time = timeNode ? timeNode.textContent.trim() : '';
+    points.push({ lat, lon, ele: Number.isFinite(ele) ? ele : null, time: time || null });
   }
   if (points.length < 2) throw new TrackError('no_track');
 
@@ -197,8 +203,19 @@ export function measure(track, gapThreshold = DEFAULT_GAP_THRESHOLD_M) {
   };
 }
 
-/** Rebuilds a clean GPX 1.1 file, recording where the track came from. */
-export function buildGpx(track, source) {
+/** Rebuilds a clean GPX 1.1 file, recording where the track came from.
+ *
+ *  `notes` is an optional plain sentence saying what was done to the track,
+ *  written into the description in both places a reader might look.
+ *
+ *  NO POINT IN A FILE THIS FUNCTION WRITES EVER CARRIES A TIME, and that is a
+ *  rule, not an omission. A time on a track point is a claim that somebody
+ *  stood there at that instant, and the only honest source for one is a
+ *  recording of somebody standing there. The competitor stamps a time on every
+ *  point of routes nobody has ever walked: the span is the source site's
+ *  estimated duration to the second, and the first instant is the day the route
+ *  was drawn. We rebuild geometry, so we write geometry. */
+export function buildGpx(track, source, notes = null) {
   const escape = (text) =>
     String(text)
       .replace(/&/g, '&amp;')
@@ -210,6 +227,11 @@ export function buildGpx(track, source) {
   const link = source.url
     ? `<link href="${escape(source.url)}"><text>${escape(source.label || 'source')}</text></link>`
     : '';
+  // GPX 1.1 fixes the order of these children, so the description goes after
+  // the name and before the link in <metadata>, and after the name in <trk>.
+  // A file that reads correctly and validates costs the same as one that does
+  // not.
+  const desc = notes ? `<desc>${escape(notes)}</desc>` : '';
 
   const body = track.points
     .map((p) => {
@@ -220,8 +242,8 @@ export function buildGpx(track, source) {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="route-to-gpx" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata><name>${name}</name>${link}</metadata>
-  <trk><name>${name}</name><trkseg>
+  <metadata><name>${name}</name>${desc}${link}</metadata>
+  <trk><name>${name}</name>${desc}<trkseg>
 ${body}
   </trkseg></trk>
 </gpx>

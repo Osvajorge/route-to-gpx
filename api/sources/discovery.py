@@ -115,6 +115,35 @@ class Row:
         }
 
 
+def place_name(name: str, *regions: Any) -> str:
+    """A place named with enough to tell it from the others of that name.
+
+    A search for `montserrat` answers with a mountain in Catalonia, a village in
+    Valencia and an island in the Caribbean, and both geocoders name at least
+    two of them `Montserrat` and nothing more. A page then draws two buttons a
+    person cannot choose between, which is worse than offering one: they look
+    like a repeat rather than a choice.
+
+    So the region the source already sent travels with the name. Region only,
+    widest first, and never a street, a house number or a postcode: those are
+    somebody's address, and an address has no business in a route search.
+
+    A region that repeats the name is left out rather than doubled. The island
+    is in the country called Montserrat, and "Montserrat, Montserrat" tells
+    nobody anything. That leaves names a page can still find identical, which is
+    why the page carries the coordinate as its own last resort.
+
+    Both sources call this, because the rule must not differ between them: a
+    merged answer shows one list of places and half of it coming out shorter
+    than the other half would read as the shorter half being less certain.
+    """
+    parts = [name.strip()]
+    for value in regions:
+        if isinstance(value, str) and value.strip() and value.strip() not in parts:
+            parts.append(value.strip())
+    return ", ".join(parts)
+
+
 @dataclass
 class Place:
     """A name and a point, for turning "montseny" into a latitude."""

@@ -3,9 +3,9 @@
 // A card is denser than a row, and density is where a claim quietly turns into
 // a reading. So the arithmetic that decides what a card is allowed to show
 // lives here, away from the markup, and can be checked without a browser: a
-// figure the source never published is absent rather than zero, a picture is
-// shown only when it is a picture OF the route, and a rating that is not a
-// number does not become a row of stars.
+// figure the source never published is absent rather than zero, a drawing
+// appears only when the source handed over the route's own shape, and a rating
+// that is not a number does not become a row of stars.
 //
 // Nothing here formats anything for a reader. Numbers come out as numbers and
 // the page turns them into the reader's language, because the decimal mark
@@ -68,73 +68,73 @@ export function durationParts(seconds) {
   return { hours: Math.floor(total / 60), minutes: total % 60 };
 }
 
-// -------------------------------------------------------------- the picture
+// -------------------------------------------------------------- the drawing
 
-// The size asked of the source's image server. 16:9, and twice the width a
-// card is given at the widest, so it is still sharp on a phone screen that
-// packs two device pixels into one.
-export const THUMBNAIL_WIDTH = 480;
-export const THUMBNAIL_HEIGHT = 270;
+// The box a card's drawing is fitted into, in its own units. 16:9, the shape
+// the card gives it, and small enough that the path stays short in the markup.
+export const CARD_TRACE_W = 320;
+export const CARD_TRACE_H = 180;
+// Room for the stroke and its glow at the edges. A route that ran to the very
+// corner of the box would be clipped along the outside of its own line.
+const CARD_TRACE_PAD = 12;
 
-/** The picture a card may show, or null when there is nothing worth showing.
+/** The route's own shape, ready to draw, or null when there is none.
  *
  *  THE DECISION, and it is not symmetric between the two sources.
  *
- *  Komoot hands over a drawing of the route on a map. That is about the route:
- *  the shape says loop, or out and back, or a line from one valley to another,
- *  and that is the first thing a walker wants to know and the one thing no
- *  figure on the card can say. It is shown.
+ *  Komoot hands over the route's shape: `trace` is the line itself, twenty-odd
+ *  to a couple of hundred points of it. The shape says loop, or out and back,
+ *  or a line from one valley to another, and that is the first thing a walker
+ *  wants to know and the one thing no figure on the card can say. It is drawn.
  *
- *  Wikiloc hands over a photograph somebody took on the path. It is a real
- *  picture of a real place and it says nothing whatsoever about the route: the
- *  same rock face fronts a two hour stroll and a fourteen hour traverse. Shown
- *  at card size it would do one job only, which is to make the list pretty
- *  enough to scroll. This product converts a link and doubts a number; it is
- *  not a shelf to browse, and a picture that invites browsing is working
- *  against the page it sits on. It is not shown, on search or on nearby.
+ *  Wikiloc hands over a photograph somebody took on the path, and no shape. A
+ *  photograph is a real picture of a real place and it says nothing whatsoever
+ *  about the route: the same rock face fronts a two hour stroll and a fourteen
+ *  hour traverse. Shown at card size it would do one job only, which is to make
+ *  the list pretty enough to scroll. This product converts a link and doubts a
+ *  number; it is not a shelf to browse. So a Wikiloc card carries no drawing,
+ *  and is designed for that.
  *
- *  So the test is `kind`, never the source's name: the day Wikiloc starts
- *  drawing routes, or Komoot starts sending photographs, this rule already
- *  says the right thing.
+ *  Nothing is fetched to draw this. The shape arrived with the row, so no
+ *  request leaves the browser for a picture at all, which is why the footer no
+ *  longer has a sentence about an image server: there is nothing to warn about.
  *
- *  The cost of showing one is real and it is the visitor's, not ours: their
- *  browser fetches it straight from the source's own image server, which puts
- *  their address and roughly where they are looking in front of a third party
- *  our server never talks to. That is why the footer names Komoot's image
- *  server beside OpenStreetMap, and why dropping Wikiloc's photographs also
- *  drops a whole host from the set of people watching. */
-export function cardImage(row) {
-  const thumbnail = row?.thumbnail ?? null;
-  if (!thumbnail || thumbnail.kind !== 'route-map') return null;
-  const src = thumbnailSrc(thumbnail.url, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT);
-  return src === null ? null : { src, width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT };
-}
+ *  IT IS NOT A MEASUREMENT and must never be read as one. Around a hundred
+ *  points where the recording has thousands is enough to show a shape and
+ *  nowhere near enough to measure it. That is what converting the route is for,
+ *  and the drawing carries no number, no scale bar and no length.
+ *
+ *  The projection is charts.js's, passed in rather than written again here, so
+ *  a card and the chart it leads to draw the same route the same way.
+ *
+ *  `fit` is charts.js `fitFrame` and `project` is its `projectInFrame`. */
+export function cardTrace(row, { fit, project }) {
+  const trace = row?.trace;
+  if (!Array.isArray(trace) || trace.length < 2) return null;
 
-/** A thumbnail URL with a size in it, or null when it cannot be made into one.
- *
- *  Komoot writes its image links in two shapes and only one of them is ready to
- *  put in an `img`. Nearby sends the template
- *  `...?width={width}&height={height}&crop={crop}`, and those braces are
- *  literal: asked for as they arrive, the server answers 400 and the card shows
- *  a broken picture. Search sends the same path with no query at all, and that
- *  one answers with a 144 by 144 square, which is not the shape of a card.
- *  Both checked against the live server on 2026-09-02.
- *
- *  So the braces are filled in when they are there, and a size is added when
- *  there is no query to fill in. A URL that already carries a query of its own
- *  and no placeholders is left exactly as the source wrote it: at that point we
- *  would be guessing at somebody else's parameters. */
-export function thumbnailSrc(url, width, height) {
-  if (typeof url !== 'string' || !url.startsWith('https://')) return null;
-
-  if (url.includes('{width}')) {
-    return url
-      .replaceAll('{width}', String(width))
-      .replaceAll('{height}', String(height))
-      .replaceAll('{crop}', 'true');
+  const points = [];
+  for (const pair of trace) {
+    if (!Array.isArray(pair) || pair.length < 2) continue;
+    const [lat, lon] = pair;
+    if (typeof lat !== 'number' || !Number.isFinite(lat)) continue;
+    if (typeof lon !== 'number' || !Number.isFinite(lon)) continue;
+    points.push({ lat, lon });
   }
-  if (!url.includes('?')) return `${url}?width=${width}&height=${height}&crop=true`;
-  return url;
+  // One point is a dot, not a shape, and a dot on a card says nothing at all.
+  if (points.length < 2) return null;
+
+  const box = { width: CARD_TRACE_W, height: CARD_TRACE_H, pad: CARD_TRACE_PAD };
+  const coords = project(points, fit(points, box));
+  return {
+    // One decimal in a 320 unit box is about a third of a screen pixel, which
+    // is below what the stroke can show and keeps the path short.
+    d: coords
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+      .join(''),
+    start: coords[0],
+    width: CARD_TRACE_W,
+    height: CARD_TRACE_H,
+  };
 }
 
 // --------------------------------------------------------------- the rating
@@ -147,7 +147,18 @@ export function thumbnailSrc(url, width, height) {
  *  beside it.
  *
  *  A count is optional and separate. A score with no count is still a score;
- *  a count with no score is nothing to draw. */
+ *  a count with no score is nothing to draw.
+ *
+ *  A COUNT OF ZERO IS NOT A RATING. It is the absence of one, and it must not
+ *  reach a card: five empty stars and "0 (0)" beside them is this page saying
+ *  other walkers scored the route and scored it nothing, when nobody scored it
+ *  at all. Wikiloc sends every unrated trail that way -- on `mazunte`, eight
+ *  cards of nine -- so the card shows no star row, the same way it shows no
+ *  duration for a source that publishes none.
+ *
+ *  Refused here as well as at the source that sends it, because this is the
+ *  function that decides whether stars are drawn, and a rule about what may be
+ *  drawn belongs where the drawing is decided. */
 export function starPortion(rating) {
   const score = rating?.score;
   if (typeof score !== 'number' || !Number.isFinite(score)) return null;
@@ -156,6 +167,7 @@ export function starPortion(rating) {
   const count = rating?.count;
   const counted =
     typeof count === 'number' && Number.isFinite(count) && count >= 0 ? Math.round(count) : null;
+  if (counted === 0) return null;
   return { score, count: counted, fraction: score / 5 };
 }
 
@@ -196,4 +208,30 @@ export function activityWord(row, asked, { always = false } = {}) {
   if (typeof sport !== 'string' || !sport) return null;
   if (always) return sport;
   return sport === asked ? null : sport;
+}
+
+/** The source's own word for an activity, made readable. The last resort, and
+ *  it must never fail: a raw slug on a card is a leaked internal name.
+ *
+ *  A SLUG IS NOT A WORD. Komoot publishes six activities and its rows return
+ *  more than six: `mtb_easy` arrives on a live search for `delta del ebro`, and
+ *  it reached a card underscore and all, in both languages. There is no list to
+ *  add it to that stays complete, because Komoot does not publish the list its
+ *  rows draw from.
+ *
+ *  So the separators are opened into spaces and the first letter is raised, and
+ *  that is the whole of it. Nothing is translated, nothing is expanded, nothing
+ *  is reordered: those would be this page guessing at what another site's word
+ *  means, which is the one thing it must not do with a vocabulary it does not
+ *  own. `mtb_easy` becomes `Mtb easy` -- plainly the source's own word, plainly
+ *  not ours, and readable. The sentence under the activity picker says so
+ *  whenever such a word is on screen.
+ *
+ *  Callers reach this only after looking for the word in this page's own
+ *  vocabulary and in the source's published labels, both of which say more. */
+export function sourceOwnWord(slug) {
+  if (typeof slug !== 'string') return '';
+  const words = slug.replace(/[_-]+/g, ' ').trim();
+  if (!words) return '';
+  return words[0].toUpperCase() + words.slice(1);
 }

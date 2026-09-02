@@ -2,9 +2,9 @@
 //
 // What a card is allowed to show. Every rule here is one that would break
 // silently: a zero where the source said nothing, a photograph of a rock
-// standing in for the shape of a walk, a picture URL asked for with the braces
-// still in it, a rating rounded until it is somebody else's number. None of it
-// needs a browser.
+// standing in for the shape of a walk, a drawing projected differently from the
+// chart it leads to, a rating rounded until it is somebody else's number. None
+// of it needs a browser.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -12,12 +12,20 @@ import test from 'node:test';
 import {
   activityWord,
   cardFigures,
-  cardImage,
+  CARD_TRACE_H,
+  CARD_TRACE_W,
+  cardTrace,
   durationParts,
+  sourceOwnWord,
   starPortion,
-  thumbnailSrc,
   updatedMonth,
 } from '../assets/cards.js';
+import { fitFrame, projectInFrame, traceFrame } from '../assets/charts.js';
+
+// The card's drawing is the report's chart at a smaller size, and it is the
+// SAME arithmetic: charts.js is handed in rather than copied, so a card that
+// disagreed with the chart it leads to would fail here first.
+const PROJECTION = { fit: fitFrame, project: projectInFrame };
 
 // The three rows the two sources actually answer with, trimmed to the keys
 // these tests are about. Taken from live answers on 2026-09-02.
@@ -33,6 +41,15 @@ const KOMOOT_NEARBY = {
   rating: { score: 4.46, count: 13 },
   difficulty: 'difficult',
   updatedAt: '2026-08-08T16:43:58.029Z',
+  // The route's own shape, as it arrives: [[lat, lng], ...]. Shortened from a
+  // live answer of 2026-09-02, which carried 27 to 167 points per row.
+  trace: [
+    [41.771674, 2.399669],
+    [41.7752, 2.4041],
+    [41.7811, 2.4098],
+    [41.7793, 2.4152],
+    [41.771674, 2.399669],
+  ],
   publishedBy: 'Komoot',
   published: {
     distanceM: 19981.03,
@@ -63,6 +80,9 @@ const WIKILOC = {
   rating: { score: 4.8, count: 5 },
   difficulty: 'moderate',
   updatedAt: null,
+  // Wikiloc sends no shape at all, which is the whole reason a Wikiloc card
+  // carries no drawing.
+  trace: null,
   publishedBy: 'Wikiloc',
   published: {
     distanceM: 7628.29,
@@ -160,53 +180,83 @@ test('a duration that is not a duration is nothing', () => {
   assert.equal(durationParts(Number.NaN), null);
 });
 
-// --------------------------------------------------------------- the picture
+// --------------------------------------------------------------- the drawing
 
-test('a drawing of the route is shown', () => {
-  const image = cardImage(KOMOOT_NEARBY);
-  assert.ok(image);
-  assert.equal(image.width, 480);
-  assert.equal(image.height, 270);
+test('a row that carries the route shape is drawn', () => {
+  const drawn = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  assert.ok(drawn);
+  assert.equal(drawn.width, CARD_TRACE_W);
+  assert.equal(drawn.height, CARD_TRACE_H);
+  assert.match(drawn.d, /^M[\d.]+ [\d.]+(L[\d.]+ [\d.]+){4}$/);
 });
 
-test('a photograph of the path is not shown, however pretty', () => {
-  // The rule is the kind, not the site: this is what keeps the decision true
-  // the day either site changes what it sends.
-  assert.equal(cardImage(WIKILOC), null);
-  assert.equal(cardImage({ thumbnail: { url: 'https://x/y.jpg', kind: 'photo' } }), null);
+test('a row with no shape is not a broken card', () => {
+  // Wikiloc sends a photograph of the path and no shape, so its cards carry no
+  // drawing at all. That is the decision, and it is tested rather than assumed.
+  assert.equal(cardTrace(WIKILOC, PROJECTION), null);
+  assert.equal(cardTrace({ trace: null }, PROJECTION), null);
+  assert.equal(cardTrace({}, PROJECTION), null);
+  assert.equal(cardTrace(null, PROJECTION), null);
 });
 
-test('a row with no picture at all is not a broken card', () => {
-  assert.equal(cardImage({ thumbnail: null }), null);
-  assert.equal(cardImage({}), null);
-  assert.equal(cardImage(null), null);
+test('one point is not a shape, and neither is a shape of rubbish', () => {
+  assert.equal(cardTrace({ trace: [[41.7, 2.3]] }, PROJECTION), null);
+  assert.equal(cardTrace({ trace: [[41.7, 2.3], [null, 2.4]] }, PROJECTION), null);
+  assert.equal(cardTrace({ trace: [['41.7', '2.3'], [41.8, 2.4]] }, PROJECTION), null);
+  assert.equal(cardTrace({ trace: 'a polyline' }, PROJECTION), null);
 });
 
-test('the size placeholders are filled in, because the braces are literal', () => {
-  // Asked for as they arrive, these answer 400 and the card shows a broken
-  // picture. Checked against the live image server on 2026-09-02.
-  const src = cardImage(KOMOOT_NEARBY).src;
-  assert.ok(!src.includes('{'));
-  assert.match(src, /\?width=480&height=270&crop=true$/);
+test('the drawing fits inside its own box, with room for the stroke', () => {
+  const drawn = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  const numbers = drawn.d.match(/[\d.]+/g).map(Number);
+  const xs = numbers.filter((_, i) => i % 2 === 0);
+  const ys = numbers.filter((_, i) => i % 2 === 1);
+  assert.ok(Math.min(...xs) >= 0 && Math.max(...xs) <= CARD_TRACE_W);
+  assert.ok(Math.min(...ys) >= 0 && Math.max(...ys) <= CARD_TRACE_H);
+  // The route touches the padding on its longer axis, so the fit is a fit and
+  // not a shape sitting in the middle of an empty box.
+  const tight = Math.min(...ys) < 13 || Math.min(...xs) < 13;
+  assert.ok(tight);
 });
 
-test('a search picture with no query gets a size, so it is not a 144px square', () => {
-  assert.equal(
-    thumbnailSrc('https://tourpic-vector.maps.komoot.net/r/small/abc/', 480, 270),
-    'https://tourpic-vector.maps.komoot.net/r/small/abc/?width=480&height=270&crop=true',
+test('the card and the report chart project the same route the same way', () => {
+  // THE POINT OF PASSING charts.js IN. Two projections that disagree would show
+  // a walker one shape on the card and a different one on the report it leads
+  // to, and nothing would fail loudly.
+  const points = KOMOOT_NEARBY.trace.map(([lat, lon]) => ({ lat, lon }));
+  const chart = projectInFrame(points, traceFrame(points));
+  const card = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  const drawn = card.d.match(/[\d.]+/g).map(Number);
+
+  // Both are the same shape fitted to a different box, so every card point is
+  // its chart point through one shift and one scale, the same for all of them.
+  const chartSpanX = Math.max(...chart.map((p) => p.x)) - Math.min(...chart.map((p) => p.x));
+  const cardXs = drawn.filter((_, i) => i % 2 === 0);
+  const scale = (Math.max(...cardXs) - Math.min(...cardXs)) / chartSpanX;
+  for (let i = 0; i < chart.length; i++) {
+    const x = (chart[i].x - chart[0].x) * scale + drawn[0];
+    const y = (chart[i].y - chart[0].y) * scale + drawn[1];
+    assert.ok(Math.abs(x - drawn[i * 2]) < 0.2, `x at ${i}`);
+    assert.ok(Math.abs(y - drawn[i * 2 + 1]) < 0.2, `y at ${i}`);
+  }
+});
+
+test('north is up: a point further north is drawn higher', () => {
+  // Mercator y already grows south, the way SVG y does. A second flip here
+  // would mirror the route against the chart it is a thumbnail of.
+  const drawn = cardTrace(
+    { trace: [[41.0, 2.0], [42.0, 2.0]] },
+    PROJECTION,
   );
+  const numbers = drawn.d.match(/[\d.]+/g).map(Number);
+  assert.ok(numbers[3] < numbers[1]);
 });
 
-test('a query the source wrote for itself is left exactly as it wrote it', () => {
-  const written = 'https://example.komoot.net/tile.jpg?v=7';
-  assert.equal(thumbnailSrc(written, 480, 270), written);
-});
-
-test('a picture link that is not https is refused', () => {
-  assert.equal(thumbnailSrc('http://tourpic-vector.maps.komoot.net/r/small/abc/', 480, 270), null);
-  assert.equal(thumbnailSrc('javascript:alert(1)', 480, 270), null);
-  assert.equal(thumbnailSrc('', 480, 270), null);
-  assert.equal(thumbnailSrc(null, 480, 270), null);
+test('the start of the route is where the drawing starts', () => {
+  const drawn = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  const numbers = drawn.d.match(/[\d.]+/g).map(Number);
+  assert.equal(Number(drawn.start.x.toFixed(1)), numbers[0]);
+  assert.equal(Number(drawn.start.y.toFixed(1)), numbers[1]);
 });
 
 // ---------------------------------------------------------------- the stars
@@ -234,6 +284,29 @@ test('a score outside the scale is refused rather than clamped', () => {
   // Clamping would print a five star route the source never called one.
   assert.equal(starPortion({ score: 7 }), null);
   assert.equal(starPortion({ score: -1 }), null);
+});
+
+test('a count of zero is nobody having rated it, so no stars are drawn', () => {
+  // Wikiloc sends every unrated trail as score 0.0 with count 0. Drawn, that is
+  // five empty stars and "0 (0)" beside them: this page saying other walkers
+  // scored the route and scored it nothing. On a search for "mazunte" it was
+  // eight cards out of nine.
+  assert.equal(starPortion({ score: 0, count: 0 }), null);
+  assert.equal(starPortion({ score: 4.5, count: 0 }), null);
+});
+
+test('a count of one is a rating, and it is drawn', () => {
+  // The line the rule above must not cross. One person rating a route is a
+  // fact about the route; nobody rating it is not.
+  assert.deepEqual(starPortion({ score: 4.33, count: 1 }), {
+    score: 4.33,
+    count: 1,
+    fraction: 4.33 / 5,
+  });
+});
+
+test('a score of zero from people who gave it is still their score', () => {
+  assert.deepEqual(starPortion({ score: 0, count: 3 }), { score: 0, count: 3, fraction: 0 });
 });
 
 // ----------------------------------------------------------------- the date
@@ -274,4 +347,29 @@ test('a row whose activity the source did not name shows no word', () => {
   assert.equal(activityWord({ sport: null }, 'hike', { always: true }), null);
   assert.equal(activityWord({}, 'hike'), null);
   assert.equal(activityWord(null, 'hike'), null);
+});
+
+test('an activity word this page has no name for is readable, never a raw slug', () => {
+  // Komoot offers six activities and its rows return more: `mtb_easy` arrived
+  // on a live search and reached a card underscore and all. There is no list to
+  // add it to that stays complete, because Komoot does not publish the list its
+  // rows draw from.
+  assert.equal(sourceOwnWord('mtb_easy'), 'Mtb easy');
+  assert.equal(sourceOwnWord('dual-sport-motorcycle'), 'Dual sport motorcycle');
+});
+
+test('nothing is translated, expanded or reordered on the way through', () => {
+  // Guessing at what another site's word means is the one thing this page must
+  // not do with a vocabulary it does not own, so the separators are the whole
+  // of what changes.
+  assert.equal(sourceOwnWord('hiking'), 'Hiking');
+  assert.equal(sourceOwnWord('Trail Running'), 'Trail Running');
+  assert.equal(sourceOwnWord('e_mtb'), 'E mtb');
+});
+
+test('a word that is not a word comes back empty rather than as punctuation', () => {
+  assert.equal(sourceOwnWord('___'), '');
+  assert.equal(sourceOwnWord(''), '');
+  assert.equal(sourceOwnWord(null), '');
+  assert.equal(sourceOwnWord(42), '');
 });

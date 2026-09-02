@@ -158,6 +158,17 @@ def _ask(call, **kwargs) -> Tuple[Optional[Listing], Optional[str]]:
     # code should be loud and ours, not quiet and blamed on a source site.
 
 
+def _point_given(near: Optional[Tuple[Any, Any]]) -> bool:
+    """Whether a caller really handed over a point, or only the key.
+
+    Read through Wikiloc's own reader rather than checked again here, so what
+    counts as a point is decided in one place: reporting that the point was
+    applied while the site that applies it threw the same pair away as unusable
+    is exactly the kind of disagreement this whole field exists to end.
+    """
+    return wikiloc_discovery._point(near) is not None
+
+
 def _interleave(halves: List[List[Row]], size: int) -> List[Row]:
     """One from each, in turn, until the page is full.
 
@@ -174,10 +185,26 @@ def _interleave(halves: List[List[Row]], size: int) -> List[Row]:
     return merged
 
 
+# WHETHER A POINT THE VISITOR PICKED REACHES EACH SITE. Two sites, two answers,
+# and the whole reason this has to be reported per source rather than once for
+# the list: half these rows honour the point and half were placed by Komoot from
+# the words, and one sentence over both would be false about one of them.
+#
+# Neither value is decided here. Each site's module states its own behaviour,
+# beside the parameter it is about and with the measurement that settled it:
+# `komoot_discovery.POINT_APPLIED` is False and says what was tried,
+# `wikiloc_discovery.POINT_APPLIED` is True because a Wikiloc search IS a box.
+POINT_APPLIED = {
+    "komoot": komoot_discovery.POINT_APPLIED,
+    "wikiloc": wikiloc_discovery.POINT_APPLIED,
+}
+
+
 def _combine(
     parts: List[Tuple[str, Optional[Listing], Optional[str]]],
     echo: Dict[str, Any],
     size: int,
+    point_applied: Optional[Dict[str, bool]] = None,
 ) -> Listing:
     listings = [(name, got) for name, got, _ in parts if got is not None]
     if not listings:
@@ -209,11 +236,29 @@ def _combine(
         # page needs it: a short list because one site is down reads exactly
         # like a short list because a valley is empty, and they are not the
         # same thing.
+        #
+        # `pointApplied` rides along on the same rows, and only when a point was
+        # actually sent, because it is the same kind of fact: something true of
+        # one site's half of the list and not of the other's. Without it a page
+        # can only say one thing about the whole list, and the one thing would
+        # be wrong for half of it.
         sources=[
-            {"id": name, "ok": got is not None, "error": reason}
+            _source_row(name, got, reason, point_applied)
             for name, got, reason in parts
         ],
     )
+
+
+def _source_row(
+    name: str,
+    got: Optional[Listing],
+    reason: Optional[str],
+    point_applied: Optional[Dict[str, bool]],
+) -> Dict[str, Any]:
+    row: Dict[str, Any] = {"id": name, "ok": got is not None, "error": reason}
+    if point_applied is not None:
+        row["pointApplied"] = point_applied.get(name)
+    return row
 
 
 def nearby(
@@ -307,11 +352,17 @@ def search(
         limit=half,
         page=page,
         windows=SEARCH_WINDOWS,
-        # The same point Komoot was biased towards, so both sites answer about
-        # the same place. Without it Wikiloc geocodes the words on its own and
-        # the two halves can be 300 km apart: `montserrat` gives Komoot the
-        # mountain in Catalonia and the geocoder a village in Valencia, and one
-        # interleaved list would show both with nothing saying so.
+        # The point, and here it decides the search rather than nudging it.
+        # Without it Wikiloc's own geocoder picks the place, and it picks badly:
+        # `montserrat` gives it a village in Valencia while Komoot reads the
+        # mountain in Catalonia, and one interleaved list then holds two valleys
+        # 300 km apart with nothing saying so.
+        #
+        # It does not make the two halves agree. It cannot:
+        # `komoot_discovery.POINT_APPLIED` records the measurement that Komoot
+        # works the place out from the words whatever point it is handed. What
+        # this does is make one half answerable, and `pointApplied` on the
+        # `sources` rows then says which half that was.
         near=near,
     )
 
@@ -325,10 +376,18 @@ def search(
         [("komoot", komoot_got, komoot_bad), ("wikiloc", wikiloc_got, wikiloc_bad)],
         echo,
         size,
+        # Only when there was a point to apply. With no point nothing was asked
+        # of either site, and a row saying `false` would read as a refusal.
+        point_applied=POINT_APPLIED if _point_given(near) else None,
     )
     # Which place each half is about. Only Wikiloc has to resolve one, so this
     # is what lets a page say "Wikiloc looked near Montserrat, Valencia" and
     # offer the others, instead of quietly mixing two valleys into one list.
+    #
+    # It is Wikiloc's leg and nobody else's, which is why it can never stand in
+    # for "the point worked". Compared against the point the visitor picked it
+    # agrees with itself and says nothing about Komoot: that is what
+    # `pointApplied` above is for.
     if wikiloc_got is not None and wikiloc_got.echo.get("place"):
         listing.echo["placeUsed"] = wikiloc_got.echo["place"]
     # Only Komoot geocodes as a side effect of searching, so its places are the
