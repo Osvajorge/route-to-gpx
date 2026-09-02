@@ -264,6 +264,43 @@ def _answers(monkeypatch, find=None, photon=None, status=200):
     return asked
 
 
+
+def _corpus(monkeypatch, rows, status=200):
+    """Answers like the real endpoint: one stable list, sliced by from and to.
+
+    The old stub handed back the same fixture whatever window was asked for,
+    which was fine while one page meant one call. A filtered page reads several
+    windows, so a stub that ignores the offset would hand the same rows back
+    over and over and prove nothing about paging.
+    """
+    from urllib.parse import parse_qs, urlparse
+
+    def answer(url, timeout=None):
+        query = parse_qs(urlparse(url).query)
+        first = int(query.get("from", ["0"])[0])
+        last = int(query.get("to", [str(len(rows))])[0])
+        return status, {"spas": rows[first:last], "count": len(rows)}
+
+    monkeypatch.setattr(wikiloc_discovery, "fetch_json", answer)
+
+
+def _spa(index, picto=1):
+    """One row of the shape find.do really returns, numbered so it is traceable."""
+    return {
+        "id": 1000 + index,
+        "prettyURL": f"/hiking-trails/route-{1000 + index}",
+        "name": f"Route {index}",
+        "picto": picto,
+        "pictoText": "Hiking",
+        "lat": 41.6,
+        "lon": 1.8,
+        "uom": "km",
+        "uomslope": "m",
+        "distance": "10.0",
+        "slope": "500",
+    }
+
+
 def _never(monkeypatch):
     def never(url, timeout=None):
         raise AssertionError(f"asked {url} instead of reading the request first")
@@ -617,32 +654,34 @@ def test_two_pages_share_no_row(monkeypatch):
     page 1 of one box, captured on 2026-09-02, and they share no id. The windows
     asked for are half-open and do not overlap either.
     """
-    asked = _answers(monkeypatch, find=FIND_PAGE_0)
+    _corpus(monkeypatch, [_spa(i) for i in range(30)])
+
     first = wikiloc_discovery.nearby(lat=41.6, lng=1.8, page=0, limit=6).as_dict()
-    window_0 = asked.parameters()
-
-    asked = _answers(monkeypatch, find=FIND_PAGE_1)
     second = wikiloc_discovery.nearby(lat=41.6, lng=1.8, page=1, limit=6).as_dict()
-    window_1 = asked.parameters()
 
-    assert (window_0["from"], window_0["to"]) == ("0", "6")
-    assert (window_1["from"], window_1["to"]) == ("6", "12")
-    assert window_0["sw"] == window_1["sw"] and window_0["ne"] == window_1["ne"]
-
-    urls_0 = {row["url"] for row in first["results"]}
-    urls_1 = {row["url"] for row in second["results"]}
-    assert urls_0 and urls_1
-    assert urls_0 & urls_1 == set()
+    urls_0 = [row["url"] for row in first["results"]]
+    urls_1 = [row["url"] for row in second["results"]]
+    assert len(urls_0) == 6 and len(urls_1) == 6
+    # The invariant that matters, and the one the Komoot side got wrong: a
+    # second page is six routes the first page did not show.
+    assert set(urls_0) & set(urls_1) == set()
+    # And it is the NEXT six, in the source's own order, not a reshuffle.
+    assert urls_1 == [f"https://www.wikiloc.com/hiking-trails/route-{1006 + i}" for i in range(6)]
 
 
 def test_paging_stops_at_the_last_page_this_service_offers(monkeypatch):
     """Without a cap, page=999999 is a crawl with extra steps."""
-    _answers(monkeypatch, find=FIND_PAGE_0)
-    # Five rows for a window of five is a full window, so there may be more.
+    _corpus(monkeypatch, [_spa(i) for i in range(30)])
+    # More is claimed only after SEEING a match beyond this page, never inferred
+    # from a full window. With a filter running a full window can yield nothing.
     assert wikiloc_discovery.nearby(lat=41.6, lng=1.8, limit=5).has_more is True
-    # A short window is the last one, whatever the filtering did.
+
+    _corpus(monkeypatch, [_spa(i) for i in range(5)])
+    # Five rows and nothing behind them: the honest answer is that this is the end.
+    assert wikiloc_discovery.nearby(lat=41.6, lng=1.8, limit=5).has_more is False
     assert wikiloc_discovery.nearby(lat=41.6, lng=1.8, limit=6).has_more is False
 
+    _corpus(monkeypatch, [_spa(i) for i in range(30)])
     last = wikiloc_discovery.nearby(lat=41.6, lng=1.8, limit=5, page=99)
     assert last.echo["page"] == wikiloc_discovery.PAGE_MAX
     assert last.has_more is False
@@ -659,7 +698,11 @@ def test_limit_and_radius_are_clamped_rather_than_refused(monkeypatch):
     assert listing.echo["radiusM"] == wikiloc_discovery.RADIUS_MAX
     assert listing.echo["page"] == wikiloc_discovery.PAGE_MAX
     sent = asked.parameters()
-    assert int(sent["to"]) - int(sent["from"]) == wikiloc_discovery.NEARBY_LIMIT_MAX
+    # The window asked of Wikiloc is Wikiloc's own cap, not our page size. They
+    # are different numbers doing different jobs now: the page is what a visitor
+    # reads, the window is how much has to be read to fill it once a filter runs
+    # over rows the source refused to filter itself.
+    assert int(sent["to"]) - int(sent["from"]) == wikiloc_discovery.SCAN_WINDOW
 
     listing = wikiloc_discovery.nearby(lat=41.6, lng=1.8, radius_m=0, limit=-5, page=-1)
     assert listing.echo["limit"] == 1

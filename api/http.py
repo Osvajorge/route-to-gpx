@@ -79,12 +79,20 @@ GEOCODER_SITE = "photon"
 SITE_CAPACITY = 30
 SITE_REFILL_PER_SECOND = 1.0
 
-# 10 upstream calls a minute per visitor, bursting 8. Eight covers the worst
-# honest sequence — a query, two refinements, a nearby, then converting two
-# rows one of which is a smart tour — and ten a minute is more than a person
-# can spend on purpose, so emptying the site bucket needs at least six of them.
-CLIENT_CAPACITY = 8
-CLIENT_REFILL_PER_SECOND = 1.0 / 6.0
+# 20 upstream calls a minute per visitor, bursting 20.
+#
+# These numbers were 8 and one per six seconds, which was right while a question
+# cost one call. Filtering made a listing cost up to FILTER_FAN_OUT, so the old
+# burst was two filtered searches and then a wait: changing the activity in a
+# dropdown twice was enough to be refused, which is not a limit, it is a broken
+# control.
+#
+# Fairness is still charged per outbound call, not per question, because a
+# visitor whose question costs four should spend four. What changed is how much
+# a person is allowed to spend, not how the spending is counted. Three visitors
+# at full tilt still reach the shared per-site ceiling and no further.
+CLIENT_CAPACITY = 20
+CLIENT_REFILL_PER_SECOND = 1.0 / 3.0
 
 # Photon is a shared demo server, not an API this service is entitled to. Its
 # terms ask callers to be fair and say extensive use will be throttled, so it
@@ -100,6 +108,18 @@ GEOCODER_REFILL_PER_SECOND = 0.5
 # force. It is also what keeps a page size and a radius safe: they are
 # parameters of one call, and they cannot quietly become a loop.
 FAN_OUT_CEILING = 2
+
+# Raised deliberately, which is what the paragraph above asks of anyone who
+# needs a third call. Filtering is why. Wikiloc will not filter by activity for
+# a caller without an account, and Komoot accepts a difficulty parameter and
+# ignores it, so for those the filter has to happen here, over rows we fetched.
+#
+# One page of 25 is 91% hiking in the Alps, and 1% via ferrata. Filling six via
+# ferrata rows would take about twenty-four calls, which is a crawl and is
+# forbidden. So the scan is bounded instead and the answer says how far it
+# looked: two rows out of a hundred examined is information a walker can use,
+# and it is more than any source site will tell them.
+FILTER_FAN_OUT = 5
 
 _sites = limits.Buckets(SITE_CAPACITY, SITE_REFILL_PER_SECOND)
 _geocoder = limits.Buckets(GEOCODER_CAPACITY, GEOCODER_REFILL_PER_SECOND)
@@ -157,7 +177,7 @@ def request_budget(client: str, calls: int = FAN_OUT_CEILING) -> Iterator[Reques
     change to the object is visible through that copy, and a `set()` on the
     variable is not.
     """
-    budget = RequestBudget(client, max(0, min(calls, FAN_OUT_CEILING)))
+    budget = RequestBudget(client, max(0, min(calls, FILTER_FAN_OUT)))
     token = _BUDGET.set(budget)
     try:
         yield budget

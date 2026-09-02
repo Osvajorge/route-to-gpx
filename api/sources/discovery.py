@@ -145,6 +145,12 @@ class Listing:
     # out of the body altogether rather than printing zeroes about work nobody
     # did.
     set_aside: Optional[Dict[str, int]] = None
+    # How many rows were read to produce the ones returned. `None` when nothing
+    # was filtered here, so the key stays out of the body rather than claiming a
+    # scan that never happened. When a filter did run this is the honest number
+    # behind a short page: six of six hundred examined is a different sentence
+    # from six of six, and the visitor deserves the difference.
+    examined: Optional[int] = None
 
     def as_dict(self) -> Dict[str, Any]:
         body: Dict[str, Any] = {
@@ -165,4 +171,6 @@ class Listing:
         body["droppedRows"] = self.dropped
         if self.set_aside is not None:
             body["setAside"] = dict(self.set_aside)
+        if self.examined is not None:
+            body["examined"] = self.examined
         return body

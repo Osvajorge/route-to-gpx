@@ -255,6 +255,15 @@ PAGE_MAX = 4
 # decision, not a workaround, and the tests check the repeat anyway.
 NEARBY_LIMIT_MAX = 6
 
+# How many upstream windows one filtered question may read. Four windows of 25
+# is a hundred rows, which fills a page of the common activity many times over
+# and returns two or three of a rare one. Filling six via ferrata rows would
+# take about twenty-four windows, measured on a real box in the Alps, and that
+# is a crawl rather than a question. So the scan stops and the answer says how
+# far it looked.
+FILTER_WINDOWS = 4
+SCAN_WINDOW = LIMIT_MAX
+
 RADIUS_DEFAULT = 25000
 RADIUS_MIN = 1000
 RADIUS_MAX = 50000
@@ -360,10 +369,13 @@ def nearby(
     number = _clamp(page, 0, PAGE_MAX, 0)
 
     southwest, northeast = _box(latitude, longitude, radius)
-    payload = _answer(_find_url(southwest, northeast, number, size), SOURCE_LABEL)
-    spas = _spas(payload)
-    rows, dropped, set_aside = _rows(
-        spas, PICTO_BY_SLUG.get(chosen), circle=(latitude, longitude, radius)
+    rows, dropped, set_aside, examined, more = _scan(
+        southwest,
+        northeast,
+        picto=PICTO_BY_SLUG.get(chosen),
+        circle=(latitude, longitude, radius),
+        size=size,
+        page=number,
     )
 
     return Listing(
@@ -383,13 +395,17 @@ def nearby(
         },
         rows=rows,
         places=None,
-        has_more=len(spas) >= size and number < PAGE_MAX,
+        # What the scan saw, not what one window held: with a filter running,
+        # a full window can yield nothing and an empty-looking page can still
+        # have more behind it.
+        has_more=more and number < PAGE_MAX,
         # Wikiloc's `count` is a count of the whole box, before the activity and
         # the radius are applied. Reporting it would put a number about a
         # different question beside these rows.
         total_known=None,
         dropped=dropped,
         set_aside=set_aside,
+        examined=examined,
     )
 
 
@@ -592,6 +608,77 @@ def _box_as_dict(
         "north": northeast[0],
         "east": northeast[1],
     }
+
+
+def _scan(
+    southwest: Tuple[float, float],
+    northeast: Tuple[float, float],
+    picto: Optional[int],
+    circle: Optional[Tuple[float, float, int]],
+    size: int,
+    page: int,
+) -> Tuple[List[Row], int, Dict[str, int], int, bool]:
+    """Reads upstream windows until this page is full, or until it has looked
+    far enough.
+
+    Wikiloc pages by row offset and will not filter for a caller without an
+    account, so a filtered page cannot land on a fixed offset: which rows match
+    is only known after they are read. The scan therefore starts at the
+    beginning and skips the matches an earlier page already showed. That costs
+    the same windows again for a later page, which is why PAGE_MAX is small and
+    why the window count is capped rather than the row count.
+
+    Returns the rows, the ones that could not be converted, the ones set aside
+    on purpose, how many were read to get here, and whether the source had more
+    to give when the scan stopped.
+    """
+    skip = page * size
+    kept: List[Row] = []
+    dropped = 0
+    # Seeded from an empty read so the reasons are always named, even when the
+    # box held nothing. A page that has to check whether a key exists before
+    # printing a zero is a page that will one day print nothing by accident.
+    _, _, aside = _rows([], picto, circle)
+    examined = 0
+    more = False
+
+    for window in range(FILTER_WINDOWS):
+        payload = _answer(
+            _find_url(southwest, northeast, window, SCAN_WINDOW), SOURCE_LABEL
+        )
+        spas = _spas(payload)
+        if not spas:
+            break
+        examined += len(spas)
+
+        rows, window_dropped, window_aside = _rows(spas, picto, circle)
+        dropped += window_dropped
+        for reason, count in window_aside.items():
+            aside[reason] = aside.get(reason, 0) + count
+
+        for row in rows:
+            if skip > 0:
+                skip -= 1
+                continue
+            if len(kept) < size:
+                kept.append(row)
+            else:
+                # One match beyond a full page is all it takes to know there is
+                # another page, and it costs nothing to notice.
+                more = True
+                break
+
+        if len(kept) >= size and more:
+            break
+        # A short window means the box is exhausted, not that we should ask again.
+        if len(spas) < SCAN_WINDOW:
+            break
+    else:
+        # The cap stopped the scan rather than the data running out, so there
+        # may well be more behind it. Saying otherwise would be a guess.
+        more = more or True
+
+    return kept, dropped, aside, examined, more
 
 
 def _find_url(

@@ -360,7 +360,11 @@ def search(body: SearchRequest, request: Request):
     near = (body.near.lat, body.near.lng) if body.near is not None else None
     try:
         module = discovery_for(body.source)
-        with http.request_budget(client):
+        # A listing may have to read several windows to fill one filtered page,
+        # because one source will not filter for a caller without an account and
+        # the other accepts the parameter and ignores it. A conversion still gets
+        # the plain two: it asks for one route and knows where it lives.
+        with http.request_budget(client, calls=http.FILTER_FAN_OUT):
             if module is wikiloc_discovery:
                 listing = wikiloc_discovery.search(
                     query=body.query,
@@ -396,7 +400,7 @@ def nearby(body: NearbyRequest, request: Request):
 
     try:
         module = discovery_for(body.source)
-        with http.request_budget(client):
+        with http.request_budget(client, calls=http.FILTER_FAN_OUT):
             if module is wikiloc_discovery:
                 listing = wikiloc_discovery.nearby(
                     lat=body.lat,

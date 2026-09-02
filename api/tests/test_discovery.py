@@ -431,7 +431,14 @@ def test_nothing_reaches_the_network_without_an_inbound_request(monkeypatch):
 
 
 def test_the_fan_out_ceiling_stops_a_third_call(monkeypatch):
-    """Two is the designed fan-out. A third is a bug, and has to be loud."""
+    """Two is the designed fan-out for a plain request, and a third is a bug.
+
+    There are now two tiers, not one. Two is what a conversion or an unfiltered
+    listing gets, and it is still the default. Filtering earns more, because
+    Wikiloc will not filter without an account and Komoot ignores the parameter,
+    so the rows have to be read here and set aside here. What has not changed is
+    that a caller cannot name its own number.
+    """
     monkeypatch.setattr(http.requests, "get", _replies(200, b"{}"))
 
     with http.request_budget("someone"):
@@ -441,9 +448,17 @@ def test_the_fan_out_ceiling_stops_a_third_call(monkeypatch):
             http.fetch_text("https://www.komoot.com/api/v007/tours/2")
     assert "ceiling" in str(raised.value)
 
-    # And a caller cannot simply ask for more.
-    with http.request_budget("someone-else", calls=99) as budget:
+    # The default is still two, and it is what every unfiltered path opens with.
+    with http.request_budget("plain") as budget:
         assert budget.remaining == http.FAN_OUT_CEILING
+
+    # A filtered listing may ask for more, up to the named tier and no further.
+    with http.request_budget("filtering", calls=http.FILTER_FAN_OUT) as budget:
+        assert budget.remaining == http.FILTER_FAN_OUT
+
+    # And a caller still cannot name its own number.
+    with http.request_budget("greedy", calls=99) as budget:
+        assert budget.remaining == http.FILTER_FAN_OUT
 
 
 def test_the_outbound_budget_refuses_a_client_past_its_share(monkeypatch):
