@@ -61,6 +61,9 @@ const STRINGS = {
     'error.file.title': 'That file is not a GPX track.',
     'error.file.body':
       'We opened it and found no track points. GPX exported from a watch or a route planner will work; a KML, a FIT or a screenshot will not.',
+    'error.busy.title': 'Too many at once. Give it a moment.',
+    'error.busy.body':
+      'This tool reads the source sites gently on purpose, so that they keep answering it. You have hit that limit rather than anything being broken. Wait a few seconds and try the same link again.',
     'error.network.title': 'We could not reach the source site.',
     'error.network.body':
       'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site and drop the file here.',
@@ -168,6 +171,9 @@ const STRINGS = {
     'error.file.title': 'Ese fichero no es un track GPX.',
     'error.file.body':
       'Lo abrimos y no tiene puntos de track. Sirve un GPX exportado de un reloj o de un planificador; no sirve un KML, un FIT ni una captura.',
+    'error.busy.title': 'Demasiadas a la vez. Dale un momento.',
+    'error.busy.body':
+      'Esta herramienta lee los sitios de origen despacio a propósito, para que sigan respondiéndole. Has topado con ese límite, no se ha roto nada. Espera unos segundos y prueba otra vez con el mismo enlace.',
     'error.network.title': 'No pudimos llegar al sitio de origen.',
     'error.network.body':
       'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suelta el fichero aquí.',

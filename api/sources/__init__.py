@@ -19,6 +19,14 @@ class SourceError(Exception):
     `private`  the route exists but its track is not published
     `track`    the page loaded but carried no coordinates
     `network`  we never got an answer
+    `query`    a search arrived with nothing to look for
+    `location` a latitude or longitude that is not a place on earth
+    `sport`    a sport the source site does not have a word for
+
+    An empty list is not one of these. A question with no matches is a question
+    that was answered, so search and nearby return an empty `results` with 200.
+    `notfound` is about one identified route, and borrowing it for an empty list
+    would tell a visitor their route does not exist because they mistyped a word.
 
     `hint` narrows a code without adding one. A Komoot collection and an
     unreadable domain are both `domain`, but only one of them can be explained,
@@ -44,6 +52,7 @@ class Published:
     distance_m: Optional[float] = None
     ascent_m: Optional[float] = None
     descent_m: Optional[float] = None
+    duration_s: Optional[float] = None
     elevation_min_m: Optional[float] = None
     elevation_max_m: Optional[float] = None
     point_count: Optional[int] = None
@@ -53,6 +62,7 @@ class Published:
             "distanceM": self.distance_m,
             "ascentM": self.ascent_m,
             "descentM": self.descent_m,
+            "durationS": self.duration_s,
             "elevationMinM": self.elevation_min_m,
             "elevationMaxM": self.elevation_max_m,
             "pointCount": self.point_count,
