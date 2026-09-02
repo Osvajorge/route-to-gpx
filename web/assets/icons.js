@@ -17,6 +17,12 @@ const PATHS = {
   language:
     '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5S14.4 18.1 12 20.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1.3 1.3"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 1 0 11 18.7l1.3-1.3"/>',
+  search: '<circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.4 15.4 4.1 4.1"/>',
+  // A crosshair, not a map pin: the button reports a position, and a pin is
+  // what the page draws for a place somebody chose.
+  crosshair:
+    '<circle cx="12" cy="12" r="6"/><path d="M12 2.5v3.2"/><path d="M12 18.3v3.2"/><path d="M2.5 12h3.2"/><path d="M18.3 12h3.2"/>',
+  chevron: '<path d="m7.5 10.5 4.5 4.5 4.5-4.5"/>',
 };
 
 export function icon(name, className = '') {

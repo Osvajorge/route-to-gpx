@@ -24,7 +24,7 @@
   </head>
 
   <body>
-    <a class="skip-link" href="#route-url">Skip to the link field</a>
+    <a class="skip-link" href="#tabs">Skip to the tabs</a>
 
     <div class="shell">
       <header class="masthead">
@@ -46,19 +46,148 @@
 
       <main id="app" data-view="idle">
         <section class="step" id="step-one" aria-labelledby="step1-heading">
+          <!-- Three ways of arriving at one URL, not three products. Whichever
+               tab is open, the route still goes through the same conversion. -->
+          <div class="tabs" id="tabs" role="tablist" tabindex="-1">
+            <button
+              class="tab"
+              id="tab-search"
+              type="button"
+              role="tab"
+              data-tab="search"
+              aria-controls="panel-search"
+            ></button>
+            <button
+              class="tab"
+              id="tab-nearby"
+              type="button"
+              role="tab"
+              data-tab="nearby"
+              aria-controls="panel-nearby"
+            ></button>
+            <button
+              class="tab"
+              id="tab-link"
+              type="button"
+              role="tab"
+              data-tab="link"
+              aria-controls="panel-link"
+            ></button>
+          </div>
+
           <div class="card">
             <h1 id="step1-heading"></h1>
-            <p class="lede" id="step1-sub"></p>
 
-            <div class="field">
-              <span class="field-prefix"></span>
-              <input id="route-url" type="url" spellcheck="false" autocomplete="off" />
-              <button id="paste" class="ghost-button" type="button"></button>
-              <button id="convert" class="primary-button" type="button"></button>
-            </div>
+            <section
+              class="panel"
+              id="panel-search"
+              role="tabpanel"
+              aria-labelledby="tab-search"
+              tabindex="0"
+            >
+              <p class="lede" id="sub-search"></p>
+              <form class="finder-form" id="search-form">
+                <p class="control">
+                  <label class="control-label" for="search-query"></label>
+                  <input class="text-input" id="search-query" type="search" autocomplete="off" />
+                </p>
+                <div class="control-grid">
+                  <p class="control">
+                    <label class="control-label" for="search-source"></label>
+                    <span class="select-shell"><select class="select" id="search-source"></select></span>
+                  </p>
+                  <p class="control">
+                    <label class="control-label" for="search-sport"></label>
+                    <span class="select-shell"><select class="select" id="search-sport"></select></span>
+                  </p>
+                  <button class="primary-button submit-button" id="search-submit" type="submit"></button>
+                </div>
+              </form>
+              <div class="finder-out" id="search-out"></div>
+            </section>
 
-            <p class="hint" id="step1-hint"></p>
-            <button id="example" class="link-button" type="button"></button>
+            <section
+              class="panel"
+              id="panel-nearby"
+              role="tabpanel"
+              aria-labelledby="tab-nearby"
+              tabindex="0"
+            >
+              <p class="lede" id="sub-nearby"></p>
+
+              <!-- Both ways of filling the two coordinate fields sit outside the
+                   form: the place panel has a field and a button of its own, and
+                   a form cannot hold another one. -->
+              <div class="pick-row">
+                <button class="ghost-button" id="geo-here" type="button"></button>
+                <button
+                  class="ghost-button"
+                  id="place-open"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="place-panel"
+                ></button>
+              </div>
+              <p class="geo-note" id="geo-note" role="status"></p>
+
+              <div class="place-panel" id="place-panel" hidden>
+                <h2 id="place-title"></h2>
+                <div class="place-field">
+                  <label class="control-label" for="place-query"></label>
+                  <input class="text-input" id="place-query" type="search" autocomplete="off" />
+                  <button class="ghost-button" id="place-find" type="button"></button>
+                </div>
+                <div class="place-out" id="place-out"></div>
+                <button class="link-button" id="place-close" type="button"></button>
+              </div>
+
+              <form class="finder-form" id="nearby-form">
+                <div class="control-grid">
+                  <p class="control">
+                    <label class="control-label" for="nearby-lat"></label>
+                    <input class="text-input" id="nearby-lat" type="text" inputmode="decimal" autocomplete="off" />
+                  </p>
+                  <p class="control">
+                    <label class="control-label" for="nearby-lng"></label>
+                    <input class="text-input" id="nearby-lng" type="text" inputmode="decimal" autocomplete="off" />
+                  </p>
+                  <p class="control">
+                    <label class="control-label" for="nearby-radius"></label>
+                    <span class="select-shell"><select class="select" id="nearby-radius"></select></span>
+                  </p>
+                  <p class="control">
+                    <label class="control-label" for="nearby-source"></label>
+                    <span class="select-shell"><select class="select" id="nearby-source"></select></span>
+                  </p>
+                  <p class="control">
+                    <label class="control-label" for="nearby-sport"></label>
+                    <span class="select-shell"><select class="select" id="nearby-sport"></select></span>
+                  </p>
+                  <button class="primary-button submit-button" id="nearby-submit" type="submit"></button>
+                </div>
+              </form>
+              <div class="finder-out" id="nearby-out"></div>
+            </section>
+
+            <section
+              class="panel"
+              id="panel-link"
+              role="tabpanel"
+              aria-labelledby="tab-link"
+              tabindex="0"
+            >
+              <p class="lede" id="sub-link"></p>
+
+              <div class="field">
+                <span class="field-prefix"></span>
+                <input id="route-url" type="url" spellcheck="false" autocomplete="off" />
+                <button id="paste" class="ghost-button" type="button"></button>
+                <button id="convert" class="primary-button" type="button"></button>
+              </div>
+
+              <p class="hint" id="step1-hint"></p>
+              <button id="example" class="link-button" type="button"></button>
+            </section>
 
             <ol id="progress" class="stages" aria-live="polite" hidden></ol>
             <div id="error" class="panel-warn" role="alert" hidden></div>

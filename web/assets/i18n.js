@@ -12,11 +12,19 @@ const STRINGS = {
     'lang.switch': 'Cambiar a español',
 
     'doc.title': 'Route to GPX',
-    'skip.main': 'Skip to the link field',
+    'skip.main': 'Skip to the tabs',
 
     'step1.heading': 'Get a GPX file, and the numbers behind it.',
-    'step1.sub':
+    'tabs.label': 'How to find the route',
+    'tab.search': 'Search',
+    'tab.nearby': 'Nearby',
+    'tab.link': 'Link',
+    'step1.sub.link':
       'Paste a Komoot or Wikiloc link. We rebuild the track, measure it, and show you where the recording has holes.',
+    'step1.sub.search':
+      'Look a route up on the source site by name. A row is a link and what that site claims about it. Converting it is what measures it.',
+    'step1.sub.nearby':
+      'Give a point and how far around it to look. A row is a link and what the source claims about it. Converting it is what measures it.',
     'field.prefix': 'URL',
     'field.label': 'Route link',
     'field.placeholder': 'Paste the route link here',
@@ -27,6 +35,69 @@ const STRINGS = {
     'step1.hint':
       'komoot.com/tour/… · komoot.com/smarttour/… · any wikiloc.com trail page · or drop a .gpx anywhere on this page',
     'step1.drop': 'Drop the .gpx to measure it',
+
+    'search.label': 'What to look for',
+    'search.placeholder': 'A route, a peak, a valley',
+    'search.submit': 'Search',
+    'field.source': 'Source',
+    'field.activity': 'Activity',
+
+    'nearby.here': 'Use my location',
+    'nearby.place': 'Search a place',
+    'nearby.lat': 'Latitude',
+    'nearby.lng': 'Longitude',
+    'nearby.radius': 'Radius',
+    'nearby.radiusOption': '{km} km',
+    'nearby.submit': 'Find routes',
+
+    'geo.asking': 'Asking your browser where you are.',
+    'geo.filled': 'Latitude and longitude filled in from your browser.',
+    'geo.refused':
+      'Your browser did not share a position. Type the coordinates below, or search a place.',
+    'geo.unavailable':
+      'This browser cannot give a position. Type the coordinates below, or search a place.',
+
+    'place.title': 'Search a place',
+    'place.label': 'Place name',
+    'place.placeholder': 'A town, a valley, a range',
+    'place.find': 'Find',
+    'place.working': 'Looking that place up.',
+    'place.empty': 'No place came back by that name. Try another spelling.',
+    'place.close': 'Close',
+
+    // The site is named inside the sentence, never beside it, so its figures
+    // can never be read as something this page measured.
+    'claim.says': '{source} says {figures}.',
+    'claim.none': '{source} publishes no figures for this one.',
+    'claim.distance': '{km} km',
+    'claim.ascent': '{m} m up',
+    'claim.descent': '{m} m down',
+    'claim.highest': 'a high point of {m} m',
+
+    'finder.working.search': 'Asking {source} which routes match.',
+    'finder.working.nearby': 'Asking {source} which routes start near that point.',
+    'finder.more': 'Load more',
+    'finder.moreWorking': 'Loading',
+    'finder.count': 'Showing {shown} of the {total} {source} lists.',
+    'finder.moreEmpty': 'That page added nothing new. There may still be more behind it.',
+    'finder.dropped.one':
+      '{source} returned one more route this converter could not open, so it is not listed.',
+    'finder.dropped.many':
+      '{source} returned {count} more routes this converter could not open, so they are not listed.',
+
+    'empty.search.title': 'Nothing came back for those words.',
+    'empty.search.body':
+      'Try another spelling, the name of the nearest village, or a different activity.',
+    'empty.nearby.title': 'Nothing came back within that radius.',
+    'empty.nearby.body':
+      'Try a wider radius, a different activity, or a point nearer a trailhead.',
+
+    'sport.hike': 'Hiking',
+    'sport.touringbicycle': 'Touring bike',
+    'sport.mtb': 'Mountain bike',
+    'sport.racebike': 'Road bike',
+    'sport.jogging': 'Running',
+    'sport.mountaineering': 'Mountaineering',
 
     'stage.fetch': 'Reading the page',
     'stage.extract': 'Extracting the track',
@@ -67,6 +138,15 @@ const STRINGS = {
     'error.network.title': 'We could not reach the source site.',
     'error.network.body':
       'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site and drop the file here.',
+    'error.query.title': 'There is nothing to search for yet.',
+    'error.query.body':
+      'A search needs at least two characters. Type the name of a route, a peak or a village.',
+    'error.location.title': 'That is not a point on earth.',
+    'error.location.body':
+      'Latitude runs from -90 to 90 and longitude from -180 to 180, written with a full stop or a comma, as in 42.6417. Use my location and Search a place both fill in the pair for you.',
+    'error.sport.title': 'That source has no such activity.',
+    'error.sport.body':
+      'The activity list belongs to the source site and changes with it. Pick one from the list again.',
 
     'step2.download': 'Download GPX',
     'step2.reset': 'New link',
@@ -122,11 +202,19 @@ const STRINGS = {
     'lang.switch': 'Switch to English',
 
     'doc.title': 'Ruta a GPX',
-    'skip.main': 'Ir al campo del enlace',
+    'skip.main': 'Ir a las pestañas',
 
     'step1.heading': 'Consigue el GPX, y los números que hay detrás.',
-    'step1.sub':
+    'tabs.label': 'Cómo encontrar la ruta',
+    'tab.search': 'Buscar',
+    'tab.nearby': 'Cerca',
+    'tab.link': 'Enlace',
+    'step1.sub.link':
       'Pega un enlace de Komoot o de Wikiloc. Reconstruimos el track, lo medimos y te enseñamos dónde tiene agujeros la grabación.',
+    'step1.sub.search':
+      'Busca una ruta por su nombre en el sitio de origen. Una fila es un enlace y lo que ese sitio afirma de él. Convertirlo es lo que lo mide.',
+    'step1.sub.nearby':
+      'Da un punto y cuánto mirar a su alrededor. Una fila es un enlace y lo que el origen afirma de él. Convertirlo es lo que lo mide.',
     'field.prefix': 'URL',
     'field.label': 'Enlace de la ruta',
     'field.placeholder': 'Pega aquí el enlace de la ruta',
@@ -137,6 +225,67 @@ const STRINGS = {
     'step1.hint':
       'komoot.com/tour/… · komoot.com/smarttour/… · cualquier página de ruta de wikiloc.com · o suelta un .gpx en cualquier punto de la página',
     'step1.drop': 'Suelta el .gpx para medirlo',
+
+    'search.label': 'Qué buscar',
+    'search.placeholder': 'Una ruta, un pico, un valle',
+    'search.submit': 'Buscar',
+    'field.source': 'Origen',
+    'field.activity': 'Actividad',
+
+    'nearby.here': 'Usar mi ubicación',
+    'nearby.place': 'Buscar un lugar',
+    'nearby.lat': 'Latitud',
+    'nearby.lng': 'Longitud',
+    'nearby.radius': 'Radio',
+    'nearby.radiusOption': '{km} km',
+    'nearby.submit': 'Buscar rutas',
+
+    'geo.asking': 'Preguntando al navegador dónde estás.',
+    'geo.filled': 'Latitud y longitud rellenadas desde tu navegador.',
+    'geo.refused':
+      'Tu navegador no ha compartido la posición. Escribe las coordenadas abajo, o busca un lugar.',
+    'geo.unavailable':
+      'Este navegador no puede dar una posición. Escribe las coordenadas abajo, o busca un lugar.',
+
+    'place.title': 'Buscar un lugar',
+    'place.label': 'Nombre del lugar',
+    'place.placeholder': 'Un pueblo, un valle, una sierra',
+    'place.find': 'Localizar',
+    'place.working': 'Buscando ese lugar.',
+    'place.empty': 'No ha vuelto ningún lugar con ese nombre. Prueba a escribirlo de otra forma.',
+    'place.close': 'Cerrar',
+
+    'claim.says': '{source} dice que son {figures}.',
+    'claim.none': '{source} no publica ninguna cifra de esta ruta.',
+    'claim.distance': '{km} km',
+    'claim.ascent': '{m} m de subida',
+    'claim.descent': '{m} m de bajada',
+    'claim.highest': 'un techo de {m} m',
+
+    'finder.working.search': 'Preguntando a {source} qué rutas encajan.',
+    'finder.working.nearby': 'Preguntando a {source} qué rutas salen cerca de ese punto.',
+    'finder.more': 'Cargar más',
+    'finder.moreWorking': 'Cargando',
+    'finder.count': 'Mostrando {shown} de las {total} que lista {source}.',
+    'finder.moreEmpty': 'Esa página no ha añadido nada nuevo. Puede que todavía haya más detrás.',
+    'finder.dropped.one':
+      '{source} devolvió una ruta más que este conversor no sabría abrir, así que no está en la lista.',
+    'finder.dropped.many':
+      '{source} devolvió {count} rutas más que este conversor no sabría abrir, así que no están en la lista.',
+
+    'empty.search.title': 'No ha vuelto nada con esas palabras.',
+    'empty.search.body':
+      'Prueba a escribirlo de otra forma, con el nombre del pueblo más cercano, o con otra actividad.',
+    'empty.nearby.title': 'No ha vuelto nada dentro de ese radio.',
+    'empty.nearby.body':
+      'Prueba con un radio mayor, con otra actividad, o con un punto más cerca de un inicio de ruta.',
+
+    'sport.hike': 'Senderismo',
+    'sport.touringbicycle': 'Cicloturismo',
+    'sport.mtb': 'BTT',
+    'sport.racebike': 'Carretera',
+    'sport.jogging': 'Correr',
+    'sport.mountaineering': 'Alpinismo',
 
     'stage.fetch': 'Leyendo la página',
     'stage.extract': 'Extrayendo el track',
@@ -177,6 +326,15 @@ const STRINGS = {
     'error.network.title': 'No pudimos llegar al sitio de origen.',
     'error.network.body':
       'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suelta el fichero aquí.',
+    'error.query.title': 'Todavía no hay nada que buscar.',
+    'error.query.body':
+      'Una búsqueda necesita al menos dos caracteres. Escribe el nombre de una ruta, de un pico o de un pueblo.',
+    'error.location.title': 'Eso no es un punto de la tierra.',
+    'error.location.body':
+      'La latitud va de -90 a 90 y la longitud de -180 a 180, con punto o con coma, como en 42,6417. Usar mi ubicación y Buscar un lugar te rellenan las dos.',
+    'error.sport.title': 'Ese origen no tiene esa actividad.',
+    'error.sport.body':
+      'La lista de actividades es del sitio de origen y cambia con él. Vuelve a elegir una de la lista.',
 
     'step2.download': 'Descargar GPX',
     'step2.reset': 'Otro enlace',

@@ -359,6 +359,339 @@ h1 {
   color: var(--muted);
 }
 
+/* ------------------------------------------------------------------- tabs */
+
+/* A strip above the card, marked by an underline rather than by three boxes
+ * that would compete with the card's own edge. */
+.tabs {
+  display: flex;
+  gap: 20px;
+  /* The same inset as the card below, less the tab's own 2px, so a label sits
+   * on the same line as the heading it introduces. Matched to the card's
+   * padding rather than guessed, so the two move together. */
+  padding: 0 calc(clamp(20px, 3.4vw, 32px) - 2px);
+  border-bottom: 1px solid var(--surface-line);
+}
+
+.tab {
+  padding: 6px 2px 9px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  transition:
+    color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+
+.tab:hover {
+  color: var(--text-2);
+}
+
+.tab[aria-selected='true'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The panel is the tab's own content, so its focus ring belongs on the panel
+ * edge rather than tight around the first line of text in it. */
+.panel:focus-visible {
+  outline-offset: 6px;
+}
+
+/* ----------------------------------------------------------------- finder */
+
+.finder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.control-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.text-input,
+.select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-inner);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  transition: border-color 0.18s var(--ease);
+}
+
+.text-input:hover,
+.select:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--field-border));
+}
+
+.text-input::placeholder {
+  color: var(--placeholder);
+}
+
+/* The native arrow is replaced by the page's own drawn one, so the two
+ * dropdowns look like the rest of the instrument on every platform. */
+.select {
+  appearance: none;
+  padding-right: 34px;
+}
+
+.select-shell {
+  position: relative;
+  display: block;
+}
+
+.select-shell .icon {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.submit-button {
+  min-height: 44px;
+}
+
+.pick-row {
+  display: grid;
+  /* Equal halves rather than each button sized by its own words: two controls
+   * that do the same job at the same moment should not be ragged, and the
+   * Spanish labels are a different length from the English ones. */
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.geo-note,
+.place-note {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* An answer the visitor can act on, not a refusal to apologise for: it is the
+ * same muted note as any other, never the warm colour. */
+.geo-note:empty {
+  display: none;
+}
+
+.place-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.place-panel h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.place-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.place-field .control-label {
+  grid-column: 1 / -1;
+}
+
+.place-field .ghost-button {
+  min-height: 42px;
+}
+
+.place-out {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --------------------------------------------------------------- results */
+
+.finder-out {
+  display: flex;
+  flex-direction: column;
+}
+
+.finder-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 0 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.finder-status .icon {
+  color: var(--accent);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+/* Not the warm colour: an answer with nothing in it is an answer. */
+.finder-empty {
+  padding: 14px 0 2px;
+}
+
+.finder-empty h2 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.finder-empty p {
+  margin-top: 4px;
+  max-width: 52ch;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A row is not a card. Hairlines separate them, the way the secondary
+ * measures are separated on a phone, so the list reads as one thing to pick
+ * from rather than as a shelf of products. */
+.row,
+.place-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'title sport go'
+    'claim claim go';
+  align-items: center;
+  gap: 2px 12px;
+  width: 100%;
+  padding: 13px 10px 13px 12px;
+  border: 0;
+  border-top: 1px solid var(--surface-line);
+  border-left: 2px solid transparent;
+  background: none;
+  text-align: left;
+  transition:
+    background-color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+
+.results .row:last-child,
+.place-row:last-child {
+  border-bottom: 1px solid var(--surface-line);
+}
+
+/* Lifted with the accent, not with a shadow. */
+.row:hover:not(:disabled),
+.row:focus-visible,
+.place-row:hover,
+.place-row:focus-visible {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.row:hover:not(:disabled) .row-title,
+.row:focus-visible .row-title,
+.place-row:hover .row-title,
+.place-row:focus-visible .row-title {
+  color: var(--accent);
+}
+
+.row:disabled {
+  cursor: default;
+}
+
+.row-title {
+  grid-area: title;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text);
+  text-wrap: pretty;
+  transition: color 0.18s var(--ease);
+}
+
+.row-sport {
+  grid-area: sport;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.row-claim {
+  grid-area: claim;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.row-go {
+  grid-area: go;
+  color: var(--muted);
+}
+
+.more-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.more-count,
+.more-note,
+.dropped-note {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.finder-error {
+  margin-top: 14px;
+}
+
+/* Quietly under the list, because it is the difference between "nothing was
+ * found" and "we could not read some of what was found". */
+.dropped-note {
+  padding-top: 12px;
+  max-width: 62ch;
+}
+
 /* ---------------------------------------------------------------- working */
 
 .stages {
@@ -1159,6 +1492,44 @@ body:has(#app[data-dragging='true']) .drop-veil {
     min-height: 52px;
     margin: 0 -16px;
     border-radius: 0 0 var(--radius-card) var(--radius-card);
+  }
+
+  .tabs {
+    gap: 16px;
+  }
+
+  .control-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .text-input,
+  .select {
+    font-size: 16px; /* anything smaller makes iOS zoom the page on focus */
+  }
+
+  /* The button that spends the request goes full width along the bottom of the
+   * fields it belongs to, where a thumb reaches it. */
+  .submit-button {
+    grid-column: 1 / -1;
+    min-height: 50px;
+  }
+
+  .place-field {
+    grid-template-columns: 1fr;
+  }
+
+  .row,
+  .place-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title go'
+      'claim go'
+      'sport go';
+    align-items: start;
+  }
+
+  .row-go {
+    align-self: center;
   }
 
   .stages {

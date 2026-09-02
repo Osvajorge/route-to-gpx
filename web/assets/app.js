@@ -1,3 +1,10 @@
+import {
+  appendPage,
+  catalogueFrom,
+  claimSentence,
+  sourcesFrom,
+  sportAfterSource,
+} from './discovery.js';
 import { detectLanguage, rememberLanguage, translate } from './i18n.js';
 import { icon } from './icons.js';
 import {
@@ -52,6 +59,30 @@ function formatBytes(bytes) {
   return bytes < 1024 * 1024
     ? `${formatNumber(bytes / 1024)} KB`
     : `${formatNumber(bytes / (1024 * 1024), 1)} MB`;
+}
+
+/** "a, b and c", in the reader's language. */
+function joinList(items) {
+  try {
+    return new Intl.ListFormat(state.lang === 'es' ? 'es-ES' : 'en-GB', {
+      style: 'long',
+      type: 'conjunction',
+    }).format(items);
+  } catch {
+    // A browser without Intl.ListFormat. Commas still read as a list.
+    return items.join(', ');
+  }
+}
+
+/** Text from a source site, made safe to put inside markup.
+ *
+ *  Route titles and place names are written by whoever uploaded them, so they
+ *  reach this page as somebody else's words and are never trusted as markup. */
+function escapeText(value) {
+  return String(value).replace(
+    /[&<>"]/g,
+    (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character],
+  );
 }
 
 // ------------------------------------------------------------------- sources
@@ -241,7 +272,9 @@ function render() {
 function renderStepOne() {
   if (state.view === 'report') return;
   el.heading.textContent = t('step1.heading');
-  el.sub.textContent = t('step1.sub');
+  el.subLink.textContent = t('step1.sub.link');
+  el.subSearch.textContent = t('step1.sub.search');
+  el.subNearby.textContent = t('step1.sub.nearby');
   el.fieldPrefix.textContent = t('field.prefix');
   el.input.placeholder = t('field.placeholder');
   el.input.setAttribute('aria-label', t('field.label'));
@@ -257,6 +290,7 @@ function renderStepOne() {
   el.exampleButton.textContent = t('action.example');
   el.exampleButton.hidden = state.view === 'working';
   el.dropNote.textContent = t('step1.drop');
+  renderFinder();
 }
 
 const STAGES = [
@@ -363,8 +397,8 @@ function renderReport() {
 
   const elevation =
     measurements.elevationMinM === null
-      ? '–'
-      : `${formatNumber(measurements.elevationMinM)}–${formatNumber(measurements.elevationMaxM)} m`;
+      ? '-'
+      : `${formatNumber(measurements.elevationMinM)}-${formatNumber(measurements.elevationMaxM)} m`;
   el.secondary.innerHTML = `
     ${measureRow(t('measure.rawAscent'), `${formatNumber(measurements.rawAscentM)} m`)}
     ${measureRow(t('measure.points'), formatNumber(measurements.pointCount))}
@@ -786,6 +820,668 @@ function renderFooter() {
   el.footerSource.textContent = t('footer.source');
 }
 
+// -------------------------------------------------------------------- finder
+//
+// Search and Nearby are two more ways of arriving at a URL, and nothing else.
+// A row carries a name, what the source claims about it, and a way to convert
+// it; pressing one runs the same conversion the link field runs, and the report
+// that follows is the only place on this page a measurement appears. There is
+// no ordering, no ranking and no picture here on purpose: those invite
+// browsing, and this list is a means, never the destination.
+
+const TAB_STORAGE_KEY = 'route-to-gpx:tab';
+const TABS = ['search', 'nearby', 'link'];
+
+// Decided by the owner. Nearby pages cleanly at six and repeats itself above
+// that; search pages cleanly at nine.
+const SEARCH_PAGE_SIZE = 9;
+const NEARBY_PAGE_SIZE = 6;
+// A place lookup wants the `places` a search answer already carries, not its
+// routes. Not smaller than this: places and routes share one upstream page, so
+// too small a page comes back with routes only and no place at all.
+const PLACE_PAGE_SIZE = 5;
+
+const RADII_M = [5000, 10000, 20000, 50000, 100000];
+
+// The sites this page can already convert a link from, longest served first.
+// Only the first is offered until the service says it can search another.
+const KNOWN_SOURCES = [
+  { id: 'komoot', label: 'Komoot' },
+  { id: 'wikiloc', label: 'Wikiloc' },
+];
+
+// Failures a list endpoint can answer with that have a sentence of their own.
+// Anything else, including a body this page and the service disagree about,
+// reads as the question having gone unanswered, which is what happened.
+const LIST_ERRORS = new Set(['busy', 'network', 'query', 'location', 'sport', 'domain']);
+
+const finder = {
+  tab: readTab(),
+  sources: KNOWN_SOURCES.slice(0, 1),
+  sourceId: KNOWN_SOURCES[0].id,
+  // One activity list per source, so switching back and forth costs nothing.
+  catalogues: new Map(),
+  search: {
+    query: '',
+    sport: '',
+    status: 'idle',
+    errorKey: null,
+    shown: null,
+    more: false,
+    addedNothing: false,
+    asked: 0,
+  },
+  nearby: {
+    lat: '',
+    lng: '',
+    radiusM: 20000,
+    sport: '',
+    geo: null,
+    status: 'idle',
+    errorKey: null,
+    shown: null,
+    more: false,
+    addedNothing: false,
+    asked: 0,
+  },
+  place: { open: false, query: '', status: 'idle', errorKey: null, results: [] },
+};
+
+function readTab() {
+  try {
+    const stored = localStorage.getItem(TAB_STORAGE_KEY);
+    if (TABS.includes(stored)) return stored;
+  } catch {
+    // A private window, or site data blocked. The link field is the default.
+  }
+  return 'link';
+}
+
+function rememberTab(tab) {
+  try {
+    localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    // Not being able to remember the choice is not worth an error.
+  }
+}
+
+const panelState = (mode) => (mode === 'search' ? finder.search : finder.nearby);
+
+function sourceLabel(id) {
+  return finder.sources.find((source) => source.id === id)?.label ?? id;
+}
+
+/** An activity in the reader's language, or the source's own word for it.
+ *
+ *  The list comes from the service and belongs to the source site, so it can
+ *  hold a word this page has not learned yet. Printing the slug is honest;
+ *  guessing at a translation, or dropping the row, would not be. */
+function sportLabel(slug) {
+  const key = `sport.${slug}`;
+  const text = t(key);
+  return text === key ? slug : text;
+}
+
+// ------------------------------------------------------------ finder service
+
+/** The activity list for one source, read from the service rather than
+ *  written down here, because the vocabularies belong to the sites.
+ *
+ *  The `source` parameter is sent whether or not the service reads it yet. One
+ *  that does not answers with the single list it has, which is the right list
+ *  for the single source it can search. */
+async function loadCatalogue(sourceId) {
+  if (finder.catalogues.has(sourceId)) return;
+
+  let payload;
+  try {
+    const response = await fetch(
+      `${API_BASE}/sports?source=${encodeURIComponent(sourceId)}`,
+    );
+    payload = await response.json();
+  } catch {
+    // No list is not something to put a panel on screen for: the dropdown
+    // waits, and choosing a source asks again.
+    return;
+  }
+  if (!payload || payload.ok !== true) return;
+
+  finder.sources = sourcesFrom(payload, KNOWN_SOURCES);
+  const catalogue = catalogueFrom(payload, null);
+  if (!catalogue) return;
+
+  finder.catalogues.set(sourceId, catalogue);
+  if (sourceId === finder.sourceId) applyCatalogue(catalogue);
+  renderFinder();
+}
+
+function applyCatalogue(catalogue) {
+  finder.search.sport = sportAfterSource(catalogue, finder.search.sport, true);
+  finder.nearby.sport = sportAfterSource(catalogue, finder.nearby.sport, true);
+}
+
+/** One list, or the key to a sentence saying why there is none. */
+async function askList(path, body) {
+  let payload;
+  try {
+    const response = await fetch(`${API_BASE}/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    payload = await response.json();
+  } catch {
+    return { errorKey: 'network' };
+  }
+
+  if (!payload || payload.ok !== true || !Array.isArray(payload.results)) {
+    const code = payload?.error;
+    return { errorKey: LIST_ERRORS.has(code) ? code : 'network' };
+  }
+  return { listing: payload };
+}
+
+/** The service echoes what it actually used, after its own clamping. Reading
+ *  that back into the form is what stops a radius the service will not go to
+ *  from looking like one it did. */
+function adoptEcho(panel, echo) {
+  if (!echo) return;
+  if (typeof echo.radiusM === 'number') panel.radiusM = echo.radiusM;
+  const catalogue = finder.catalogues.get(finder.sourceId);
+  if (typeof echo.sport === 'string' && catalogue?.sports.includes(echo.sport)) {
+    panel.sport = echo.sport;
+  }
+}
+
+async function runList(mode, { append = false } = {}) {
+  const panel = panelState(mode);
+  // Load more asks the SAME question the rows on screen already answer. Reading
+  // the form again here is how six routes near Montseny get a second page from
+  // wherever the coordinate boxes happen to say by then, and how a count from
+  // one question ends up printed under the rows of another.
+  const body =
+    append && panel.askedBody && panel.shown
+      ? { body: { ...panel.askedBody, page: panel.shown.page + 1 } }
+      : mode === 'search'
+        ? searchBody(panel)
+        : nearbyBody(panel);
+  if (body.errorKey) {
+    // Refused here rather than upstream: a blank query or a latitude that is
+    // not a number spends a request to be told what this page already knows.
+    panel.errorKey = body.errorKey;
+    panel.status = 'error';
+    if (!append) panel.shown = null;
+    renderFinder();
+    return;
+  }
+
+  if (append) {
+    panel.more = true;
+  } else {
+    panel.status = 'working';
+    panel.errorKey = null;
+    panel.shown = null;
+    panel.addedNothing = false;
+    // The question, frozen at the moment it was asked. Every later page is this
+    // with a different page number and nothing else.
+    panel.askedBody = { ...body.body };
+  }
+  // Which question is on screen. An older answer that arrives after a newer
+  // one was asked belongs to nobody, the same way an old tile does on the map.
+  const token = ++panel.asked;
+  renderFinder();
+
+  const { listing, errorKey } = await askList(mode, body.body);
+  if (token !== panel.asked) return;
+  panel.more = false;
+
+  if (errorKey) {
+    panel.errorKey = errorKey;
+    panel.status = 'error';
+    // The rows already on screen stay: a failed next page is no reason to take
+    // away the page that worked.
+    renderFinder();
+    return;
+  }
+
+  adoptEcho(panel, listing.query);
+  const before = append && panel.shown ? panel.shown.rows.length : 0;
+  panel.shown = appendPage(append ? panel.shown : null, listing);
+  // The source can answer a later page with nothing this converter can list,
+  // while still saying there is more behind it. Said out loud, because a button
+  // that visibly does nothing reads as broken.
+  panel.addedNothing = append && panel.shown.rows.length === before;
+  panel.errorKey = null;
+  panel.status = panel.shown.rows.length === 0 ? 'empty' : 'ready';
+  renderFinder();
+}
+
+function searchBody(panel) {
+  const query = panel.query.trim();
+  if (query.length < 2) return { errorKey: 'query' };
+  return {
+    body: {
+      source: finder.sourceId,
+      query,
+      sport: panel.sport || null,
+      near: null,
+      limit: SEARCH_PAGE_SIZE,
+      page: 0,
+    },
+  };
+}
+
+function nearbyBody(panel) {
+  const lat = readCoordinate(panel.lat, 90);
+  const lng = readCoordinate(panel.lng, 180);
+  if (lat === null || lng === null) return { errorKey: 'location' };
+  return {
+    body: {
+      source: finder.sourceId,
+      lat,
+      lng,
+      sport: panel.sport || null,
+      radiusM: panel.radiusM,
+      limit: NEARBY_PAGE_SIZE,
+      page: 0,
+    },
+  };
+}
+
+/** A typed coordinate, or null when it is not one.
+ *
+ *  A comma is accepted as the decimal mark: half this page's readers write
+ *  42,6417, and rejecting that would be rejecting their own notation. */
+function readCoordinate(text, limit) {
+  const value = Number(String(text).trim().replace(',', '.'));
+  if (!Number.isFinite(value) || String(text).trim() === '') return null;
+  return Math.abs(value) <= limit ? value : null;
+}
+
+// --------------------------------------------------------------- my location
+
+/** Asked once, on the click, and never on load or on a timer.
+ *
+ *  A refusal is a choice, not a failure: it is answered with the two ways of
+ *  giving a point by hand, in the same quiet voice as everything else. */
+function useMyLocation() {
+  if (!navigator.geolocation) {
+    finder.nearby.geo = 'unavailable';
+    renderFinder();
+    return;
+  }
+
+  finder.nearby.geo = 'asking';
+  renderFinder();
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      // Four decimals is about eleven metres, which is exact enough for a
+      // radius measured in kilometres and shares no more than that.
+      finder.nearby.lat = position.coords.latitude.toFixed(4);
+      finder.nearby.lng = position.coords.longitude.toFixed(4);
+      finder.nearby.geo = 'filled';
+      renderFinder();
+    },
+    (error) => {
+      finder.nearby.geo =
+        error.code === error.PERMISSION_DENIED ? 'refused' : 'unavailable';
+      renderFinder();
+    },
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+  );
+}
+
+// ---------------------------------------------------------------- the places
+
+/** Place names come from the search answer this service already sends.
+ *
+ *  No geocoder is called from the browser, which is why the footer's three
+ *  sentences about where requests go are still the whole truth. */
+async function findPlaces() {
+  const place = finder.place;
+  const query = place.query.trim();
+  if (query.length < 2) {
+    place.status = 'error';
+    place.errorKey = 'query';
+    place.results = [];
+    renderFinder();
+    return;
+  }
+
+  place.status = 'working';
+  place.errorKey = null;
+  renderFinder();
+
+  const { listing, errorKey } = await askList('search', {
+    source: finder.sourceId,
+    query,
+    // A place is not narrowed by an activity, so this asks with the source's
+    // own default rather than with the form's.
+    sport: null,
+    limit: PLACE_PAGE_SIZE,
+    page: 0,
+  });
+
+  if (errorKey) {
+    place.status = 'error';
+    place.errorKey = errorKey;
+    place.results = [];
+    renderFinder();
+    return;
+  }
+
+  place.results = Array.isArray(listing.places) ? listing.places : [];
+  place.status = place.results.length === 0 ? 'empty' : 'ready';
+  renderFinder();
+}
+
+function pickPlace(index) {
+  const place = finder.place.results[index];
+  if (!place) return;
+  finder.nearby.lat = place.lat.toFixed(4);
+  finder.nearby.lng = place.lng.toFixed(4);
+  finder.nearby.geo = null;
+  finder.place.open = false;
+  renderFinder();
+  el.nearbySubmit.focus();
+}
+
+// ------------------------------------------------------------ finder drawing
+
+function chooseTab(tab, focus) {
+  finder.tab = tab;
+  rememberTab(tab);
+  renderFinder();
+  if (focus) el.tabButtons.find((button) => button.dataset.tab === tab).focus();
+}
+
+function chooseSource(id) {
+  if (id === finder.sourceId) return;
+  finder.sourceId = id;
+  const catalogue = finder.catalogues.get(id);
+  if (catalogue) applyCatalogue(catalogue);
+  else {
+    // Nothing is shown from the old source's vocabulary while the new one is
+    // on its way: the two are different lists, not two spellings of one.
+    finder.search.sport = '';
+    finder.nearby.sport = '';
+  }
+  renderFinder();
+  loadCatalogue(id);
+}
+
+/** The field the open tab is about. Nearby has no single one, so focus is left
+ *  where the visitor put it. */
+function focusActiveField() {
+  if (finder.tab === 'link') el.input.focus();
+  if (finder.tab === 'search') el.searchQuery.focus();
+}
+
+/** Writing a value only when it changed keeps the caret where the visitor is
+ *  typing: assigning the same string back can collapse the selection. */
+function setValue(input, value) {
+  if (input.value !== value) input.value = value;
+}
+
+function renderFinder() {
+  renderTabs();
+  renderSearchForm();
+  renderNearbyForm();
+  renderPlacePanel();
+  renderResults('search');
+  renderResults('nearby');
+}
+
+function renderTabs() {
+  el.tabs.setAttribute('aria-label', t('tabs.label'));
+  for (const button of el.tabButtons) {
+    const tab = button.dataset.tab;
+    const selected = tab === finder.tab;
+    button.textContent = t(`tab.${tab}`);
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+    button.tabIndex = selected ? 0 : -1;
+    document.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
+  }
+}
+
+function renderSearchForm() {
+  const busy = state.view === 'working';
+  el.searchLabel.textContent = t('search.label');
+  el.searchQuery.placeholder = t('search.placeholder');
+  setValue(el.searchQuery, finder.search.query);
+  el.searchQuery.disabled = busy;
+  fillSources(el.searchSource, el.searchSourceLabel);
+  fillSports(el.searchSport, el.searchSportLabel, finder.search.sport);
+  el.searchSource.disabled = busy;
+  el.searchSport.disabled = busy || el.searchSport.options.length === 0;
+  el.searchSubmit.textContent = t('search.submit');
+  el.searchSubmit.disabled = busy || finder.search.status === 'working';
+}
+
+function renderNearbyForm() {
+  const busy = state.view === 'working';
+  el.geoHere.innerHTML = `${icon('crosshair')}<span>${t('nearby.here')}</span>`;
+  el.placeOpen.innerHTML = `${icon('search')}<span>${t('nearby.place')}</span>`;
+  el.placeOpen.setAttribute('aria-expanded', finder.place.open ? 'true' : 'false');
+  el.geoNote.textContent = finder.nearby.geo ? t(`geo.${finder.nearby.geo}`) : '';
+
+  el.nearbyLatLabel.textContent = t('nearby.lat');
+  el.nearbyLngLabel.textContent = t('nearby.lng');
+  setValue(el.nearbyLat, finder.nearby.lat);
+  setValue(el.nearbyLng, finder.nearby.lng);
+  el.nearbyRadiusLabel.textContent = t('nearby.radius');
+
+  // The value the service last echoed is offered too, so a radius it clamped
+  // shows the number it really used rather than nothing at all.
+  const radii = RADII_M.includes(finder.nearby.radiusM)
+    ? RADII_M
+    : [...RADII_M, finder.nearby.radiusM].sort((a, b) => a - b);
+  fillSelect(
+    el.nearbyRadius,
+    radii.map((metres) => ({
+      value: String(metres),
+      label: t('nearby.radiusOption', { km: formatNumber(metres / 1000) }),
+    })),
+    String(finder.nearby.radiusM),
+  );
+
+  fillSources(el.nearbySource, el.nearbySourceLabel);
+  fillSports(el.nearbySport, el.nearbySportLabel, finder.nearby.sport);
+  el.nearbySubmit.textContent = t('nearby.submit');
+  for (const control of [
+    el.geoHere,
+    el.placeOpen,
+    el.nearbyLat,
+    el.nearbyLng,
+    el.nearbyRadius,
+    el.nearbySource,
+  ]) {
+    control.disabled = busy;
+  }
+  el.nearbySubmit.disabled = busy || finder.nearby.status === 'working';
+  el.nearbySport.disabled = busy || el.nearbySport.options.length === 0;
+}
+
+function renderPlacePanel() {
+  el.placePanel.hidden = !finder.place.open;
+  el.placeTitle.textContent = t('place.title');
+  el.placeQueryLabel.textContent = t('place.label');
+  el.placeQuery.placeholder = t('place.placeholder');
+  setValue(el.placeQuery, finder.place.query);
+  el.placeFind.innerHTML = `${icon('search')}<span>${t('place.find')}</span>`;
+  el.placeClose.textContent = t('place.close');
+
+  const place = finder.place;
+  if (place.status === 'working') {
+    el.placeOut.innerHTML = `<p class="finder-status" role="status">${icon('active')}<span>${t(
+      'place.working',
+    )}</span></p>`;
+    return;
+  }
+  if (place.status === 'empty') {
+    el.placeOut.innerHTML = `<p class="place-note" role="status">${t('place.empty')}</p>`;
+    return;
+  }
+  if (place.status === 'error') {
+    el.placeOut.innerHTML = errorMarkup(place.errorKey);
+    return;
+  }
+  el.placeOut.innerHTML = place.results
+    .map(
+      // The pair is separated by a dot, not a comma: in Spanish the comma is
+      // already the decimal mark, and "41,1310, -3,1721" reads as four numbers.
+      (found, index) => `<button class="place-row" type="button" data-place="${index}">
+        <span class="row-title">${escapeText(found.name)}</span>
+        <span class="row-claim">${formatNumber(found.lat, 4)} · ${formatNumber(found.lng, 4)}</span>
+        ${icon('crosshair', 'row-go')}
+      </button>`,
+    )
+    .join('');
+}
+
+function fillSources(select, label) {
+  label.textContent = t('field.source');
+  fillSelect(
+    select,
+    finder.sources.map((source) => ({ value: source.id, label: source.label })),
+    finder.sourceId,
+  );
+}
+
+function fillSports(select, label, chosen) {
+  label.textContent = t('field.activity');
+  const catalogue = finder.catalogues.get(finder.sourceId);
+  fillSelect(
+    select,
+    (catalogue?.sports ?? []).map((sport) => ({ value: sport, label: sportLabel(sport) })),
+    chosen,
+  );
+}
+
+function fillSelect(select, options, value) {
+  select.innerHTML = options
+    .map(
+      (option) =>
+        `<option value="${escapeText(option.value)}">${escapeText(option.label)}</option>`,
+    )
+    .join('');
+  select.value = value;
+}
+
+/** Puts focus back after Load more redrew the list.
+ *
+ *  The replacement button when there is one, the first row that was appended
+ *  when there is not, so the visitor lands on what they asked for either way. */
+function restoreMoreFocus(mode) {
+  const out = mode === 'search' ? el.searchOut : el.nearbyOut;
+  const again = out.querySelector('[data-more]:not([disabled])');
+  if (again) {
+    again.focus();
+    return;
+  }
+  const rows = out.querySelectorAll('.row');
+  if (rows.length) rows[rows.length - 1].focus();
+}
+
+
+function renderResults(mode) {
+  const panel = panelState(mode);
+  const out = mode === 'search' ? el.searchOut : el.nearbyOut;
+  const shown = panel.shown;
+  const source = shown?.source || sourceLabel(finder.sourceId);
+  const parts = [];
+
+  if (panel.status === 'working') {
+    parts.push(`<p class="finder-status" role="status">${icon('active')}<span>${t(
+      `finder.working.${mode}`,
+      { source },
+    )}</span></p>`);
+  }
+
+  if (shown && shown.rows.length > 0) {
+    parts.push(`<div class="results">${shown.rows.map(rowMarkup).join('')}</div>`);
+
+    const count =
+      shown.totalKnown === null
+        ? ''
+        : // The total is the source's count, not ours, so it carries the
+          // source's name like every other figure this page repeats.
+          `<span class="more-count">${t('finder.count', {
+            source,
+            shown: formatNumber(shown.rows.length),
+            total: formatNumber(shown.totalKnown),
+          })}</span>`;
+    const more = shown.hasMore
+      ? `<button class="ghost-button" type="button" data-more="${mode}"${
+          panel.more ? ' disabled' : ''
+        }>${panel.more ? t('finder.moreWorking') : t('finder.more')}</button>`
+      : '';
+    if (more || count) parts.push(`<div class="more-row">${more}${count}</div>`);
+    if (panel.addedNothing) parts.push(`<p class="more-note">${t('finder.moreEmpty')}</p>`);
+
+    if (shown.dropped > 0) {
+      const key = shown.dropped === 1 ? 'finder.dropped.one' : 'finder.dropped.many';
+      parts.push(
+        `<p class="dropped-note">${t(key, {
+          source,
+          count: formatNumber(shown.dropped),
+        })}</p>`,
+      );
+    }
+  }
+
+  if (panel.status === 'empty') {
+    parts.push(`<div class="finder-empty" role="status">
+        <h2>${t(`empty.${mode}.title`)}</h2>
+        <p>${t(`empty.${mode}.body`)}</p>
+      </div>`);
+  }
+  if (panel.status === 'error') parts.push(errorMarkup(panel.errorKey));
+
+  out.innerHTML = parts.join('');
+  out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
+}
+
+/** One row: a name, what the source claims, and a way to convert it. */
+function rowMarkup(row, index) {
+  const claim = claimSentence(row.published, {
+    source: row.publishedBy || sourceLabel(finder.sourceId),
+    t,
+    // One decimal on a row, two in the report. A row only has to be enough to
+    // recognise the route by; the report is the measurement.
+    km: (metres) => formatKm(metres, 1),
+    metres: (value) => formatNumber(value),
+    joinList,
+  });
+  // Only when it is not the activity that was asked for. On Komoot the filter
+  // is real, so every row would repeat the word the visitor just chose, six
+  // times down the screen. On Wikiloc there is no filter to trust, so the word
+  // is the only thing telling a walker that row four is a via ferrata.
+  const asked = panelState(finder.tab === 'nearby' ? 'nearby' : 'search').sport;
+  const sport =
+    row.sport && row.sport !== asked
+      ? `<span class="row-sport">${escapeText(sportLabel(row.sport))}</span>`
+      : '';
+  return `<button class="row" type="button" data-index="${index}"${
+    state.view === 'working' ? ' disabled' : ''
+  }>
+      <span class="row-title">${escapeText(row.title)}</span>
+      ${sport}
+      <span class="row-claim">${escapeText(claim)}</span>
+      ${icon('link', 'row-go')}
+    </button>`;
+}
+
+function errorMarkup(key) {
+  return `<div class="panel-warn finder-error" role="alert">
+      ${icon('warning', 'icon-warning')}
+      <div>
+        <h2>${t(`error.${key}.title`)}</h2>
+        <p>${t(`error.${key}.body`)}</p>
+      </div>
+    </div>`;
+}
+
 // -------------------------------------------------------------------- wiring
 
 function collect() {
@@ -794,7 +1490,9 @@ function collect() {
   el.skip = document.querySelector('.skip-link');
   el.langButton = document.getElementById('lang-toggle');
   el.heading = document.getElementById('step1-heading');
-  el.sub = document.getElementById('step1-sub');
+  el.subLink = document.getElementById('sub-link');
+  el.subSearch = document.getElementById('sub-search');
+  el.subNearby = document.getElementById('sub-nearby');
   el.fieldPrefix = document.querySelector('.field-prefix');
   el.input = document.getElementById('route-url');
   el.pasteButton = document.getElementById('paste');
@@ -802,6 +1500,46 @@ function collect() {
   el.hint = document.getElementById('step1-hint');
   el.exampleButton = document.getElementById('example');
   el.dropNote = document.querySelector('.drop-note');
+
+  el.tabs = document.getElementById('tabs');
+  el.tabButtons = [...el.tabs.querySelectorAll('[role="tab"]')];
+  const labelFor = (id) => document.querySelector(`label[for="${id}"]`);
+
+  el.searchQuery = document.getElementById('search-query');
+  el.searchLabel = labelFor('search-query');
+  el.searchSource = document.getElementById('search-source');
+  el.searchSourceLabel = labelFor('search-source');
+  el.searchSport = document.getElementById('search-sport');
+  el.searchSportLabel = labelFor('search-sport');
+  el.searchSubmit = document.getElementById('search-submit');
+  el.searchForm = document.getElementById('search-form');
+  el.searchOut = document.getElementById('search-out');
+
+  el.geoHere = document.getElementById('geo-here');
+  el.geoNote = document.getElementById('geo-note');
+  el.placeOpen = document.getElementById('place-open');
+  el.placePanel = document.getElementById('place-panel');
+  el.placeTitle = document.getElementById('place-title');
+  el.placeQuery = document.getElementById('place-query');
+  el.placeQueryLabel = labelFor('place-query');
+  el.placeFind = document.getElementById('place-find');
+  el.placeClose = document.getElementById('place-close');
+  el.placeOut = document.getElementById('place-out');
+
+  el.nearbyLat = document.getElementById('nearby-lat');
+  el.nearbyLatLabel = labelFor('nearby-lat');
+  el.nearbyLng = document.getElementById('nearby-lng');
+  el.nearbyLngLabel = labelFor('nearby-lng');
+  el.nearbyRadius = document.getElementById('nearby-radius');
+  el.nearbyRadiusLabel = labelFor('nearby-radius');
+  el.nearbySource = document.getElementById('nearby-source');
+  el.nearbySourceLabel = labelFor('nearby-source');
+  el.nearbySport = document.getElementById('nearby-sport');
+  el.nearbySportLabel = labelFor('nearby-sport');
+  el.nearbySubmit = document.getElementById('nearby-submit');
+  el.nearbyForm = document.getElementById('nearby-form');
+  el.nearbyOut = document.getElementById('nearby-out');
+
   el.progress = document.getElementById('progress');
   el.error = document.getElementById('error');
   el.report = document.getElementById('report');
@@ -881,7 +1619,10 @@ function wire() {
   el.resetButton.addEventListener('click', () => {
     el.input.value = '';
     reset();
-    el.input.focus();
+    // Back to the tab the visitor came from, with the rows they were looking
+    // at still on it. Losing a page of results because you opened one of them
+    // is the kind of thing that makes a tool annoying.
+    focusActiveField();
   });
 
   // Drag and drop anywhere on the page.
@@ -948,6 +1689,125 @@ function wire() {
   });
 }
 
+function wireFinder() {
+  // The one drawn arrow both dropdowns use, added once rather than on every
+  // render: the native one differs on every platform and none of them is this
+  // page's stroke.
+  for (const shell of document.querySelectorAll('.select-shell')) {
+    shell.insertAdjacentHTML('beforeend', icon('chevron'));
+  }
+
+  for (const button of el.tabButtons) {
+    button.addEventListener('click', () => chooseTab(button.dataset.tab, false));
+  }
+
+  el.tabs.addEventListener('keydown', (event) => {
+    const here = el.tabButtons.findIndex((button) => button.dataset.tab === finder.tab);
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    let next = null;
+    if (step !== undefined) next = (here + step + el.tabButtons.length) % el.tabButtons.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = el.tabButtons.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    chooseTab(el.tabButtons[next].dataset.tab, true);
+  });
+
+  el.searchForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    runList('search');
+  });
+  el.searchQuery.addEventListener('input', () => {
+    finder.search.query = el.searchQuery.value;
+  });
+  // Return runs the search itself rather than leaving it to the form's own
+  // handling of the key, which is the same thing the link field does and the
+  // only version that behaves the same in every browser. The default is
+  // cancelled, so the search runs once and not twice.
+  el.searchQuery.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    runList('search');
+  });
+  el.searchSport.addEventListener('change', () => {
+    finder.search.sport = el.searchSport.value;
+  });
+
+  el.nearbyForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    runList('nearby');
+  });
+  for (const field of [el.nearbyLat, el.nearbyLng]) {
+    field.addEventListener('input', () => {
+      finder.nearby.lat = el.nearbyLat.value;
+      finder.nearby.lng = el.nearbyLng.value;
+    });
+    field.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      runList('nearby');
+    });
+  }
+  el.nearbyRadius.addEventListener('change', () => {
+    finder.nearby.radiusM = Number(el.nearbyRadius.value);
+  });
+  el.nearbySport.addEventListener('change', () => {
+    finder.nearby.sport = el.nearbySport.value;
+  });
+
+  for (const select of [el.searchSource, el.nearbySource]) {
+    select.addEventListener('change', () => chooseSource(select.value));
+  }
+
+  el.geoHere.addEventListener('click', useMyLocation);
+
+  el.placeOpen.addEventListener('click', () => {
+    finder.place.open = !finder.place.open;
+    renderFinder();
+    if (finder.place.open) el.placeQuery.focus();
+  });
+  el.placeClose.addEventListener('click', () => {
+    finder.place.open = false;
+    renderFinder();
+    el.placeOpen.focus();
+  });
+  el.placeFind.addEventListener('click', findPlaces);
+  el.placeQuery.addEventListener('input', () => {
+    finder.place.query = el.placeQuery.value;
+  });
+  el.placeQuery.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    findPlaces();
+  });
+  el.placeOut.addEventListener('click', (event) => {
+    const chosen = event.target.closest('[data-place]');
+    if (chosen) pickPlace(Number(chosen.dataset.place));
+  });
+
+  // One listener per list rather than one per row: the rows are rewritten
+  // whenever the language or the page changes.
+  for (const mode of ['search', 'nearby']) {
+    const out = mode === 'search' ? el.searchOut : el.nearbyOut;
+    out.addEventListener('click', (event) => {
+      if (event.target.closest('[data-more]')) {
+        // The list is redrawn wholesale, so the button that was just pressed
+        // stops existing. Without this a keyboard visitor is dropped at the top
+        // of the document and has to tab past everything to reach the rows they
+        // just asked for.
+        runList(mode, { append: true }).then(() => restoreMoreFocus(mode));
+        return;
+      }
+      const pressed = event.target.closest('.row');
+      if (!pressed) return;
+      const row = panelState(mode).shown?.rows[Number(pressed.dataset.index)];
+      // The whole point of the list: the row is a URL, and a URL goes through
+      // the conversion the link field already runs.
+      if (row) convertFromUrl(row.url);
+    });
+  }
+}
+
 function wireChartPointer(figure, toDistance) {
   const canvas = figure.querySelector('.chart-canvas');
   const move = (event) => {
@@ -961,5 +1821,9 @@ function wireChartPointer(figure, toDistance) {
 
 collect();
 wire();
+wireFinder();
 render();
-el.input.focus();
+focusActiveField();
+// The activity list belongs to the source site, so it is asked for rather than
+// written down here.
+loadCatalogue(finder.sourceId);
