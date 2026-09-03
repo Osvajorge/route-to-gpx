@@ -176,6 +176,18 @@ function fail(errorKey) {
   setView('error');
 }
 
+/** Takes the link field's error panel down when work starts somewhere else.
+ *
+ *  The panel belongs to step one, which every tab shares, so without this a
+ *  refused link keeps a live `role="alert"` under a search that worked: two
+ *  failures on screen at once, one of them about a URL nobody is looking at
+ *  any more. */
+function clearRouteError() {
+  if (state.view !== 'error') return;
+  state.errorKey = null;
+  setView('idle');
+}
+
 /** Fetches one link, rebuilds the track and measures it. Hands back the
  *  result, or null when something went wrong and the error panel is already
  *  saying what.
@@ -395,6 +407,15 @@ function renderStepOne() {
   el.input.setAttribute('aria-label', t('field.label'));
   el.input.value = state.url && state.view !== 'report' ? state.url : el.input.value;
   el.input.disabled = state.view === 'working';
+  // The alert below names the fault; this says which control it is about, for a
+  // reader who scrolled, and for a screen reader, which otherwise hears the
+  // alert and never learns what it belongs to. A dropped file is excluded: that
+  // failure is not the field's.
+  const linkFailed = state.view === 'error' && state.errorKey !== 'file';
+  el.input.setAttribute('aria-invalid', String(linkFailed));
+  if (linkFailed) el.input.setAttribute('aria-describedby', 'error');
+  else el.input.removeAttribute('aria-describedby');
+  el.field.classList.toggle('is-invalid', linkFailed);
   el.pasteButton.innerHTML = `${icon('clipboard')}<span>${t('action.paste')}</span>`;
   el.pasteButton.setAttribute('aria-label', t('action.paste'));
   el.pasteButton.disabled = state.view === 'working';
@@ -479,6 +500,7 @@ function renderReport() {
   el.resetButton.innerHTML = `${icon('back')}<span>${t('step2.reset')}</span>`;
 
   el.tiles.innerHTML = measuredTiles(measurements, published);
+  renderMethod(measurements);
 
   renderCharts();
 
@@ -538,10 +560,57 @@ function measuredTiles(measurements, published) {
       t('measure.ascent'),
       formatNumber(measurements.ascentM),
       'm',
-      comparison(measurements.ascentM, published?.ascentM ?? null, 'm', 0),
+      ascentNote(comparison(measurements.ascentM, published?.ascentM ?? null, 'm', 0), measurements),
       false,
     )}
     ${tile(t('measure.gap'), formatNumber(measurements.largestGapM), 'm', gapNote(measurements), warn)}`;
+}
+
+/** The ascent tile's note, whatever else that note is already saying.
+ *
+ *  THE RULE THIS SOLVES. Ascent is the output of three parameters and the row
+ *  showed none of them, beside a gap figure in the same skin printing its one.
+ *  So the row explained the number that needed it least and hid the reason
+ *  behind the number a reader can watch disagree with the source by a fifth.
+ *
+ *  The step is the parameter that moves the figure, so it is the one that goes
+ *  in the note. The median window and the noise floor are in the fold under
+ *  the tiles: three lines here would be three lines on every card-sized tile
+ *  on a phone, and the reason is worth a click, not a paragraph. */
+function ascentNote(against, measurements) {
+  // A recording with no heights was never sampled, so saying at what step it
+  // was would be this page inventing a parameter to look thorough. The figure
+  // above is a plain zero and the note says only what the source said.
+  if (!hasProfile(measurements)) return against;
+  const step = t('measure.ascent.step', {
+    step: formatNumber(measurements.sampleStepM, 1),
+  });
+  // A line of its own rather than a third clause after a second dot. At 375
+  // this note is 19 characters wide, so a run-on wrapped mid-figure and left
+  // the unit stranded on a line by itself.
+  return `${against} <span class="tile-note-param">${step}</span>`;
+}
+
+/** The fold. Written from the measurements rather than from constants, so a
+ *  parameter that changes in measure.js cannot leave a wrong number on screen. */
+function renderMethod(measurements) {
+  // Nothing to disclose about a profile that does not exist.
+  el.method.hidden = !hasProfile(measurements);
+  if (el.method.hidden) return;
+  el.methodSummary.innerHTML = `${icon('chevron', 'method-mark')}<span>${t(
+    'method.summary',
+  )}</span>`;
+  el.methodSampling.textContent = t('method.sampling', {
+    step: formatNumber(measurements.sampleStepM, 1),
+    window: formatNumber(measurements.medianWindow),
+    noise: formatNumber(measurements.ascentNoiseM),
+  });
+}
+
+/** Whether there is a height profile to have measured an ascent from. Two
+ *  points is the fewest that can carry a rise between them. */
+function hasProfile(measurements) {
+  return measurements.pointsWithElevation >= 2;
 }
 
 function gapNote(measurements) {
@@ -611,7 +680,9 @@ function drawTrace(surface, points, measurements) {
   surface.svg.innerHTML = drawn.svg;
   surface.figure.querySelector('.chart-title').textContent = t('chart.trace');
   surface.figure.querySelector('.chart-caption').innerHTML = measurements.gapExceedsThreshold
-    ? `<span>${t('chart.start')}</span><span class="caption-warn">${t('chart.gapDrawn')}</span>`
+    ? `<span>${t('chart.start')}</span><span class="caption-warn">${icon('warning')}${t(
+        'chart.gapDrawn',
+      )}</span>`
     : `<span>${t('chart.start')}</span>`;
   if (surface.toggle) surface.toggle.textContent = basemapOn ? t('map.hide') : t('map.show');
   surface.credit.innerHTML = t('map.attribution');
@@ -1214,12 +1285,11 @@ function renderRotate() {
   el.rotateMeasuredHead.textContent = t('rotate.measured');
   el.rotateTiles.innerHTML = arrangementTiles(after, measurements);
 
+  // A recording with no times loses nothing, and a line reporting that nothing
+  // happened is a line the reader has to read to learn it can be ignored.
+  el.rotateTimes.hidden = times === 0;
   el.rotateTimes.textContent =
-    times === 0
-      ? t('rotate.times.none')
-      : times === 1
-        ? t('rotate.times.one')
-        : t('rotate.times.many', { count: formatNumber(times) });
+    times === 1 ? t('rotate.times.one') : t('rotate.times.many', { count: formatNumber(times) });
   el.rotateNoTrim.textContent = t('rotate.notrim');
 
   renderSeam(arranged.seamM, seamAtM, after.gapThresholdM, changed);
@@ -1242,7 +1312,7 @@ function arrangementTiles(after, before) {
       t('measure.ascent'),
       formatNumber(after.ascentM),
       'm',
-      t('rotate.against', { value: `${formatNumber(before.ascentM)} m` }),
+      ascentNote(t('rotate.against', { value: `${formatNumber(before.ascentM)} m` }), after),
       false,
     )}
     ${tile(
@@ -1450,6 +1520,9 @@ const finder = {
   // rather than written down, and only ever after the answer proves it, so the
   // control is offered wherever it works and withdrawn where it does not.
   placeStuck: new Set(),
+  // Which card asked for the conversion that is running, so that card can say
+  // so where the press was. Null whenever nothing is in flight.
+  busyCard: null,
   search: {
     query: '',
     sport: '',
@@ -1679,6 +1752,7 @@ async function runList(mode, { append = false } = {}) {
   if (append) {
     panel.more = true;
   } else {
+    clearRouteError();
     panel.status = 'working';
     panel.errorKey = null;
     panel.shown = null;
@@ -1862,6 +1936,7 @@ function pickSearchPlace(point) {
 function chooseTab(tab, focus) {
   finder.tab = tab;
   rememberTab(tab);
+  clearRouteError();
   renderFinder();
   if (focus) el.tabButtons.find((button) => button.dataset.tab === tab).focus();
 }
@@ -2414,6 +2489,10 @@ function cardMarkup(row, index, mode) {
   const source = row.publishedBy || sourceLabel(finder.sourceId);
   const uid = `${mode}-${index}`;
   const busy = state.view === 'working' ? ' disabled' : '';
+  const working =
+    state.view === 'working' &&
+    finder.busyCard?.mode === mode &&
+    finder.busyCard.index === index;
   // A source that cannot filter upstream has been promised, in writing under
   // its own dropdown, that every card says its own activity.
   const always = LOCAL_ACTIVITY_FILTER.has(finder.sourceId);
@@ -2458,7 +2537,7 @@ function cardMarkup(row, index, mode) {
   // in another tab while we work is a reasonable thing to want.
   return `<article
       class="route-card"
-      data-index="${index}"
+      data-index="${index}"${working ? ' data-busy' : ''}
       tabindex="-1"
       aria-labelledby="title-${uid}"
     >
@@ -2482,7 +2561,9 @@ function cardMarkup(row, index, mode) {
             aria-label="${escapeText(t('card.open', { source }))}"
           >${icon('external')}</a>
         </div>
-        <p class="card-note" data-note role="status" hidden></p>
+        <p class="card-note" data-note role="status"${working ? '' : ' hidden'}>${
+          working ? escapeText(t('stage.progress')) : ''
+        }</p>
       </div>
     </article>`;
 }
@@ -2657,6 +2738,7 @@ function collect() {
   el.subNearby = document.getElementById('sub-nearby');
   el.fieldPrefix = document.querySelector('.field-prefix');
   el.input = document.getElementById('route-url');
+  el.field = el.input.closest('.field');
   el.pasteButton = document.getElementById('paste');
   el.convertButton = document.getElementById('convert');
   el.hint = document.getElementById('step1-hint');
@@ -2713,6 +2795,9 @@ function collect() {
   el.reportAdjust = document.getElementById('report-adjust');
   el.resetButton = document.getElementById('reset');
   el.tiles = document.getElementById('tiles');
+  el.method = document.getElementById('method');
+  el.methodSummary = document.getElementById('method-summary');
+  el.methodSampling = document.getElementById('method-sampling');
   el.traceFigure = document.getElementById('trace');
   el.profileFigure = document.getElementById('profile');
   surfaces.trace = chartSurface(el.traceFigure);
@@ -3058,7 +3143,7 @@ function wireFinder() {
       const card = event.target.closest('.route-card');
       if (!pressed || !card) return;
       const row = panelState(mode).shown?.rows[Number(card.dataset.index)];
-      if (row) runCardAction(pressed.dataset.act, row, card);
+      if (row) runCardAction(pressed.dataset.act, row, card, mode);
     });
   }
 }
@@ -3068,7 +3153,7 @@ function wireFinder() {
  *  Three of them are the same conversion the link field runs, which is what
  *  makes the file carry our provenance and the measurement ours. The fourth is
  *  the source's own page, and it is the only one that leaves. */
-function runCardAction(action, row, card) {
+function runCardAction(action, row, card, mode) {
   // Anything said about the last press belongs to the last press.
   const note = card.querySelector('[data-note]');
   if (note) note.hidden = true;
@@ -3079,8 +3164,21 @@ function runCardAction(action, row, card) {
   // list, which does not move.
   const home = cardControl(card.closest('.finder-out')?.id, card.dataset.index, action);
 
+  // A conversion started from a card disables every control in the list and
+  // draws its progress in step one, which is off the top of the screen by the
+  // fifth card. From down here that is a page that greyed out and said nothing.
+  // So the card that was pressed says it, on its own status line, where the
+  // press was. The stage list stays for the link field, where it is on screen.
+  const working = (start) => {
+    finder.busyCard = { mode, index: Number(card.dataset.index) };
+    return start().finally(() => {
+      finder.busyCard = null;
+      renderFinder();
+    });
+  };
+
   if (action === 'gpx') {
-    convertAndDownload(row.url);
+    working(() => convertAndDownload(row.url));
     return;
   }
   if (action === 'chart') {
@@ -3089,7 +3187,7 @@ function runCardAction(action, row, card) {
     // ground was switched off a week ago, is the kind of thing that reads as
     // broken.
     wantBasemap();
-    convertForDialog(row.url, openPreview, home);
+    working(() => convertForDialog(row.url, openPreview, home));
     return;
   }
   if (action === 'adjust' && !openRouteAdjuster(row, home) && note) {

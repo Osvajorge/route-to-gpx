@@ -157,6 +157,12 @@ Two details that are easy to get wrong, and were:
   of ascent where the real figure was 624 m. The step is
   `max(10 m, mean spacing)`.
 
+Those three parameters are on the page, not only here. The ascent tile prints
+the step in its note, the way the gap tile prints its threshold, and the fold
+under the tiles names all three with the values the measurement actually used.
+Ascent is the figure a reader can watch disagree with the source by a fifth,
+and a site that hides how a number was made is what this one exists to answer.
+
 Gap threshold defaults to 100 m. Above it the report escalates: the tile turns
 to the warning skin, both charts draw the gap as a straight dashed chord in the
 warning colour with a mark at each end, and a line underneath says what it

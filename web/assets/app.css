@@ -13,7 +13,24 @@
   --surface-line: #222b34;
   --line-soft: #1b2129;
   --grid: #1b2530;
-  --field-border: #2c3742;
+  /* Every boundary and rule the page draws, and nothing else. Thirteen uses,
+   * of which eight are a component edge, so the whole token is held to the 3:1
+   * WCAG 2.2 asks of one: 3.26:1 on --bg and 3.01:1 on --surface, where the
+   * phone's own field fill matches the card behind it and this line is the
+   * only thing drawing the box. The other five are a static box edge or a
+   * hairline rule, and want that same visible line.
+   *
+   * What it must never paint is a figure. It painted the empty star track,
+   * where the ask is the opposite one: far from the fill drawn over it, not
+   * close to the ground behind it. That track is --rating-track now. */
+  --field-border: #52677b;
+
+  /* The empty half of a rating, read against the fill over it rather than
+   * against the ground behind it: 4.50:1 on --text-2, where --field-border
+   * gave 3.13:1 and a 4.8 stopped looking different from a 3.0. Quiet at
+   * 2.27:1 on --bg on purpose, because the score belongs to the source site
+   * and no figure of theirs may shout on this page. */
+  --rating-track: #3f4f5f;
 
   --text: #e6ecf1;
   --text-2: #b3bfca;
@@ -74,6 +91,10 @@ body {
 
 h1,
 h2,
+h3,
+h4,
+h5,
+h6,
 p,
 dl,
 dd,
@@ -209,10 +230,29 @@ h1 {
   transition: border-color 0.18s var(--ease);
 }
 
+/* Same acknowledgement the finder's own inputs give the pointer. Two forms on
+ * one screen behaving differently under one mouse reads as an oversight. */
+.field:hover:not(:focus-within) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--field-border));
+}
+
 /* The link field is one control assembled from a prefix, an input and two
  * buttons, so focus is shown on the container rather than on the piece that
  * happens to hold it. */
 .field:focus-within {
+  border-color: var(--accent);
+}
+
+/* A refused link leaves the field holding the value that was refused. Without
+ * this the box looks untouched and nothing ties it to the alert below it. */
+.field.is-invalid {
+  border-color: var(--warn);
+}
+
+/* Back to the focus colour once the reader is in the box, fixing it. Focus on
+ * Paste or Convert does not count: both live inside this field, and the error
+ * arrives with the press, so counting them would mean the mark is never seen. */
+.field.is-invalid:has(#route-url:focus) {
   border-color: var(--accent);
 }
 
@@ -420,6 +460,13 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   gap: 10px;
   align-items: end;
+}
+
+/* Search's four items fill one row and put the button flush on the right.
+ * Nearby has six, so the button landed mid-row with half a row of nothing
+ * beside it. Sent to the end, both forms submit from the same edge. */
+.control-grid .submit-button {
+  grid-column: -2 / -1;
 }
 
 .control {
@@ -743,12 +790,17 @@ h1 {
   border-left: 1px solid var(--field-border);
 }
 
+/* Rung two of the heading ladder set out at .dialog-kicker: above the figure
+ * labels beneath it, which it was not, and below every heading over a figure
+ * we measured ourselves, which for one pass it was not either. Rank comes from
+ * weight, colour and tracking rather than size, which leaves the scale alone. */
 .card-claim-head {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
+  font-size: 11.5px;
+  font-weight: 500;
   line-height: 1.5;
-  color: var(--muted);
+  letter-spacing: 0.06em;
+  color: var(--text-2);
 }
 
 .card-claim-empty {
@@ -777,6 +829,10 @@ h1 {
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
+  /* The smallest size in the product, and it is forced. At 375 this column is
+   * 129px, and 13px of mark plus a 6px gap leave 110px: "Desnivel positivo"
+   * measures 107px here and 117px at 11.5px, where it wraps to two lines. The
+   * heading above takes its rank from weight, colour and tracking instead. */
   font-size: 10.5px;
   color: var(--muted);
 }
@@ -826,7 +882,7 @@ h1 {
 .card-stars {
   position: relative;
   display: inline-flex;
-  color: var(--field-border);
+  color: var(--rating-track);
 }
 
 .card-stars .icon {
@@ -915,6 +971,18 @@ h1 {
   font-size: 11.5px;
   line-height: 1.6;
   color: var(--muted);
+}
+
+/* A conversion started here disables every control in the list at once, and
+ * draws its stages in step one, which from the fifth card down is off the top
+ * of the screen. Without this the whole list greys out and nothing anywhere
+ * says why. The card that was pressed keeps its edge and speaks. */
+.route-card[data-busy] {
+  border-color: var(--accent);
+}
+
+.route-card[data-busy] .card-note {
+  color: var(--accent);
 }
 
 /* A hairline list, still: the place rows are a list of points to pick from, not
@@ -1217,6 +1285,7 @@ h1 {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--muted);
+  text-wrap: pretty;
 }
 
 .report-actions {
@@ -1274,13 +1343,62 @@ h1 {
   color: var(--muted);
 }
 
+/* A parameter of the figure above, not another clause about it. */
+.tile-note-param {
+  display: block;
+}
+
+/* Closed, this is one line, which is the whole budget it is allowed. What it
+ * buys is that the three parameters behind the ascent figure exist on the page
+ * at all, for the reader who has just seen ours disagree with the source's. */
+.method {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.method-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  min-height: 32px;
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+/* Safari draws its own triangle from this, beside the drawn chevron. */
+.method-summary::-webkit-details-marker {
+  display: none;
+}
+
+.method-mark {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 0.18s var(--ease);
+}
+
+.method[open] .method-mark {
+  transform: rotate(0deg);
+}
+
+.method-body {
+  max-width: 68ch;
+  margin-top: 6px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
 .compare-ok {
   color: var(--accent);
 }
 
 .compare-missing {
   font-style: normal;
-  color: #7f8d9a;
+  color: var(--placeholder);
 }
 
 .tile-warn {
@@ -1318,6 +1436,15 @@ h1 {
 
 .chart-head {
   flex-wrap: wrap;
+}
+
+/* Rung one: it names one of our drawings. The rest of .chart-head is chrome
+ * and stays at rung three. */
+.chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
 }
 
 /* The hover reading and the map switch share the right-hand end of the head,
@@ -1540,15 +1667,38 @@ h1 {
 
 .chart-caption {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 5px 12px;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted);
 }
 
+/* THE ONE THING THIS PAGE EXISTS TO SAY, and it was set at 11px, the size of
+ * the axis ticks, right-aligned opposite a start/finish legend, where it read
+ * as a second key to the drawing. It is not a key. It is the page saying that
+ * the line the reader is looking at across the gap was drawn here and recorded
+ * by nobody, and every other number on this report follows from that.
+ *
+ * So it takes a line of its own, above the tick size, and carries the warm mark
+ * every other warning on the page carries. Same six words in both languages. */
 .caption-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
   color: var(--warn-text);
+}
+
+.caption-warn .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--warn);
 }
 
 .chart-grid line {
@@ -1728,8 +1878,12 @@ h1 {
   text-align: left;
 }
 
+/* The sentence the 38px figure exists to deliver, and the only one on the page
+ * that asks for something on the hill. It was set at 13px, below body text and
+ * below the shared .panel-warn p it overrides. Prose, so it reads at the lede's
+ * size; the brighter --warn-text stays, since this instance is the escalation. */
 .warning-line p {
-  font-size: 13px;
+  font-size: 14.5px;
   line-height: 1.5;
   color: var(--warn-text);
 }
@@ -1756,8 +1910,13 @@ h1 {
   color: var(--muted);
 }
 
+/* Mono, like every other supporting figure on the page. The one figure in the
+ * display face is .tile-value, and that is a gauge reading at 38px with a width
+ * axis to match; at 16px in a secondary row the same face is just a second rule
+ * nobody can infer. */
 .measure-row dd {
-  font-size: 16px;
+  font-family: var(--font-mono);
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -1792,10 +1951,13 @@ h1 {
   color: var(--muted);
 }
 
+/* One statement per line-and-a-bit is not four statements. At 3px against
+ * 19px of leading, the space between two different promises was smaller than
+ * the space inside either of them, so the block read as one wall. */
 #footer-processing {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 10px;
   max-width: 68ch;
 }
 
@@ -1899,10 +2061,28 @@ html.dialog-open body {
   min-width: 0;
 }
 
+/* RUNG ONE OF THE HEADING LADDER, and the reason there is a ladder.
+ *
+ * Three rungs, and the rule that orders them is the claim rule: a heading over
+ * our own measurements is never quieter than a heading over a source's claim.
+ *
+ *   1  our headings      12px / 600 / --text   / 0.06em
+ *      .dialog-kicker, .dialog-subhead, .chart-title
+ *   2  the source's      11.5px / 500 / --text-2 / 0.06em
+ *      .card-claim-head, which is "What Komoot says"
+ *   3  the figures each one governs   11.5px / 400 / --muted / normal
+ *      .tile-label, .tile-note, .control-label, .card-stat dt at 10.5
+ *
+ * Rung two was raised on its own and briefly outranked rung one, which put the
+ * heading naming somebody else's numbers above the headings over ours. Rank is
+ * carried by weight, colour and tracking, so the size scale moves by half a
+ * pixel and no figure changes size. */
 .dialog-kicker {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
 }
 
 .dialog-title {
@@ -1929,13 +2109,26 @@ html.dialog-open body {
   gap: 14px;
   padding: 16px 18px;
   overscroll-behavior: contain;
+  /* A cut edge with nothing at it reads as a broken render rather than as more
+   * content, which is what a sliver of tile was being asked to say and could
+   * not. The first two layers scroll with the content and cover the second
+   * two, which do not, so a shade appears only at an end there is something
+   * past and at neither end when it all fits. */
+  background:
+    linear-gradient(var(--surface) 34%, transparent) top / 100% 22px no-repeat local,
+    linear-gradient(transparent, var(--surface) 66%) bottom / 100% 22px no-repeat local,
+    linear-gradient(rgba(4, 6, 8, 0.9), transparent) top / 100% 14px no-repeat scroll,
+    linear-gradient(transparent, rgba(4, 6, 8, 0.9)) bottom / 100% 14px no-repeat scroll;
 }
 
+/* Rung one. It headed a row of .tile-label at 11.5 while sitting at 11, so the
+ * heading was smaller than the labels under it. */
 .dialog-subhead {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
 }
 
 .dialog-note {
@@ -1944,6 +2137,9 @@ html.dialog-open body {
   font-size: 11.5px;
   line-height: 1.65;
   color: var(--muted);
+  /* These lines sit last above the download button, and both wrapped to strand
+   * a single word there. Already used on .card-title for the same reason. */
+  text-wrap: pretty;
 }
 
 .dialog-foot {
@@ -2018,15 +2214,34 @@ html.dialog-open body {
   color: var(--text-2);
 }
 
+/* The re-arranger's own figures were below the fold on every open: the body
+ * scrolled 220px at 1280x900 and the tile row began 4px past the bottom edge,
+ * so a reader could move the start, read the heading that announces the
+ * measurement, and press Download having seen no measured figure at all.
+ *
+ * The body order is right and stays: what was detected, the controls, the
+ * drawing, what the result measures. What was wrong is that the drawing took
+ * 330 of the body's 623 visible pixels. At 200px the shape still reads, and
+ * the slider and the tiles it updates are on screen together, which is the
+ * whole point of a live control. */
+#rotate-dialog [data-chart='trace'] .chart-canvas {
+  height: clamp(180px, 26vw, 200px);
+}
+
 /* Pressed is the accent on the edge, not a filled button. The filled thing on
  * this page is the one that does the work, and here that is Download. */
 .toggle-button {
   min-height: 44px;
 }
 
+/* Pressed used to set exactly what .ghost-button:hover sets, so a mouse user
+ * resting on an unpressed button saw the pressed state, and the one control
+ * that says which way the route now runs could not say it. The tint is what
+ * hover has no version of, so pressed survives being pointed at. */
 .toggle-button[aria-pressed='true'] {
   border-color: var(--accent);
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 /* The track is 4px; the control is 44px so a thumb on a phone can find it. */
@@ -2148,8 +2363,10 @@ html.dialog-open body {
   }
 
   /* The button that spends the request goes full width along the bottom of the
-   * fields it belongs to, where a thumb reaches it. */
-  .submit-button {
+   * fields it belongs to, where a thumb reaches it. Written at the same
+   * specificity as the rule that sends it to the row's end on a wide screen,
+   * so this one wins here by coming later. */
+  .control-grid .submit-button {
     grid-column: 1 / -1;
     min-height: 50px;
   }
@@ -2177,6 +2394,25 @@ html.dialog-open body {
   .card-primary,
   .icon-button {
     min-height: 46px;
+  }
+
+  /* The same floor, on the two control kinds it had skipped. The tabs switch
+   * the whole of step one and were the smallest target on the phone at 39px;
+   * the language toggle and Load more are ghost buttons at 42px. The tab grows
+   * upwards only, so the underline stays the same distance under its label. */
+  .tab {
+    min-height: 44px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  .ghost-button {
+    min-height: 44px;
+  }
+
+  .method-summary {
+    min-height: 44px;
   }
 
   .icon-button {
@@ -2263,6 +2499,32 @@ html.dialog-open body {
     height: 18px;
   }
 
+  /* At 375 the plot is about 250px wide, so a gap in the first fifth of the
+   * route lands its label straight on top of the "0 km" tick: two strings
+   * printed on one line, neither readable. Measured at 375 in Spanish, "salto
+   * de 160 m" spans 79-171 against a "0 km" of 84-110.
+   *
+   * The label drops to a line of its own, which clears every tick at any
+   * string length in either language rather than at a threshold that has to be
+   * guessed, and its tick grows into a leader so it still says where. The
+   * `axis-gap-end` rule above handles the mirror case at the right edge, where
+   * the gutter has room; this is the case it does not cover.
+   *
+   * Behind `:has()`, so a browser without it keeps today's single line rather
+   * than a label hanging below a box that did not grow. */
+  .axis-x:has(.axis-gap) {
+    height: 36px;
+  }
+
+  .axis-x:has(.axis-gap) .axis-gap {
+    top: 22px;
+  }
+
+  .axis-x:has(.axis-gap) .axis-gap::before {
+    top: -22px;
+    height: 21px;
+  }
+
   .secondary {
     grid-template-columns: 1fr;
     gap: 1px;
@@ -2317,6 +2579,62 @@ html.dialog-open body {
   .dialog-foot .primary-button {
     flex: 1 1 100%;
     min-height: 48px;
+  }
+
+  /* THE PROMISE, KEPT ON A PHONE.
+   *
+   * At 375x812 the re-arranger's body is 556px tall and holds 867px of content.
+   * With the drawing first, the three measured tiles were cut: Distance and
+   * Ascent 43% visible with their figures sliced through the digits, and the
+   * Largest gap tile, in its warning skin, not on screen at all. A walker could
+   * take the file having never seen the one figure this product exists to show.
+   *
+   * The content does not fit at any canvas height, so the answer is which half
+   * is above the fold rather than a smaller chart. The numbers go first, which
+   * is the order the preview dialog has always used. The cut then lands inside
+   * the trace figure, where a chart head over a part-drawn map reads as more
+   * below, and the shade at the edge of .dialog-body says so as well.
+   *
+   * Order, not markup, because the argument on a wide screen still runs
+   * detected, controls, drawing, result. Nothing in the tiles is focusable, so
+   * the tab order is the order on screen at both widths. */
+  #rotate-trace {
+    order: 1;
+  }
+
+  #rotate-times,
+  #rotate-notrim {
+    order: 2;
+  }
+}
+
+/* The same swap, driven by the height it was always really about.
+ *
+ * The rule above is inside a width query, which was the wrong axis: what
+ * decides whether the tiles survive is how tall the dialog body is, and that
+ * follows the window's height. Measured on a closed ring at 1280 wide, by
+ * shrinking the body and reading each tile as a percentage of its own box:
+ *
+ *   body 622px (a 900px window)   notes 100%   values 100%
+ *   body 560px                    notes   0%   values  55%, sliced mid-digit
+ *   body 500px and below          notes   0%   values   0%
+ *
+ * A 1280x800 laptop, which is what a 13-inch machine reports by default, gives
+ * a body near 520px. So the surface that reads correctly on a tall desktop
+ * loses every measured figure on one of the commonest screens there is, and
+ * loses them silently, above a Download button that is fully visible.
+ *
+ * 860px is the window height at which the body still clears the tiles with the
+ * warning line in place. Above it the documented argument order runs; at or
+ * below it the numbers come first, exactly as they do on a phone. */
+@media (max-height: 860px) {
+  #rotate-trace {
+    order: 1;
+  }
+
+  #rotate-times,
+  #rotate-notrim {
+    order: 2;
   }
 }
 

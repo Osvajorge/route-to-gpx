@@ -22,9 +22,9 @@ const STRINGS = {
     'step1.sub.link':
       'Paste a Komoot or Wikiloc link. We rebuild the track, measure it, and show you where the recording has holes.',
     'step1.sub.search':
-      'Look a route up on the source site by name. A row is a link and what that site claims about it. Converting it is what measures it.',
+      'Look a route up on the source site by name. Converting a row is what measures it.',
     'step1.sub.nearby':
-      'Give a point and how far around it to look. A row is a link and what the source claims about it. Converting it is what measures it.',
+      'Give a point and how far around it to look. Converting a row is what measures it.',
     'field.prefix': 'URL',
     'field.label': 'Route link',
     'field.placeholder': 'Paste the route link here',
@@ -74,7 +74,7 @@ const STRINGS = {
     // the rows, because it changes what every one of them means.
     'place.usedLabel': 'The place these routes are from',
     'place.guessed':
-      'Read as {place}. The words were turned into a point by a geocoder, and a village and a mountain often share a name, so check this is the one you meant.',
+      'Read as {place}. A village and a mountain often share a name, so check this is the one you meant.',
     // Three sentences for one press, because a merged list is two searches and
     // the point does not reach both of them. Wikiloc's search IS a box, so the
     // point becomes the box; Komoot geocodes the words itself and takes the
@@ -144,24 +144,20 @@ const STRINGS = {
     'finder.count': 'Showing {shown} of the {total} {source} lists.',
     'finder.moreEmpty': 'That page added nothing new. There may still be more behind it.',
     'finder.dropped.one':
-      '{source} returned one more route this converter could not open, so it is not listed.',
+      'One more from {source} could not be opened here, so it is not listed.',
     'finder.dropped.many':
-      '{source} returned {count} more routes this converter could not open, so they are not listed.',
+      '{count} more from {source} could not be opened here, so they are not listed.',
     // Different from the line above, and the difference matters: those could
     // not be opened, these could and were not wanted. On a source that will not
     // filter for us, this sentence is the whole reason a page came back short.
-    'finder.setAside.one':
-      'One more route on these pages was for another activity, so it is not shown.',
-    'finder.setAside.many':
-      '{count} more routes on these pages were for other activities, so they are not shown.',
+    'finder.setAside.one': 'One more was for another activity, so it is not shown.',
+    'finder.setAside.many': '{count} more were for other activities, so they are not shown.',
     // How much was read to fill the page. This is what turns one via ferrata
     // route out of a hundred from a page that looks broken into a true thing
     // about that valley. Printed only when the answer carries the number.
     'finder.examined': 'We read {count} routes to fill this page.',
-    'finder.outside.one':
-      'One more route started outside the radius, so it is not shown.',
-    'finder.outside.many':
-      '{count} more routes started outside the radius, so they are not shown.',
+    'finder.outside.one': 'One more started outside the radius, so it is not shown.',
+    'finder.outside.many': '{count} more started outside the radius, so they are not shown.',
     // With two sites asked at once, one of them failing must be said. A short
     // list because a site was down reads exactly like a short list because a
     // valley is empty.
@@ -185,7 +181,7 @@ const STRINGS = {
     // to us, so the control is honest about where the narrowing happens rather
     // than removed.
     'activity.notFiltered':
-      'Wikiloc will not filter by activity for a visitor who is not logged in, so our server reads several pages of its results and keeps the ones that match. The count under the results says how many it read. Every card states its own activity.',
+      'Wikiloc will not filter by activity for a visitor who is not logged in, so our server reads several pages of its results and keeps the ones that match.',
     // Said only when a word ON SCREEN is the source's own rather than ours,
     // counting the cards and not just the dropdown: on both sites at once the
     // dropdown is Komoot's six, all translated, while the cards below carry
@@ -196,7 +192,7 @@ const STRINGS = {
     // the one thing changed, and the sentence says so, because a word arriving
     // as `mtb_easy` is a machine name and must not reach a reader as one.
     'activity.sourceWords':
-      'Activities we have no word for keep the source site\'s own word for them, not ours.',
+      'Activities we have no word for keep the source site\'s own word, not ours.',
 
     // THE ACTIVITY WORDS, and the decision behind which ones are here.
     //
@@ -269,10 +265,10 @@ const STRINGS = {
 
     'error.domain.title': 'We do not recognise that link.',
     'error.domain.body':
-      'We read Komoot tour and smarttour links, and any Wikiloc trail page. If your route lives somewhere else, export its GPX there and drop the file on this page. We measure it exactly the same.',
+      'We read Komoot tour and smarttour links, and any Wikiloc trail page. From anywhere else, export the GPX there and drop the file here. We measure it exactly the same.',
     'error.track.title': 'That page no longer carries the track where we expected it.',
     'error.track.body':
-      'The page loaded and there is a map on it, but no coordinate block. Usually that means the route is private, or the site changed its format. Open the route, export the GPX there, and drop the file here.',
+      'The page loaded but carries no coordinate block, usually because the route is private or the site changed its format. Export the GPX there and drop the file here.',
     'error.private.title': 'That route is private.',
     'error.private.body':
       'Its owner has not published the track, so there is nothing for us to read. If it is your own route, export the GPX from your account and drop the file here.',
@@ -293,7 +289,7 @@ const STRINGS = {
       'We opened it and found no track points. GPX exported from a watch or a route planner will work; a KML, a FIT or a screenshot will not.',
     'error.busy.title': 'Too many at once. Give it a moment.',
     'error.busy.body':
-      'This tool reads the source sites gently on purpose, so that they keep answering it. You have hit that limit rather than anything being broken. Wait a few seconds and try the same link again.',
+      'Wait a few seconds and try the same link again. We read the source sites slowly on purpose, so nothing is broken.',
     'error.network.title': 'We could not reach the source site.',
     'error.network.body':
       'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site and drop the file here.',
@@ -302,7 +298,7 @@ const STRINGS = {
       'A search needs at least two characters. Type the name of a route, a peak or a village.',
     'error.location.title': 'That is not a point on earth.',
     'error.location.body':
-      'Latitude runs from -90 to 90 and longitude from -180 to 180, written with a full stop or a comma, as in 42.6417. Use my location and Search a place both fill in the pair for you.',
+      'Latitude runs from -90 to 90, longitude from -180 to 180, with a full stop or a comma: 42.6417. Use my location and Search a place fill in both for you.',
     'error.sport.title': 'That source has no such activity.',
     'error.sport.body':
       'The activity list belongs to the source site and changes with it. Pick one from the list again.',
@@ -311,6 +307,10 @@ const STRINGS = {
     'step2.reset': 'New link',
     'measure.distance': 'Distance',
     'measure.ascent': 'Ascent',
+    // The one parameter of the three that moves the number, named and measured
+    // in the same shape the gap tile names and measures its threshold. The
+    // fold under the tiles is where the word is spelled out.
+    'measure.ascent.step': 'sampling {step} m',
     'measure.gap': 'Largest gap',
     'measure.rawAscent': 'Raw ascent',
     'measure.points': 'Points',
@@ -323,6 +323,12 @@ const STRINGS = {
     'gap.threshold': 'threshold {threshold} m',
     'gap.none': 'no gap over {threshold} m',
 
+    // Ascent is the output of three parameters, and a reader who sees ours
+    // disagree with the source's is owed all three. Folded away, because the
+    // disagreement is the headline and the arithmetic is not.
+    'method.summary': 'How ascent is measured',
+    'method.sampling':
+      "The height profile is sampled every {step} m, never finer than the recording's own spacing, then median filtered over {window} samples. Rises under {noise} m are dropped as GPS noise.",
     'chart.trace': 'Route trace',
     'chart.profile': 'Elevation profile',
     'chart.start': 'start / finish',
@@ -346,20 +352,19 @@ const STRINGS = {
 
     'preview.kicker': 'Measured from the file',
     'preview.note':
-      'Every figure here was measured in your browser, from the track we rebuilt. Nothing on this screen comes from the source site.',
+      'Measured in your browser, from the track we rebuilt. Nothing here comes from the source site.',
     'preview.report': 'Full report',
 
     'rotate.kicker': 'Re-arrange',
-    'rotate.lede':
-      'Turn it around, or move where it starts. Whatever you do, the result is measured before you download it.',
+    'rotate.lede': 'Turn it around, or move where it starts.',
     'rotate.rule':
-      'A route counts as a ring when its two ends are within 2% of its own length, never less than {floor} m and never more than {ceiling} m.',
+      'The allowance is 2% of the route\'s own length, between {floor} m and {ceiling} m.',
     'rotate.detected.closed':
-      'Closed ring. The recording ends on the point it started from, so moving the start costs nothing at all.',
+      'Closed ring. The recording ends where it started, so moving the start costs nothing.',
     'rotate.detected.near':
-      'Ring. The two ends are {ends} apart, inside the {tolerance} allowed for a route of {km} km. Moving the start puts that {ends} into the middle of the file, as a straight line.',
+      'Ring. The two ends are {ends} apart, inside the {tolerance} allowed on {km} km. Moving the start puts that {ends} into the middle of the file, as a straight line.',
     'rotate.detected.open':
-      'Not a ring. The two ends are {ends} apart, past the {tolerance} allowed for a route of {km} km. Moving the start is not offered: it would put that distance straight through the middle of the track. Reversing still works.',
+      'Not a ring. The two ends are {ends} apart, past the {tolerance} allowed on {km} km. Only reversing is offered: moving the start would draw that {ends} straight through the track.',
     'rotate.reverse': 'Reverse the direction',
     'rotate.start.label': 'Start point',
     'rotate.start.value': 'km {km} of the original recording',
@@ -371,12 +376,11 @@ const STRINGS = {
     'rotate.seam.small':
       'Moving the start joined the two ends of the recording. That seam is {gap} m, under the {threshold} m this page calls a gap.',
     'rotate.times.one':
-      'One point carries a recorded time. Changing the order makes it wrong, so the file you download leaves it out, and no time is invented to replace it.',
+      'One recorded time is dropped: re-ordering makes it wrong, and none is invented to replace it.',
     'rotate.times.many':
-      '{count} points carry a recorded time. Changing the order makes those times wrong, so the file you download leaves them out, and no times are invented to replace them.',
-    'rotate.times.none': 'The recording carries no times, so there are none to lose.',
+      '{count} recorded times are dropped: re-ordering makes them wrong, and none are invented to replace them.',
     'rotate.notrim':
-      'Nothing is trimmed. Every point in the recording is in the file you download, in a different order.',
+      'Nothing is trimmed: every point of the recording is in the file, in a different order.',
     'rotate.unchanged': 'Nothing has been changed yet, so this is the recording as it arrived.',
     'rotate.download': 'Download this arrangement',
     'rotate.filename': 'Saved as {name}',
@@ -407,11 +411,11 @@ const STRINGS = {
     'footer.processing.file':
       'GPX files you drop are read in this browser and never uploaded.',
     'footer.processing.url':
-      'Links are fetched by our server, because a browser is not allowed to read pages on another site directly. The page is parsed and thrown away. Nothing is stored, and there are no accounts.',
+      'Links are fetched by our server, parsed, and thrown away. Nothing is stored, and there are no accounts.',
     'footer.processing.map':
-      'The map background is loaded by your browser directly from OpenStreetMap, so their servers see your IP address and roughly where your route is. You can turn it off on the trace chart.',
+      'Your browser loads the map background straight from OpenStreetMap, so they see your IP address and roughly where your route is. You can turn it off on the trace chart.',
     'footer.processing.fonts':
-      'The two typefaces are loaded by your browser directly from Google Fonts, so Google sees your IP address every time the page opens, before you press anything. Cards fetch nothing at all: the route drawing on a card is drawn here, from the shape that came with the search results.',
+      'Your browser loads the two typefaces straight from Google Fonts, so Google sees your IP address as the page opens, before you press anything.',
     'footer.source': 'Source code',
   },
 
@@ -430,9 +434,9 @@ const STRINGS = {
     'step1.sub.link':
       'Pega un enlace de Komoot o de Wikiloc. Reconstruimos el track, lo medimos y te enseñamos dónde tiene agujeros la grabación.',
     'step1.sub.search':
-      'Busca una ruta por su nombre en el sitio de origen. Una fila es un enlace y lo que ese sitio afirma de él. Convertirlo es lo que lo mide.',
+      'Busca una ruta por su nombre en el sitio de origen. Convertir una fila es lo que la mide.',
     'step1.sub.nearby':
-      'Da un punto y cuánto mirar a su alrededor. Una fila es un enlace y lo que el origen afirma de él. Convertirlo es lo que lo mide.',
+      'Da un punto y cuánto mirar a su alrededor. Convertir una fila es lo que la mide.',
     'field.prefix': 'URL',
     'field.label': 'Enlace de la ruta',
     'field.placeholder': 'Pega aquí el enlace de la ruta',
@@ -483,7 +487,7 @@ const STRINGS = {
     // que significa cada una de ellas.
     'place.usedLabel': 'El lugar del que salen estas rutas',
     'place.guessed':
-      'Interpretado como {place}. Un geocodificador convirtió las palabras en un punto, y es habitual que un pueblo y una montaña se llamen igual, así que comprueba que sea el que querías.',
+      'Interpretado como {place}. Es habitual que un pueblo y una montaña se llamen igual, así que comprueba que sea el que querías.',
     // Tres frases para una pulsación: una lista combinada son dos búsquedas y
     // el punto no llega a las dos. La explicación completa está en la versión
     // inglesa. Como los nombres de los sitios se interpolan, la redacción tiene
@@ -539,19 +543,17 @@ const STRINGS = {
     'finder.count': 'Mostrando {shown} de las {total} que lista {source}.',
     'finder.moreEmpty': 'Esa página no ha añadido nada nuevo. Puede que todavía haya más detrás.',
     'finder.dropped.one':
-      '{source} devolvió una ruta más que este conversor no sabría abrir, así que no está en la lista.',
+      'Una más de {source} no se sabría abrir aquí, así que no está en la lista.',
     'finder.dropped.many':
-      '{source} devolvió {count} rutas más que este conversor no sabría abrir, así que no están en la lista.',
-    'finder.setAside.one':
-      'En estas páginas venía una ruta más de otra actividad, así que no se muestra.',
+      '{count} más de {source} no se sabrían abrir aquí, así que no están en la lista.',
+    'finder.setAside.one': 'Una más era de otra actividad, así que no se muestra.',
+    'finder.setAside.many': '{count} más eran de otras actividades, así que no se muestran.',
     // Cuánto se leyó para llenar la página. Es lo que convierte una vía ferrata
     // de cada cien en algo cierto sobre ese valle en lugar de en una página que
     // parece rota. Solo se imprime cuando la respuesta trae el número.
     'finder.examined': 'Hemos leído {count} rutas para llenar esta página.',
-    'finder.outside.one':
-      'Otra ruta más empezaba fuera del radio, así que no se muestra.',
-    'finder.outside.many':
-      'Otras {count} rutas empezaban fuera del radio, así que no se muestran.',
+    'finder.outside.one': 'Una más empezaba fuera del radio, así que no se muestra.',
+    'finder.outside.many': '{count} más empezaban fuera del radio, así que no se muestran.',
     // Con dos sitios consultados a la vez, hay que decir cuándo falla uno. Una
     // lista corta porque un sitio no respondió se lee igual que una lista corta
     // porque el valle está vacío.
@@ -559,8 +561,6 @@ const STRINGS = {
       '{source} no respondió, así que no hay nada suyo en esta lista. Lo que ves viene del otro sitio.',
     'finder.siteBusy':
       '{source} nos pidió ir más despacio, así que no hay nada suyo en esta lista. Lo que ves viene del otro sitio. Inténtalo de nuevo en un momento.',
-    'finder.setAside.many':
-      'En estas páginas venían {count} rutas más de otras actividades, así que no se muestran.',
 
     'empty.search.title': 'No ha vuelto nada con esas palabras.',
     'empty.search.body':
@@ -571,7 +571,7 @@ const STRINGS = {
 
     'sport.all': 'Cualquier actividad',
     'activity.notFiltered':
-      'Wikiloc no filtra por actividad para quien no ha iniciado sesión, así que nuestro servidor lee varias páginas de sus resultados y se queda con las que coinciden. El recuento bajo los resultados dice cuántas leyó. Cada tarjeta indica su propia actividad.',
+      'Wikiloc no filtra por actividad para quien no ha iniciado sesión, así que nuestro servidor lee varias páginas de sus resultados y se queda con las que coinciden.',
     // Solo se dice cuando una palabra EN PANTALLA es del origen y no nuestra,
     // contando las tarjetas y no solo el desplegable. Imprimir la palabra del
     // origen es honesto; inventar una traducción para ochenta términos que aquí
@@ -579,7 +579,7 @@ const STRINGS = {
     // la frase lo dice: una palabra que llega como `mtb_easy` es un nombre de
     // máquina y no puede llegar así a quien lee.
     'activity.sourceWords':
-      'Las actividades para las que no tenemos palabra conservan la palabra del propio origen, no la nuestra.',
+      'Las actividades para las que no tenemos palabra conservan la del propio origen, no la nuestra.',
 
     // LAS PALABRAS DE ACTIVIDAD. La decisión está explicada en la versión
     // inglesa: se traducen las actividades de montaña a las que llega de verdad
@@ -638,10 +638,10 @@ const STRINGS = {
 
     'error.domain.title': 'No reconocemos ese enlace.',
     'error.domain.body':
-      'Leemos enlaces de tour y de smarttour de Komoot, y cualquier página de ruta de Wikiloc. Si tu ruta vive en otro sitio, exporta allí el GPX y suelta el fichero en esta página. Lo medimos exactamente igual.',
+      'Leemos enlaces de tour y de smarttour de Komoot, y cualquier página de ruta de Wikiloc. Desde otro sitio, exporta allí el GPX y suelta el fichero aquí. Lo medimos exactamente igual.',
     'error.track.title': 'Esa página ya no lleva el track donde lo esperábamos.',
     'error.track.body':
-      'La página cargó y tiene un mapa, pero no hay bloque de coordenadas. Suele significar que la ruta es privada, o que el sitio cambió de formato. Abre la ruta, exporta allí el GPX y suelta el fichero aquí.',
+      'La página cargó pero no lleva bloque de coordenadas, casi siempre porque la ruta es privada o el sitio cambió de formato. Exporta allí el GPX y suelta el fichero aquí.',
     'error.private.title': 'Esa ruta es privada.',
     'error.private.body':
       'Quien la subió no ha publicado el track, así que no hay nada que leer. Si es tuya, exporta el GPX desde tu cuenta y suelta el fichero aquí.',
@@ -662,7 +662,7 @@ const STRINGS = {
       'Lo abrimos y no tiene puntos de track. Sirve un GPX exportado de un reloj o de un planificador; no sirve un KML, un FIT ni una captura.',
     'error.busy.title': 'Demasiadas a la vez. Dale un momento.',
     'error.busy.body':
-      'Esta herramienta lee los sitios de origen despacio a propósito, para que sigan respondiéndole. Has topado con ese límite, no se ha roto nada. Espera unos segundos y prueba otra vez con el mismo enlace.',
+      'Espera unos segundos y prueba otra vez con el mismo enlace. Leemos los sitios de origen despacio a propósito, así que no se ha roto nada.',
     'error.network.title': 'No pudimos llegar al sitio de origen.',
     'error.network.body':
       'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suelta el fichero aquí.',
@@ -671,7 +671,7 @@ const STRINGS = {
       'Una búsqueda necesita al menos dos caracteres. Escribe el nombre de una ruta, de un pico o de un pueblo.',
     'error.location.title': 'Eso no es un punto de la tierra.',
     'error.location.body':
-      'La latitud va de -90 a 90 y la longitud de -180 a 180, con punto o con coma, como en 42,6417. Usar mi ubicación y Buscar un lugar te rellenan las dos.',
+      'La latitud va de -90 a 90 y la longitud de -180 a 180, con punto o con coma: 42,6417. Usar mi ubicación y Buscar un lugar te rellenan las dos.',
     'error.sport.title': 'Ese origen no tiene esa actividad.',
     'error.sport.body':
       'La lista de actividades es del sitio de origen y cambia con él. Vuelve a elegir una de la lista.',
@@ -680,6 +680,7 @@ const STRINGS = {
     'step2.reset': 'Otro enlace',
     'measure.distance': 'Distancia',
     'measure.ascent': 'Desnivel positivo',
+    'measure.ascent.step': 'muestreo {step} m',
     'measure.gap': 'Salto mayor',
     'measure.rawAscent': 'Desnivel crudo',
     'measure.points': 'Puntos',
@@ -692,6 +693,9 @@ const STRINGS = {
     'gap.threshold': 'umbral {threshold} m',
     'gap.none': 'ningún salto de más de {threshold} m',
 
+    'method.summary': 'Cómo se mide el desnivel',
+    'method.sampling':
+      'El perfil de alturas se muestrea cada {step} m, nunca más fino que el espaciado del propio registro, y pasa un filtro de mediana de {window} muestras. Las subidas de menos de {noise} m se descartan como ruido del GPS.',
     'chart.trace': 'Trazado',
     'chart.profile': 'Perfil de altitud',
     'chart.start': 'salida / llegada',
@@ -714,20 +718,19 @@ const STRINGS = {
 
     'preview.kicker': 'Medido a partir del fichero',
     'preview.note':
-      'Cada cifra de esta pantalla se ha medido en tu navegador, sobre el track que reconstruimos. Nada de lo que ves aquí viene del sitio de origen.',
+      'Medido en tu navegador, sobre el track que reconstruimos. Nada de esto viene del sitio de origen.',
     'preview.report': 'Informe completo',
 
     'rotate.kicker': 'Reordenar',
-    'rotate.lede':
-      'Dale la vuelta, o mueve el punto de salida. Hagas lo que hagas, el resultado se mide antes de que lo descargues.',
+    'rotate.lede': 'Dale la vuelta, o mueve el punto de salida.',
     'rotate.rule':
-      'Una ruta cuenta como anillo cuando sus dos extremos están dentro del 2% de su propia longitud, nunca menos de {floor} m ni más de {ceiling} m.',
+      'El margen es el 2% de la longitud de la propia ruta, entre {floor} m y {ceiling} m.',
     'rotate.detected.closed':
-      'Anillo cerrado. La grabación termina en el mismo punto en el que empezó, así que mover la salida no cuesta nada.',
+      'Anillo cerrado. La grabación termina donde empezó, así que mover la salida no cuesta nada.',
     'rotate.detected.near':
-      'Anillo. Los dos extremos están a {ends}, dentro de los {tolerance} que se permiten en una ruta de {km} km. Mover la salida mete esos {ends} en medio del fichero, como una recta.',
+      'Anillo. Los dos extremos están a {ends}, dentro de los {tolerance} que se permiten en {km} km. Mover la salida mete esos {ends} en medio del fichero, como una recta.',
     'rotate.detected.open':
-      'No es un anillo. Los dos extremos están a {ends}, por encima de los {tolerance} que se permiten en una ruta de {km} km. Mover la salida no se ofrece: metería esa distancia en recta por el medio del track. Invertir el sentido sí funciona.',
+      'No es un anillo. Los dos extremos están a {ends}, por encima de los {tolerance} que se permiten en {km} km. Solo se ofrece invertir: mover la salida trazaría esos {ends} en recta por el medio del track.',
     'rotate.reverse': 'Invertir el sentido',
     'rotate.start.label': 'Punto de salida',
     'rotate.start.value': 'km {km} de la grabación original',
@@ -739,12 +742,11 @@ const STRINGS = {
     'rotate.seam.small':
       'Mover la salida ha unido los dos extremos de la grabación. Esa costura mide {gap} m, por debajo de los {threshold} m que esta página llama salto.',
     'rotate.times.one':
-      'Un punto lleva una hora grabada. Cambiar el orden la deja mal, así que el fichero que descargas la deja fuera, y no se inventa ninguna hora para sustituirla.',
+      'Se quita una hora grabada: reordenar la deja mal, y no se inventa ninguna para sustituirla.',
     'rotate.times.many':
-      '{count} puntos llevan una hora grabada. Cambiar el orden deja mal esas horas, así que el fichero que descargas las deja fuera, y no se inventa ninguna hora para sustituirlas.',
-    'rotate.times.none': 'La grabación no lleva horas, así que no hay ninguna que perder.',
+      'Se quitan {count} horas grabadas: reordenar las deja mal, y no se inventa ninguna para sustituirlas.',
     'rotate.notrim':
-      'No se recorta nada. Todos los puntos de la grabación están en el fichero que descargas, en otro orden.',
+      'No se recorta nada: todos los puntos de la grabación están en el fichero, en otro orden.',
     'rotate.unchanged': 'Todavía no has cambiado nada, así que esto es la grabación tal y como llegó.',
     'rotate.download': 'Descargar esta disposición',
     'rotate.filename': 'Se guarda como {name}',
@@ -776,11 +778,11 @@ const STRINGS = {
     'footer.processing.file':
       'Los GPX que sueltas se leen en este navegador y no se suben a ningún sitio.',
     'footer.processing.url':
-      'Los enlaces los descarga nuestro servidor, porque un navegador no puede leer directamente las páginas de otra web. La página se analiza y se descarta. No se guarda nada y no hay cuentas.',
+      'Los enlaces los descarga nuestro servidor, los analiza y los descarta. No se guarda nada y no hay cuentas.',
     'footer.processing.map':
-      'Tu navegador carga el fondo del mapa directamente desde OpenStreetMap, así que sus servidores ven tu dirección IP y aproximadamente dónde está tu ruta. Puedes desactivarlo en el gráfico del trazado.',
+      'Tu navegador carga el fondo del mapa directamente desde OpenStreetMap, así que ven tu dirección IP y aproximadamente dónde está tu ruta. Puedes desactivarlo en el gráfico del trazado.',
     'footer.processing.fonts':
-      'Las dos tipografías las carga tu navegador directamente desde Google Fonts, así que Google ve tu dirección IP cada vez que se abre la página, antes de que pulses nada. Las tarjetas no piden nada: el dibujo de la ruta se dibuja aquí, a partir de la forma que llegó con los resultados.',
+      'Tu navegador carga las dos tipografías directamente desde Google Fonts, así que Google ve tu dirección IP al abrirse la página, antes de que pulses nada.',
     'footer.source': 'Código fuente',
   },
 };

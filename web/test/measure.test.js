@@ -46,6 +46,23 @@ test('a sparse recording is not resampled below its own spacing', () => {
   assert.ok(result.ascentM > 540, `ascent collapsed to ${result.ascentM}`);
 });
 
+test('the ascent figure hands back the three parameters it was made from', () => {
+  // The tile prints the step and the fold under the tiles prints all three.
+  // They are read off the measurement rather than off constants of their own,
+  // so a page can never show a parameter the arithmetic has stopped using.
+  const dense = measure(ramp({ spacingM: 2, totalM: 4000, climbM: 600 }));
+  assert.equal(dense.sampleStepM, 10, 'a dense track is never sampled finer than 10 m');
+
+  const sparse = measure(ramp({ spacingM: 28, totalM: 5600, climbM: 600 }));
+  assert.equal(sparse.sampleStepM, sparse.meanSpacingM, 'a sparse track is sampled at its own spacing');
+  assert.ok(sparse.sampleStepM > 27 && sparse.sampleStepM < 29, sparse.sampleStepM);
+
+  for (const result of [dense, sparse]) {
+    assert.equal(result.medianWindow, 5);
+    assert.equal(result.ascentNoiseM, 1);
+  }
+});
+
 test('raw ascent is reported next to the smoothed one', () => {
   const track = ramp({ spacingM: 10, totalM: 1000, climbM: 100 });
   const result = measure(track);

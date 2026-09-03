@@ -178,7 +178,11 @@ export function measure(track, gapThreshold = DEFAULT_GAP_THRESHOLD_M) {
 
   const elevations = points.map((p) => p.ele).filter((e) => e !== null);
   const nativeSpacing = steps.length ? distance / steps.length : 0;
-  const samples = resampleByDistance(points, cumulative, Math.max(10, nativeSpacing));
+  // Returned, not just used. Ascent is the output of three parameters and the
+  // page showed none of them, next to a gap figure that showed its one. This
+  // is the parameter that moves the number, so it is the one the tile prints.
+  const sampleStep = Math.max(10, nativeSpacing);
+  const samples = resampleByDistance(points, cumulative, sampleStep);
 
   const smoothed = samples.length
     ? accumulate(median(samples), ASCENT_NOISE_THRESHOLD_M)
@@ -195,6 +199,9 @@ export function measure(track, gapThreshold = DEFAULT_GAP_THRESHOLD_M) {
     pointCount: points.length,
     pointsWithElevation: elevations.length,
     meanSpacingM: nativeSpacing,
+    sampleStepM: sampleStep,
+    medianWindow: MEDIAN_WINDOW,
+    ascentNoiseM: ASCENT_NOISE_THRESHOLD_M,
     largestGapM: largestGap,
     largestGapAtM: largestGapAt,
     gapThresholdM: gapThreshold,
