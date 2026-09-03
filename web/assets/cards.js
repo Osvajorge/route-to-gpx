@@ -235,3 +235,32 @@ export function sourceOwnWord(slug) {
   if (!words) return '';
   return words[0].toUpperCase() + words.slice(1);
 }
+
+/** The three places a word for a slug can come from, in the order they are
+ *  worth showing, ending somewhere that is never a machine name.
+ *
+ *  This exists because the rule was written twice and only one copy was right.
+ *  The activity word walked all three steps; the grade word walked one and then
+ *  returned the raw slug, so an unknown grade would have reached a reader as
+ *  `very_difficult`. No source has sent one yet, which is exactly why it went
+ *  unnoticed: a rule with no live case is a rule nobody is checking. One
+ *  function now, and a test that no slug survives it.
+ *
+ *  `ours` and `published` each return a word or nothing. `ours` is this page's
+ *  own vocabulary, a translation somebody wrote and checked. `published` is the
+ *  source's own spelling of its own slug, which invents nothing. Neither is
+ *  required: a grade has no published labels to look in, so it passes only the
+ *  first and falls straight through to the last.
+ *
+ *  The returned `ours` flag is false for both of the last two steps, because in
+ *  both the word on screen belongs to the site and not to us, and the sentence
+ *  under the activity picker says so out loud. */
+export function wording(slug, { ours = null, published = null } = {}) {
+  const mine = ours ? ours(slug) : null;
+  if (mine) return { text: mine, ours: true };
+
+  const theirs = published ? published(slug) : null;
+  if (theirs) return { text: theirs, ours: false };
+
+  return { text: sourceOwnWord(slug), ours: false };
+}

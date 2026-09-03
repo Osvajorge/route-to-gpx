@@ -4,6 +4,7 @@ import {
   cardTrace,
   durationParts,
   sourceOwnWord,
+  wording,
   starPortion,
   updatedMonth,
 } from './cards.js';
@@ -1528,21 +1529,28 @@ function choicesFor(mode) {
  *  the same fact in both cases, that the word on screen belongs to the site and
  *  not to us, and the sentence under the activity picker says so out loud. */
 function sportWording(slug) {
-  const key = `sport.${slug}`;
-  const text = t(key);
-  if (text !== key) return { text, ours: true };
+  return wording(slug, { ours: (s) => translated(`sport.${s}`), published: publishedLabel });
+}
 
-  // Every list the service has handed over, not just the one behind the
-  // dropdown. With both sites asked at once the rows carry each site's own
-  // word, so a Wikiloc word can land on a card while the dropdown is showing
-  // the shared list, and Wikiloc's own spelling of it is still the best thing
-  // to print. It is that site's word for that site's slug either way.
+/** This page's own word for a key, or nothing. `t` hands back the key itself
+ *  when it has no translation, which reads as a word but is not one. */
+function translated(key) {
+  const text = t(key);
+  return text === key ? null : text;
+}
+
+/** The source's own spelling of its own slug, from every list the service has
+ *  handed over rather than only the one behind the dropdown. With both sites
+ *  asked at once the rows carry each site's own word, so a Wikiloc word can
+ *  land on a card while the dropdown shows the shared list, and Wikiloc's own
+ *  spelling of it is still the best thing to print. */
+function publishedLabel(slug) {
   const here = finder.catalogues.get(finder.sourceId)?.labels?.[slug];
-  if (here) return { text: here, ours: false };
+  if (here) return here;
   for (const catalogue of finder.catalogues.values()) {
-    if (catalogue.labels?.[slug]) return { text: catalogue.labels[slug], ours: false };
+    if (catalogue.labels?.[slug]) return catalogue.labels[slug];
   }
-  return { text: sourceOwnWord(slug), ours: false };
+  return null;
 }
 
 /** An activity in the reader's language, or the source's own word for it. */
@@ -1553,13 +1561,9 @@ function sportLabel(slug) {
 /** A grade in the reader's language, or the source's own word for it. Same
  *  rule as the activity above, and the same reason. */
 function gradeLabel(slug) {
-  const key = `grade.${slug}`;
-  const text = t(key);
-  // Same last resort as `sportWording`, and for the same reason: a grade we
-  // have no word for still belongs to the source, but it must not reach a
-  // reader as a machine name. No source has sent an unknown grade yet; this is
-  // here so that the day one does, nobody reads a slug.
-  return text === key ? sourceOwnWord(slug) : text;
+  // No `published` step: no source publishes a label for its grades, only for
+  // its activities. So this walks the first step and then the last.
+  return wording(slug, { ours: (s) => translated(`grade.${s}`) }).text;
 }
 
 // ------------------------------------------------------------ finder service

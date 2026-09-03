@@ -17,6 +17,7 @@ import {
   cardTrace,
   durationParts,
   sourceOwnWord,
+  wording,
   starPortion,
   updatedMonth,
 } from '../assets/cards.js';
@@ -372,4 +373,68 @@ test('a word that is not a word comes back empty rather than as punctuation', ()
   assert.equal(sourceOwnWord(''), '');
   assert.equal(sourceOwnWord(null), '');
   assert.equal(sourceOwnWord(42), '');
+});
+
+// ---------------------------------------------------------------- wording
+//
+// The rule these cover was written twice and only one copy was right: the
+// grade word skipped the last step and returned the raw slug. It had no live
+// case, which is why nobody noticed, so the invariant is pinned here instead
+// of waiting for a source to send one.
+
+test('wording prefers our own word', () => {
+  const said = wording('via-ferrata', {
+    ours: () => 'Via ferrata',
+    published: () => 'Via Ferrata',
+  });
+  assert.deepEqual(said, { text: 'Via ferrata', ours: true });
+});
+
+test("wording falls back to the source's published spelling", () => {
+  const said = wording('trail-running', {
+    ours: () => null,
+    published: () => 'Trail Running',
+  });
+  // Theirs, and flagged as theirs, so the sentence under the picker can say so.
+  assert.deepEqual(said, { text: 'Trail Running', ours: false });
+});
+
+test('wording opens the slug out when nobody has a word for it', () => {
+  const said = wording('mtb_easy', { ours: () => null, published: () => null });
+  assert.deepEqual(said, { text: 'Mtb easy', ours: false });
+});
+
+test('wording works with no published step at all, which is the grade case', () => {
+  // A grade has no published labels to look in, so it walks the first step and
+  // then the last. This is exactly the path that used to return the slug.
+  assert.deepEqual(wording('very_difficult', { ours: () => null }),
+    { text: 'Very difficult', ours: false });
+  assert.deepEqual(wording('difficult', { ours: () => 'Dificil' }),
+    { text: 'Dificil', ours: true });
+});
+
+test('no slug survives wording, whichever steps are missing', () => {
+  // The whole point: a machine name must not reach a reader by any route.
+  const slugs = ['mtb_easy', 'very_difficult', 'dual-sport-motorcycle', 'e_mtb',
+                 'alpine_ski', 'T4', 'off-road'];
+  const steps = [
+    {},
+    { ours: () => null },
+    { published: () => null },
+    { ours: () => null, published: () => null },
+  ];
+  for (const slug of slugs) {
+    for (const step of steps) {
+      const { text } = wording(slug, step);
+      assert.ok(!/[_]/.test(text), `${slug} kept an underscore: ${text}`);
+      assert.ok(text[0] === text[0].toUpperCase(),
+        `${slug} came back lowercase: ${text}`);
+    }
+  }
+});
+
+test('wording never hands back an empty word for a real slug', () => {
+  for (const slug of ['hiking', 'mtb_easy', 'T4']) {
+    assert.ok(wording(slug, {}).text.length > 0);
+  }
 });
