@@ -437,6 +437,12 @@
 
           <h3 class="dialog-subhead" id="rotate-measured-head"></h3>
           <div class="tiles" id="rotate-tiles"></div>
+          <!-- Descent, which reversing swaps with the ascent in the tile above
+               it. Without it the reader watches the ascent jump and has no way
+               to see it is the figure they were never shown. A row and not a
+               fourth tile: the tiles are what a reader came for, this explains
+               one of them. -->
+          <dl class="secondary" id="rotate-secondary"></dl>
 
           <p class="dialog-note" id="rotate-times"></p>
           <p class="dialog-note" id="rotate-notrim"></p>

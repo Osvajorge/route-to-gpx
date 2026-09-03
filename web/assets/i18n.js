@@ -306,12 +306,22 @@ const STRINGS = {
     'step2.download': 'Download GPX',
     'step2.reset': 'New link',
     'measure.distance': 'Distance',
+    // How much of the distance above is a straight line over ground nobody
+    // recorded. The distance counts it as walked, and the gap tile beside it
+    // was the only thing on the page that knew.
+    'measure.distance.gaps': 'across gaps {gaps}',
     'measure.ascent': 'Ascent',
     // The one parameter of the three that moves the number, named and measured
     // in the same shape the gap tile names and measures its threshold. The
     // fold under the tiles is where the word is spelled out.
     'measure.ascent.step': 'sampling {step} m',
+    // The input that moves the number most, shown only on the recordings where
+    // it is moving it. Half the heights missing took the ascent 47% low.
+    'measure.ascent.coverage': 'coverage {coverage}%',
     'measure.gap': 'Largest gap',
+    // Measured all along, printed nowhere, which is why reversing a route
+    // looked like it changed the ascent when it had only swapped the two.
+    'measure.descent': 'Descent',
     'measure.rawAscent': 'Raw ascent',
     'measure.points': 'Points',
     'measure.spacing': 'Mean spacing',
@@ -679,9 +689,12 @@ const STRINGS = {
     'step2.download': 'Descargar GPX',
     'step2.reset': 'Otro enlace',
     'measure.distance': 'Distancia',
+    'measure.distance.gaps': 'en saltos {gaps}',
     'measure.ascent': 'Desnivel positivo',
     'measure.ascent.step': 'muestreo {step} m',
+    'measure.ascent.coverage': 'cobertura {coverage}%',
     'measure.gap': 'Salto mayor',
+    'measure.descent': 'Desnivel negativo',
     'measure.rawAscent': 'Desnivel crudo',
     'measure.points': 'Puntos',
     'measure.spacing': 'Espaciado medio',

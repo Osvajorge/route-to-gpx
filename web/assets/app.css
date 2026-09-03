@@ -2606,6 +2606,17 @@ html.dialog-open body {
   #rotate-notrim {
     order: 2;
   }
+
+  /* .secondary clips its own overflow at this width, so the row corners cut
+   * into the shared border rather than sitting on it. Taking an element's
+   * overflow off visible also takes away the automatic minimum size it has as a
+   * flex item, and the dialog body is a flex column that scrolls: the row was
+   * free to shrink to nothing and did, leaving a 2px line where a measured
+   * figure should be. The report's copy is in a column that does not scroll,
+   * which is why only this one needed saying. */
+  #rotate-secondary {
+    flex-shrink: 0;
+  }
 }
 
 /* The same swap, driven by the height it was always really about.

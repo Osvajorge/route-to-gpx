@@ -512,6 +512,7 @@ function renderReport() {
       ? '-'
       : `${formatNumber(measurements.elevationMinM)}-${formatNumber(measurements.elevationMaxM)} m`;
   el.secondary.innerHTML = `
+    ${descentRow(measurements)}
     ${measureRow(t('measure.rawAscent'), `${formatNumber(measurements.rawAscentM)} m`)}
     ${measureRow(t('measure.points'), formatNumber(measurements.pointCount))}
     ${measureRow(t('measure.spacing'), `${formatNumber(measurements.meanSpacingM, 1)} m`)}
@@ -542,6 +543,19 @@ function measureRow(label, value) {
   return `<div class="measure-row"><dt>${label}</dt><dd>${value}</dd></div>`;
 }
 
+/** Descent. Measured all along and shown nowhere, which is what made the
+ *  re-arranger look like it changed a measurement it had not: reversing a route
+ *  swaps ascent and descent exactly, so a reader who reversed saw the ascent
+ *  jump by 60 m with no way to see it was the descent they were never shown.
+ *
+ *  A row and not a fourth tile. The tiles are the three figures a reader came
+ *  for; this is the one that explains one of them, which is what the table
+ *  under them is for. It is in the re-arranger too, because that is where the
+ *  swap happens and the report is not on screen while that dialog is open. */
+function descentRow(measurements) {
+  return measureRow(t('measure.descent'), `${formatNumber(measurements.descentM)} m`);
+}
+
 /** The three headline figures, ours, with the source's own beside each where
  *  the source published one. Written once and used on the report and in the
  *  preview dialog, so the two can never drift into saying different things
@@ -553,7 +567,7 @@ function measuredTiles(measurements, published) {
       t('measure.distance'),
       formatKm(measurements.distanceM),
       'km',
-      comparison(measurements.distanceM, published?.distanceM ?? null, 'km', 2),
+      distanceNote(comparison(measurements.distanceM, published?.distanceM ?? null, 'km', 2), measurements),
       false,
     )}
     ${tile(
@@ -564,6 +578,29 @@ function measuredTiles(measurements, published) {
       false,
     )}
     ${tile(t('measure.gap'), formatNumber(measurements.largestGapM), 'm', gapNote(measurements), warn)}`;
+}
+
+/** The distance tile's note, whatever else that note is already saying.
+ *
+ *  THE RULE THIS SOLVES. Distance is a haversine sum over consecutive points,
+ *  so the straight chord across a gap is counted as walked. The tile beside it
+ *  was calling that chord untracked ground in the same breath, and nothing
+ *  joined the two: an intact recording and the same one with a 910 m hole in it
+ *  both printed 14.017 km, and the note could still say the figure "matches"
+ *  the source.
+ *
+ *  The figure is the total of every gap over the threshold, not the largest.
+ *  What the distance absorbed is a sum, so the honest disclosure is that sum:
+ *  on a three hole file the largest gap was 1 091 m and the straight ground was
+ *  2 731 m, so printing the largest would have understated the borrowed
+ *  distance by two and a half times. */
+function distanceNote(against, measurements) {
+  // Below the threshold there is no gap to have absorbed. Every recording has
+  // chords between its points; the ones this page calls gaps are the ones this
+  // line is about.
+  if (measurements.gapTotalM <= 0) return against;
+  const gaps = t('measure.distance.gaps', { gaps: metresOrKm(measurements.gapTotalM) });
+  return `${against} <span class="tile-note-param">${gaps}</span>`;
 }
 
 /** The ascent tile's note, whatever else that note is already saying.
@@ -578,17 +615,40 @@ function measuredTiles(measurements, published) {
  *  the tiles: three lines here would be three lines on every card-sized tile
  *  on a phone, and the reason is worth a click, not a paragraph. */
 function ascentNote(against, measurements) {
+  // A line of its own rather than a clause after a second dot. At 375 this note
+  // is 19 characters wide, so a run-on wrapped mid-figure and left the unit
+  // stranded on a line by itself.
+  const lines = [];
+
   // A recording with no heights was never sampled, so saying at what step it
-  // was would be this page inventing a parameter to look thorough. The figure
-  // above is a plain zero and the note says only what the source said.
-  if (!hasProfile(measurements)) return against;
-  const step = t('measure.ascent.step', {
-    step: formatNumber(measurements.sampleStepM, 1),
-  });
-  // A line of its own rather than a third clause after a second dot. At 375
-  // this note is 19 characters wide, so a run-on wrapped mid-figure and left
-  // the unit stranded on a line by itself.
-  return `${against} <span class="tile-note-param">${step}</span>`;
+  // was would be this page inventing a parameter to look thorough.
+  if (hasProfile(measurements)) {
+    lines.push(t('measure.ascent.step', { step: formatNumber(measurements.sampleStepM, 1) }));
+  }
+
+  // The input that moves this figure most, and only on the recordings where it
+  // is moving it. A profile built from half the points is built from half the
+  // route, and the ascent came out 47% low; the step on the line above moves
+  // the same figure by 1.6%. On nearly every recording this line stays off,
+  // coverage is 100%, and saying so would be a line nobody needs.
+  //
+  // It survives the guard above on purpose. At zero coverage the figure over it
+  // is a plain zero, and this is the whole difference between a flat route and
+  // a file with no heights in it at all.
+  if (measurements.elevationCoverageLow) {
+    lines.push(
+      t('measure.ascent.coverage', {
+        // Rounded down, never up: a disclosure about missing data must not
+        // round its way back to the full figure it is warning about.
+        coverage: formatNumber(Math.floor(100 * measurements.elevationCoverage)),
+      }),
+    );
+  }
+
+  if (lines.length === 0) return against;
+  return `${against} ${lines
+    .map((line) => `<span class="tile-note-param">${line}</span>`)
+    .join('')}`;
 }
 
 /** The fold. Written from the measurements rather than from constants, so a
@@ -1284,6 +1344,7 @@ function renderRotate() {
 
   el.rotateMeasuredHead.textContent = t('rotate.measured');
   el.rotateTiles.innerHTML = arrangementTiles(after, measurements);
+  el.rotateSecondary.innerHTML = descentRow(after);
 
   // A recording with no times loses nothing, and a line reporting that nothing
   // happened is a line the reader has to read to learn it can be ignored.
@@ -1305,7 +1366,7 @@ function arrangementTiles(after, before) {
       t('measure.distance'),
       formatKm(after.distanceM),
       'km',
-      t('rotate.against', { value: `${formatKm(before.distanceM)} km` }),
+      distanceNote(t('rotate.against', { value: `${formatKm(before.distanceM)} km` }), after),
       false,
     )}
     ${tile(
@@ -2835,6 +2896,7 @@ function collect() {
   el.rotateReset = document.getElementById('rotate-reset');
   el.rotateMeasuredHead = document.getElementById('rotate-measured-head');
   el.rotateTiles = document.getElementById('rotate-tiles');
+  el.rotateSecondary = document.getElementById('rotate-secondary');
   el.rotateSeam = document.getElementById('rotate-seam');
   el.rotateTimes = document.getElementById('rotate-times');
   el.rotateNoTrim = document.getElementById('rotate-notrim');

@@ -66,6 +66,21 @@ function ring({ sideM, stepM, closeM = 0, withElevation = false }) {
   return points;
 }
 
+/** The same square ring, carrying a height profile that comes back to where it
+ *  started. Rotating this changes not one thing about the ground: every edge in
+ *  the result is an edge that was recorded, and each carries the same rise. */
+function ringWithClosedProfile({ sideM, stepM, climbs = 3, amplitudeM = 200 }) {
+  const total = 4 * sideM;
+  const points = [];
+  for (let d = 0; d < total; d += stepM) {
+    const [north, east] = onSquare(d, sideM);
+    const ele = 1400 + (amplitudeM * (1 - Math.cos((climbs * 2 * Math.PI * d) / total))) / 2;
+    points.push(at(north, east, ele));
+  }
+  points.push({ ...points[0] });
+  return points;
+}
+
 /** A walk from one valley to another. */
 function line(totalM, stepM = 100) {
   const points = [];
@@ -282,4 +297,48 @@ test('every download says what it is, so three of them are not three of the same
 
 test('a kilometre in a file name is written with a full stop, whatever the page is set to', () => {
   assert.equal(changedFileName('a.gpx', { startKm: 4.2 }).includes(','), false);
+});
+
+// --------------------------------------------------- the artefact, measured
+
+test('rotating a closed ring changes the ground not at all, and the ascent a little', () => {
+  // WHAT THIS PINS, AND WHY IT IS NOT A PASSING GRADE.
+  //
+  // Moving the start of an exactly closed ring gives back the same cyclic list
+  // of edges: nothing is added, nothing is removed, the seam is zero. The
+  // figures that read the points directly say so exactly. The ascent figure
+  // does not, because it is measured off a grid of samples laid down every
+  // `sampleStepM` from wherever the track now starts, and moving the start
+  // moves the grid onto different ground. The wobble that comes back is the
+  // estimator's own noise, and the re-arranger prints it beside the original as
+  // though the arrangement had caused it.
+  //
+  // It is bounded here rather than fixed. Any fixed step resampling has a
+  // phase, and taking the phase out means changing how every ascent on this
+  // page is measured, which is a different piece of work from disclosing one.
+  // The bound is what stops it growing quietly in the meantime.
+  const points = ringWithClosedProfile({ sideM: 900, stepM: 18 });
+  const base = measure({ points });
+  const ring = ringLength(points);
+
+  for (const share of [0.05, 0.2, 0.25, 0.5, 0.75, 0.9]) {
+    const out = arrange(points, { startIndex: Math.round(ring * share) });
+    const after = measure({ points: out.points });
+
+    assert.equal(out.seamM, 0, `a closed ring opened a seam at ${share}`);
+    assert.equal(after.pointCount, base.pointCount);
+    assert.ok(
+      Math.abs(after.distanceM - base.distanceM) < 0.01,
+      `distance moved at ${share}: ${after.distanceM} against ${base.distanceM}`,
+    );
+    // Read off the points in the order they are in, with no grid between, so
+    // this one is rotation proof and shows the ground really is the same.
+    assert.ok(
+      Math.abs(after.rawAscentM - base.rawAscentM) < 0.1,
+      `the ground changed at ${share}: ${after.rawAscentM} against ${base.rawAscentM}`,
+    );
+
+    const drift = Math.abs(after.ascentM - base.ascentM) / base.ascentM;
+    assert.ok(drift < 0.05, `the sampling artefact grew to ${(100 * drift).toFixed(1)}% at ${share}`);
+  }
 });

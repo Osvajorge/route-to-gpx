@@ -173,3 +173,37 @@ test('the re-arranger still says the ends are apart and by how much', () => {
   assert.match(open.es, /272 m/);
   assert.match(open.es, /invertir/i);
 });
+
+test('the three figures the report was hiding are named in both languages', () => {
+  // Each one is a number this page already measured and did not print, so each
+  // is a placeholder that has to survive translation. A wording that lost one
+  // would print "{gaps}" over a figure a reader is being asked to trust.
+  const fill = { gaps: '2.7 km', coverage: '77' };
+  for (const lang of LANGUAGES) {
+    for (const key of ['measure.distance.gaps', 'measure.ascent.coverage', 'measure.descent']) {
+      const said = translate(lang, key, fill);
+      assert.notEqual(said, key, `${lang} ${key} is missing`);
+      assert.ok(!said.includes('{'), `${lang} ${key}: ${said}`);
+    }
+  }
+  assert.match(translate('en', 'measure.distance.gaps', fill), /2\.7 km/);
+  assert.match(translate('es', 'measure.distance.gaps', fill), /2\.7 km/);
+  assert.match(translate('en', 'measure.ascent.coverage', fill), /77%/);
+  assert.match(translate('es', 'measure.ascent.coverage', fill), /77%/);
+});
+
+test('the three notes stay notes and never grow into sentences', () => {
+  // They were added under an instruction that the page already says too much,
+  // and each is a figure in a note line that existed, not a line of prose. The
+  // budget is the longest of the notes already there, which is the gap tile's
+  // "no gap over {threshold} m". Anything past it is a sentence arriving.
+  const budget = Math.max(
+    ...LANGUAGES.map((lang) => translate(lang, 'gap.none', { threshold: 100 }).length),
+  );
+  for (const lang of LANGUAGES) {
+    for (const key of ['measure.distance.gaps', 'measure.ascent.coverage', 'measure.descent']) {
+      const said = translate(lang, key, { gaps: '2.7 km', coverage: '77' });
+      assert.ok(said.length <= budget, `${lang} ${key} is ${said.length} against ${budget}: ${said}`);
+    }
+  }
+});

@@ -101,6 +101,17 @@ test('on a phone the re-arranger puts its measured figures before its drawing', 
   assert.match(narrow, /#rotate-times,\s*\n\s*#rotate-notrim\s*\{\s*order:\s*2;/);
 });
 
+test('the measured figure under the re-arranger tiles cannot be squeezed to nothing', () => {
+  // .secondary hides its overflow at this width so the row corners cut into the
+  // shared border. Taking overflow off visible also takes away a flex item's
+  // automatic minimum size, and the dialog body is a flex column that scrolls:
+  // the descent row shrank to its own 2px border, which is what a reader saw
+  // where a figure should be. The report's copy sits in a column that does not
+  // scroll, which is why only this one needs saying.
+  const narrow = css.slice(css.indexOf('@media (max-width: 640px)'));
+  assert.match(narrow, /#rotate-secondary\s*\{\s*flex-shrink:\s*0;/);
+});
+
 test('the dialog scroller shades the edge it is cutting content at', () => {
   // Without it a cut lands mid-glyph and reads as a broken render rather than
   // as more content. `local` is what makes the shade appear only at an end
