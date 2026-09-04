@@ -656,10 +656,29 @@ h1 {
  * stretch to. */
 .results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  align-items: start;
+  /* 340px keeps a two-line route title readable and the four figures in two
+   * columns; below about 300 the title runs to four lines and the figures
+   * stack. auto-fit rather than auto-fill so a lone card on a wide screen
+   * grows instead of sitting in a 340px sliver beside empty tracks. */
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 12px;
   padding-top: 14px;
+}
+
+/* The results leave the reading width, and only the results.
+ *
+ * .shell caps everything at 880px, which is a line length: right for the
+ * report, the link field and every paragraph on the page, and wrong for a grid.
+ * With the cap on, `minmax(300px, 1fr)` resolved to exactly two columns of
+ * 434px however wide the screen was, so a laptop showed two columns and a wall
+ * of margin either side.
+ *
+ * The negative margin is bounded by the viewport rather than open-ended: at
+ * 1512 it gives four columns, at 1920 five, and it can never push the grid
+ * wider than the window it is in. Everything else on the page keeps the 880. */
+.results-wide {
+  width: min(1520px, calc(100vw - 36px));
+  margin-inline: calc((min(1520px, 100vw - 36px) - 100%) / -2);
 }
 
 /* An inset well, not a raised card: darker than the surface it sits on, ringed
@@ -708,6 +727,21 @@ h1 {
   border-bottom: 1px solid var(--surface-line);
 }
 
+/* Waiting for a shape that is being fetched for this one card.
+ *
+ * Nothing spins and nothing pulses. Nine cards with nine spinners is nine
+ * things moving at a reader who is trying to read a list, and the wait is a
+ * quarter of a second. It is the same sunken ground the drawing will land on,
+ * so when the line arrives it appears in place rather than replacing a
+ * different-looking box.
+ *
+ * If the shape never comes the slot is removed outright, which leaves the card
+ * exactly as Wikiloc cards looked before any of this: no drawing, marks under
+ * the title, nothing claiming something is missing. */
+.card-shape.is-waiting {
+  background: var(--chart-area);
+}
+
 .card-trace {
   display: block;
   width: 100%;
@@ -739,10 +773,13 @@ h1 {
 
 /* Over the drawing, where they cost no height at all. Inline under the title
  * on a card with no drawing, which is every Wikiloc card. */
+/* Under the title on every card, never floating over the drawing.
+ *
+ * Floating them worked only while some cards had a drawing to float over, so
+ * one grid held two card layouts: chips over a picture on Komoot rows, chips
+ * under the title on Wikiloc ones. Same place on every card is one layout. */
 .card-marks {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
+  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;

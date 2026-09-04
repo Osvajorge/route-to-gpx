@@ -137,6 +137,56 @@ export function cardTrace(row, { fit, project }) {
   };
 }
 
+/** The markup of one card's shape slot, and whether it has to go and get one.
+ *
+ *  WHY EVERY CARD HAS THE SLOT. A Komoot row arrives with its geometry read
+ *  out of its thumbnail URL, so it can draw at once. A Wikiloc search row
+ *  carries no coordinates at all, so it used to draw nothing, and one grid held
+ *  cards with a picture beside cards with a hole where one would go. The owner
+ *  saw that and said the design was nowhere, which it was.
+ *
+ *  The shape is not missing from Wikiloc, only from its search results: its
+ *  trail page carries it, so a card can ask. `url` is set on the slot when
+ *  there is something to ask for, and the page asks when the reader reaches
+ *  that card and not before, because a trail page is 354 KB and nine of them
+ *  for a reader who will open one is crawling rather than answering.
+ *
+ *  `drawing` is null while the slot is still waiting. An empty slot is quiet on
+ *  purpose: nothing spins, because a spinner on nine cards is nine things
+ *  moving for a reader who is trying to read. If the shape never comes the
+ *  caller drops the slot entirely, which is what a Wikiloc card looked like
+ *  before any of this and is honest rather than broken. */
+export function shapeSlot(drawing, { url = null, alt = '' } = {}) {
+  if (!drawing) {
+    return url ? `<div class="card-shape is-waiting" data-shape-url="${escapeAttribute(url)}"></div>` : '';
+  }
+  return `<div class="card-shape">${shapeSvg(drawing, alt)}</div>`;
+}
+
+/** The drawing itself, so the observer can inject exactly what the first render
+ *  would have written and the two can never drift apart. */
+export function shapeSvg(drawing, alt) {
+  return `<svg
+      class="card-trace"
+      viewBox="0 0 ${drawing.width} ${drawing.height}"
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="${escapeAttribute(alt)}"
+    >
+      <path d="${drawing.d}" class="card-trace-halo"/>
+      <path d="${drawing.d}" class="card-trace-line"/>
+      <circle cx="${drawing.start.x.toFixed(1)}" cy="${drawing.start.y.toFixed(1)}" r="3" class="card-trace-start"/>
+    </svg>`;
+}
+
+function escapeAttribute(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // --------------------------------------------------------------- the rating
 
 /** A score out of five as a fraction of the star row, or null.

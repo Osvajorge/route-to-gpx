@@ -51,18 +51,25 @@ test('the four privacy statements still say every thing a reader could act on', 
   // These were shortened, not thinned. A cut that drops one of these facts
   // removes a disclosure rather than a word, so each is pinned by the part of
   // it a reader could do something about: whether a file leaves the machine,
-  // whether anything is kept, who else sees them, and how to stop the one that
-  // can be stopped.
+  // what is kept and what is not, who else sees them, and how to stop the one
+  // that can be stopped.
+  //
+  // The url line used to promise that nothing is stored. That stopped being
+  // true when cards began fetching their own outline and holding it so the
+  // same one is not fetched twice, so the promise was narrowed to what is
+  // still true, in memory rather than on disk, and this test was narrowed with
+  // it. A test that pins a sentence the code has outgrown protects the wording
+  // and not the reader.
   const required = {
     en: {
       'footer.processing.file': [/never uploaded/i, /this browser/i],
-      'footer.processing.url': [/our server/i, /[Nn]othing is stored/, /no accounts/i],
+      'footer.processing.url': [/our server/i, /outline is held in memory/i, /nothing is written down/i, /no accounts/i],
       'footer.processing.map': [/OpenStreetMap/, /IP address/i, /turn it off/i],
       'footer.processing.fonts': [/Google/, /IP address/i, /before you press/i],
     },
     es: {
       'footer.processing.file': [/no se suben/i, /navegador/i],
-      'footer.processing.url': [/servidor/i, /[Nn]o se guarda nada/, /no hay cuentas/i],
+      'footer.processing.url': [/servidor/i, /contorno.*queda en memoria/i, /no se anota nada/i, /no hay cuentas/i],
       'footer.processing.map': [/OpenStreetMap/, /IP/, /desactivarlo/i],
       'footer.processing.fonts': [/Google/, /IP/, /antes de que pulses/i],
     },

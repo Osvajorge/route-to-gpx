@@ -2,6 +2,8 @@ import {
   activityWord,
   cardFigures,
   cardTrace,
+  shapeSlot,
+  shapeSvg,
   durationParts,
   sourceOwnWord,
   wording,
@@ -2271,7 +2273,7 @@ function renderResults(mode) {
     // stay articles rather than list items: each one is a self-contained thing
     // with a name, which is what an article is.
     parts.push(
-      `<div class="results" role="group" aria-label="${escapeText(
+      `<div class="results results-wide" role="group" aria-label="${escapeText(
         t('finder.list', { source }),
       )}">${shown.rows.map((row, index) => cardMarkup(row, index, mode)).join('')}</div>`,
     );
@@ -2317,6 +2319,108 @@ function renderResults(mode) {
 
   out.innerHTML = parts.join('');
   out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
+  watchShapes(out, shown?.rows ?? []);
+}
+
+
+/** The URL to ask about, when a row arrived without its shape.
+ *
+ *  Komoot rows never reach this: their geometry rides in the thumbnail URL, so
+ *  `cardTrace` already drew them. Wikiloc search results carry no coordinates
+ *  at all, so their cards have to ask.
+ *
+ *  A row with no URL is nothing to ask about, and a row that already failed is
+ *  not asked twice: a source that had no shape a minute ago still has none, and
+ *  retrying on every scroll would turn a quiet failure into a loop. */
+function shapeAskable(row) {
+  if (!row || typeof row.url !== 'string' || !row.url) return null;
+  if (Array.isArray(row.trace) && row.trace.length >= 2) return null;
+  if (shapesTried.has(row.url)) return null;
+  return row.url;
+}
+
+// Every URL asked about, whether it answered or not. Lives for the session,
+// which is the right span: a shape that arrived is on the row already, and one
+// that did not is not going to arrive by asking again while the reader scrolls
+// past it a third time.
+const shapesTried = new Set();
+
+let shapeWatcher = null;
+
+/** Ask for a card's shape when the reader reaches that card, and never before.
+ *
+ *  A trail page is 354 KB and does not honour a Range request, so a shape costs
+ *  one full fetch. Nine of them, up front, for a reader who will open at most
+ *  one route is a crawl with extra steps, and this service answers requests
+ *  rather than making them. An observer is the honest form of "the reader
+ *  reached it": the card is on screen, so somebody is looking at it.
+ *
+ *  Rebuilt on each render because the cards are, and the old one is disconnected
+ *  rather than left watching nodes that no longer exist. */
+function watchShapes(container, rows) {
+  shapeWatcher?.disconnect();
+  const slots = container.querySelectorAll('[data-shape-url]');
+  if (!slots.length || typeof IntersectionObserver !== 'function') return;
+
+  shapeWatcher = new IntersectionObserver((entries, observer) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const slot = entry.target;
+      observer.unobserve(slot);
+      askForShape(slot, rows);
+    }
+  }, {
+    // A little before the card arrives, so the drawing is there by the time the
+    // reader's eye is. Not a screenful: that would be fetching ahead of them,
+    // which is the thing this whole design exists to avoid.
+    rootMargin: '120px 0px',
+  });
+
+  for (const slot of slots) shapeWatcher.observe(slot);
+}
+
+async function askForShape(slot, rows) {
+  const url = slot.dataset.shapeUrl;
+  if (!url || shapesTried.has(url)) return;
+  shapesTried.add(url);
+
+  let trace = null;
+  try {
+    const response = await fetch(`${API_BASE}/shape`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const answer = await response.json();
+    if (answer?.ok && Array.isArray(answer.trace)) trace = answer.trace;
+  } catch {
+    // A shape that does not arrive is not an error to announce. The card
+    // simply has no drawing, which is what every Wikiloc card looked like
+    // before any of this, and the route is still there to convert.
+  }
+
+  // The slot may be gone: a new search, a language switch, or Load more will
+  // have rebuilt the list while this was in flight.
+  if (!slot.isConnected) return;
+
+  if (!trace) {
+    slot.remove();
+    return;
+  }
+
+  // Onto the row as well as the screen, so a re-render draws it without asking
+  // again, and so the row and the card can never disagree about the shape.
+  const row = rows.find((candidate) => candidate?.url === url);
+  if (row) row.trace = trace;
+
+  const drawing = cardTrace({ trace }, { fit: fitFrame, project: projectInFrame });
+  if (!drawing) {
+    slot.remove();
+    return;
+  }
+  const source = row?.publishedBy || sourceLabel(finder.sourceId);
+  slot.innerHTML = shapeSvg(drawing, t('card.shapeAlt', { source }));
+  slot.classList.remove('is-waiting');
 }
 
 /** What the service read to produce this page, in its own numbers.
@@ -2567,28 +2671,18 @@ function cardMarkup(row, index, mode) {
       : '',
   ].join('');
 
-  // Drawn here, from the shape that arrived with the row, in this page's own
-  // line colour. Nothing is fetched: no request leaves the browser for it, and
-  // no third party learns which routes are being looked at.
+  // Drawn here, in this page's own line colour, from geometry that either came
+  // with the row or is fetched for this one card when the reader reaches it.
+  //
+  // Komoot encodes the shape into its thumbnail URL, so its cards draw with no
+  // request at all. Wikiloc sends none in a search result, so its cards carry
+  // the URL to ask about and `watchShapes` does the asking. Either way no
+  // picture is loaded from anybody: what a card draws, it draws itself.
   const drawing = cardTrace(row, { fit: fitFrame, project: projectInFrame });
-  const picture = drawing
-    ? `<div class="card-shape">
-        <svg
-          class="card-trace"
-          viewBox="0 0 ${drawing.width} ${drawing.height}"
-          preserveAspectRatio="xMidYMid meet"
-          role="img"
-          aria-label="${escapeText(t('card.shapeAlt', { source }))}"
-        >
-          <path d="${drawing.d}" class="card-trace-halo"/>
-          <path d="${drawing.d}" class="card-trace-line"/>
-          <circle cx="${drawing.start.x.toFixed(1)}" cy="${drawing.start.y.toFixed(
-            1,
-          )}" r="3" class="card-trace-start"/>
-        </svg>
-        ${marks ? `<span class="card-marks">${marks}</span>` : ''}
-      </div>`
-    : '';
+  const picture = shapeSlot(drawing, {
+    url: drawing ? null : shapeAskable(row),
+    alt: t('card.shapeAlt', { source }),
+  });
 
   // Named by its own title, so focus landing on the card after Load more reads
   // out which route it landed on rather than the word "article".
@@ -2605,7 +2699,7 @@ function cardMarkup(row, index, mode) {
       ${picture}
       <div class="card-text">
         <h3 class="card-title" id="title-${uid}">${escapeText(row.title)}</h3>
-        ${!drawing && marks ? `<span class="card-marks card-marks-inline">${marks}</span>` : ''}
+        ${marks ? `<span class="card-marks card-marks-inline">${marks}</span>` : ''}
         ${claimBlock(row, source, uid)}
         <div class="card-actions">
           <button class="primary-button card-primary" type="button" data-act="gpx" aria-label="${escapeText(

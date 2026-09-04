@@ -421,7 +421,7 @@ const STRINGS = {
     'footer.processing.file':
       'GPX files you drop are read in this browser and never uploaded.',
     'footer.processing.url':
-      'Links are fetched by our server, parsed, and thrown away. Nothing is stored, and there are no accounts.',
+      'Links are fetched by our server, parsed, and thrown away. A card\'s outline is held in memory so it is not fetched twice. Nothing is written down, and there are no accounts.',
     'footer.processing.map':
       'Your browser loads the map background straight from OpenStreetMap, so they see your IP address and roughly where your route is. You can turn it off on the trace chart.',
     'footer.processing.fonts':
@@ -791,7 +791,7 @@ const STRINGS = {
     'footer.processing.file':
       'Los GPX que sueltas se leen en este navegador y no se suben a ningún sitio.',
     'footer.processing.url':
-      'Los enlaces los descarga nuestro servidor, los analiza y los descarta. No se guarda nada y no hay cuentas.',
+      'Los enlaces los descarga nuestro servidor, los analiza y los descarta. El contorno de una tarjeta queda en memoria para no pedirlo dos veces. No se anota nada y no hay cuentas.',
     'footer.processing.map':
       'Tu navegador carga el fondo del mapa directamente desde OpenStreetMap, así que ven tu dirección IP y aproximadamente dónde está tu ruta. Puedes desactivarlo en el gráfico del trazado.',
     'footer.processing.fonts':

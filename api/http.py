@@ -185,12 +185,49 @@ def request_budget(client: str, calls: int = FAN_OUT_CEILING) -> Iterator[Reques
         _BUDGET.reset(token)
 
 
+# Paths the sites' own robots.txt closes, refused here rather than only in the
+# module that knows about them.
+#
+# Two adapters state in prose that they never call these. Prose is not an
+# enforcement: `wikiloc.trail_id` accepts a legacy `?id=` query, so
+# `/wikiloc/map.do?id=1` parsed as a trail and was fetched, and the same URL
+# would have gone through /api/convert just as easily. Found by pointing the
+# card-shape endpoint at it and watching it come back with a page rather than a
+# refusal.
+#
+# It belongs here because this is the only place that talks to the outside
+# world, and because the check has to survive a redirect: a link on an allowed
+# path that redirects onto a closed one is the same request with an extra step.
+# So this runs at every hop, beside the host allowlist.
+CLOSED_PATHS = {
+    "wikiloc.com": (
+        "/wikiloc/map.do",
+        "/wikiloc/geocode.do",
+        "/wikiloc/tr.do",
+        "/wikiloc/companionRequest.do",
+        "/wikiloc/login.do",
+        "/wikiloc/signingup.do",
+        "/cdn-cgi/",
+    ),
+}
+
+
+def _closed(host: str, path: str) -> bool:
+    for site, paths in CLOSED_PATHS.items():
+        if host == site or host.endswith("." + site):
+            lowered = path.lower()
+            return any(lowered.startswith(closed) for closed in paths)
+    return False
+
+
 def _check(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise BlockedHost("only https links are fetched")
     if not parsed.hostname or not ALLOWED_HOST.match(parsed.hostname):
         raise BlockedHost(f"{parsed.hostname} is not a site this service reads")
+    if _closed(parsed.hostname.lower(), parsed.path):
+        raise BlockedHost(f"{parsed.path} is closed by that site's robots.txt")
 
 
 def _site(url: str) -> str:

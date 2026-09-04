@@ -36,6 +36,7 @@ from . import http, limits
 from .core import gpx
 from .http import BlockedHost
 from .sources import (
+    shape as shapes,
     Route,
     SourceError,
     komoot,
@@ -109,6 +110,10 @@ _inbound = limits.Buckets(
 
 
 class ConvertRequest(BaseModel):
+    url: str
+
+
+class ShapeRequest(BaseModel):
     url: str
 
 
@@ -359,6 +364,62 @@ def convert(body: ConvertRequest, request: Request):
         return answer
 
     return as_payload(route)
+
+
+# One outline for one card, and the rules that let it exist.
+#
+# Komoot rows arrive with their geometry already, read out of the thumbnail
+# URL, so nothing here serves them. This is for Wikiloc, whose search results
+# carry no coordinates at all while its trail pages do.
+#
+# A trail page is 354 KB and does not honour a Range request, so a shape costs
+# one full fetch. That is why the page asks for one card at a time, as the
+# reader reaches it, and why this endpoint takes one URL rather than a list: a
+# list is a sweep with extra steps, and nine shapes for a reader who will open
+# one of them is crawling rather than answering.
+#
+# What goes back is an outline decimated to half a pixel at card size. It is
+# enough to recognise a route and nowhere near enough to measure one, so
+# converting the file stays the only way to get a figure.
+_shapes = shapes.Shapes()
+
+
+@api.post("/shape")
+def shape(body: ShapeRequest, request: Request):
+    url = body.url.strip()
+    if not url.startswith("http"):
+        url = f"https://{url}"
+
+    # Before the budget, because a hit spends nothing and a reader scrolling
+    # back up a list should not be charged for looking twice.
+    cached = _shapes.get(url)
+    if cached is not None:
+        return {"ok": True, "trace": cached}
+
+    client = client_key(request)
+    waiting = inbound_wait(client)
+    if waiting:
+        return busy_response(waiting)
+
+    fetch = adapter_for(url)
+    if fetch is None:
+        return error_response("domain")
+
+    try:
+        with http.request_budget(client):
+            route = fetch(url)
+    except Exception as error:
+        answer = source_failure(error)
+        if answer is None:
+            raise
+        return answer
+
+    trace = shapes.from_route(route)
+    if len(trace) < 2:
+        return error_response("track")
+
+    _shapes.put(url, trace)
+    return {"ok": True, "trace": trace}
 
 
 @api.post("/search")
