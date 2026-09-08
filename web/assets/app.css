@@ -505,6 +505,16 @@ h1 {
   display: none;
 }
 
+/* One plain line under a control, saying something about the control that the
+ * control cannot say itself. Same muted voice as every other note. */
+.field-note {
+  max-width: 62ch;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 .place-panel {
   display: flex;
   flex-direction: column;
@@ -579,15 +589,305 @@ h1 {
   color: var(--text-2);
 }
 
+/* ------------------------------------------------------------------ cards */
+
+/* Two to a screen on a laptop, one on a phone, and never three: three would
+ * squeeze the 2x2 grid of figures into a column and the card would stop being
+ * scannable, which is the only thing it is for. */
 .results {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  padding-top: 14px;
 }
 
-/* A row is not a card. Hairlines separate them, the way the secondary
- * measures are separated on a phone, so the list reads as one thing to pick
- * from rather than as a shelf of products. */
-.row,
+/* An inset well, not a raised card: darker than the surface it sits on, ringed
+ * with the same hairline as everything else. The shape the owner showed lifts
+ * off a light panel with a shadow, and a shadow here would be the first
+ * decoration on the page. */
+.route-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.18s var(--ease);
+}
+
+/* Lifted with the accent, the way a row was. The card itself is not a control,
+ * so the edge answers to whichever of its four buttons is focused. */
+.route-card:hover,
+.route-card:focus-within,
+.route-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--surface-line));
+}
+
+/* THE PICTURE. Only Komoot's, and only because Komoot's is a drawing of the
+ * route: see cardImage() for the whole decision.
+ *
+ * Damped the way the basemap under the trace is damped, and for the same
+ * reason: what arrives is a bright green raster with a blue line on it, and
+ * nine of those at full strength would be the loudest thing on a page whose
+ * two colours both mean something.
+ *
+ * grayscale first, so no third colour can arrive. Then inverted, and that is
+ * the one step worth explaining. Komoot draws a dark route on light paper.
+ * Damped without inverting, the route stays the darkest thing in the frame and
+ * the paper stays the brightest, which is the exact opposite of how this page
+ * reads everywhere else: here the ground is sunk and the track is the bright
+ * thing on it. Inverting puts the route back on top of its own ground, so a
+ * card and the trace chart it leads to say the same thing the same way. The
+ * shape, which is the whole reason the picture is here, is untouched: no pixel
+ * moves, only its lightness. Contrast then pushes the two apart and brightness
+ * takes the paper down to about a quarter, which lands the ground plainly above
+ * the card behind it and plainly below the route on it. */
+.card-shape {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--chart-area);
+  border-bottom: 1px solid var(--surface-line);
+}
+
+.card-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1) invert(1) contrast(1.3) brightness(0.7);
+  opacity: 0.9;
+}
+
+/* Over the drawing, where they cost no height at all. Inline under the title
+ * on a card with no drawing, which is every Wikiloc card. */
+.card-marks {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.card-marks-inline {
+  position: static;
+  margin-top: -4px;
+}
+
+/* Not a coloured pill. Colour on this page means interactive or means it
+ * changes what you do on the hill, and an activity is neither. */
+.card-mark {
+  padding: 2px 7px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-inner);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  padding: 13px 14px 14px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text);
+  text-wrap: pretty;
+}
+
+/* THE CLAIM. Every figure the source published sits inside this one region,
+ * under a heading carrying the source's name, tied to it by the rule down the
+ * left edge. Nothing outside it is a number. */
+.card-claim {
+  padding-left: 10px;
+  border-left: 1px solid var(--field-border);
+}
+
+.card-claim-head {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.card-claim-empty {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Two by two when there are four figures, and two by one when the source
+ * published only two. The grid does not hold a slot open for a figure that
+ * does not exist: an empty cell reads as a template that broke. */
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px 10px;
+  margin-top: 8px;
+}
+
+.card-stat {
+  min-width: 0;
+}
+
+.card-stat dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.stat-mark {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.card-stat dd {
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* A coordinate pair is twice as long as any other value on the card. Kept on
+ * one line at a size that fits the narrowest column the grid ever has, because
+ * a latitude split across two lines reads as two numbers. */
+.card-stat-pair dd {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.card-footing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.card-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Five outlines with a filled copy over them, clipped to the score. 4.46 is
+ * drawn as 4.46: rounding it to a shape would be editing the source's figure,
+ * which is the one thing this page is not allowed to do. */
+.card-stars {
+  position: relative;
+  display: inline-flex;
+  color: var(--field-border);
+}
+
+.card-stars .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.stars-empty,
+.stars-full {
+  display: inline-flex;
+}
+
+.stars-full {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 calc(100% - var(--fill)) 0 0);
+  color: var(--text-2);
+}
+
+.stars-full .icon {
+  fill: currentColor;
+}
+
+.card-score {
+  color: var(--text-2);
+}
+
+.card-count {
+  margin-left: -2px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+/* The one filled thing on the card, so there is no question which of the four
+ * does the work. */
+.card-primary {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  min-height: 40px;
+}
+
+/* The drawing is the whole label, so the words live in the tooltip and in the
+ * accessible name. Square, so the three of them read as one set. */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--text-2);
+  text-decoration: none;
+  transition:
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease);
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.icon-button .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.card-note {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* A hairline list, still: the place rows are a list of points to pick from, not
+ * a shelf of products, and nothing about them changed. */
 .place-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -608,29 +908,20 @@ h1 {
     border-color 0.18s var(--ease);
 }
 
-.results .row:last-child,
 .place-row:last-child {
   border-bottom: 1px solid var(--surface-line);
 }
 
 /* Lifted with the accent, not with a shadow. */
-.row:hover:not(:disabled),
-.row:focus-visible,
 .place-row:hover,
 .place-row:focus-visible {
   border-left-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
-.row:hover:not(:disabled) .row-title,
-.row:focus-visible .row-title,
 .place-row:hover .row-title,
 .place-row:focus-visible .row-title {
   color: var(--accent);
-}
-
-.row:disabled {
-  cursor: default;
 }
 
 .row-title {
@@ -641,14 +932,6 @@ h1 {
   color: var(--text);
   text-wrap: pretty;
   transition: color 0.18s var(--ease);
-}
-
-.row-sport {
-  grid-area: sport;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 .row-claim {
@@ -1518,14 +1801,30 @@ body:has(#app[data-dragging='true']) .drop-veil {
     grid-template-columns: 1fr;
   }
 
-  .row,
   .place-row {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'title go'
-      'claim go'
-      'sport go';
+      'claim go';
     align-items: start;
+  }
+
+  /* One card at a time. The grid of figures stays two across: the values are
+   * short and stacking them would double the height of every card for no gain
+   * in legibility. */
+  .results {
+    grid-template-columns: 1fr;
+  }
+
+  /* Reachable with a thumb, which the 40px square is not. */
+  .card-primary,
+  .icon-button {
+    min-height: 46px;
+  }
+
+  .icon-button {
+    width: 46px;
+    height: 46px;
   }
 
   .row-go {

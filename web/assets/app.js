@@ -1,4 +1,12 @@
 import {
+  activityWord,
+  cardFigures,
+  cardImage,
+  durationParts,
+  starPortion,
+  updatedMonth,
+} from './cards.js';
+import {
   appendPage,
   catalogueFrom,
   claimSentence,
@@ -83,6 +91,19 @@ function escapeText(value) {
     /[&<>"]/g,
     (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character],
   );
+}
+
+/** A month named in the reader's language, from the year and month numbers
+ *  `updatedMonth` worked out.
+ *
+ *  Built in UTC and read back in UTC, so a route changed on the first of the
+ *  month does not slide into the one before for a reader west of Greenwich. */
+function formatMonth({ year, month }) {
+  return new Intl.DateTimeFormat(state.lang === 'es' ? 'es-ES' : 'en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
 // ------------------------------------------------------------------- sources
@@ -177,6 +198,36 @@ async function convertFromUrl(url) {
     source: payload.source,
     fileName: payload.fileName || 'route.gpx',
   });
+}
+
+/** The file, handed to the browser. One place, because two buttons ask for it:
+ *  the one on the report and the one on every card. */
+function downloadResult() {
+  if (!state.result) return;
+  const { gpxText, fileName } = state.result;
+  const url = URL.createObjectURL(new Blob([gpxText], { type: 'application/gpx+xml' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+/** What a card's GPX button does: the same conversion the link field runs, and
+ *  then the file.
+ *
+ *  It is not a link to the source's own export, and that is the point. The file
+ *  that arrives is the one this page rebuilt, so it carries the provenance link
+ *  in its metadata, and the report it came from is left on screen with the
+ *  measurement beside the source's claim.
+ *
+ *  A conversion takes a second or two, and a browser may by then have decided
+ *  the click that started it is too old to hand over a file without asking. If
+ *  it does, the report is already open with its own Download button on it, so
+ *  the file is one press away rather than lost. */
+async function convertAndDownload(url) {
+  await convertFromUrl(url);
+  if (state.view === 'report') downloadResult();
 }
 
 async function convertFromFile(file) {
@@ -751,6 +802,18 @@ function toggleBasemap() {
   paintBasemap();
 }
 
+/** Turns the ground back on, for a visitor who asked for the map by name.
+ *
+ *  The card's map button is that request, so it counts as a choice and is
+ *  remembered like the toggle's own. Pressing a button labelled map and getting
+ *  a bare drawing, because the ground was switched off a week ago, is the kind
+ *  of thing that reads as broken. */
+function wantBasemap() {
+  if (basemapOn) return;
+  basemapOn = true;
+  rememberBasemapChoice(true);
+}
+
 function readingAt(distanceM) {
   const { track, measurements } = state.result;
   const index = indexAtDistance(measurements.cumulative, distanceM);
@@ -810,13 +873,22 @@ function clearHover() {
 }
 
 function renderFooter() {
-  // Three separate facts, in the order the visitor meets them: the file never
-  // leaves, the link is fetched by us, and the map is fetched by them. The map
-  // sentence is not optional dressing: it is the one request this page makes
-  // that our server never sees.
-  el.footerProcessing.innerHTML = `<span>${t('footer.processing.file')}</span><span>${t(
+  // Four separate facts, in the order the visitor meets them: the file never
+  // leaves, the link is fetched by us, and two things are fetched straight from
+  // somebody else. Those last two are not optional dressing: they are the only
+  // requests this page makes that our server never sees, and the second of them
+  // is new with the cards. A Komoot card shows Komoot's drawing of the route,
+  // which means Komoot's image server is handed the visitor's address before
+  // they have pressed anything. A Wikiloc card shows no picture, so no such
+  // request is made, and the sentence says both halves.
+  el.footerProcessing.innerHTML = [
+    'footer.processing.file',
     'footer.processing.url',
-  )}</span><span>${t('footer.processing.map')}</span>`;
+    'footer.processing.map',
+    'footer.processing.thumbnail',
+  ]
+    .map((key) => `<span>${t(key)}</span>`)
+    .join('');
   el.footerSource.textContent = t('footer.source');
 }
 
@@ -850,6 +922,45 @@ const KNOWN_SOURCES = [
   { id: 'wikiloc', label: 'Wikiloc' },
 ];
 
+// Sources whose own activity filter is refused to us, so the narrowing happens
+// on our side of the wire.
+//
+// Wikiloc's `find.do` takes an activity parameter and ignores it for a caller
+// with no account: it answers an empty page rather than an error, which is the
+// worst of both. So `api/sources/wikiloc_discovery.py` asks for the whole box
+// and drops the rows that are not the chosen activity, and says how many it
+// dropped in `setAside`.
+//
+// The control stays, because it does narrow the list. What it must not do is
+// pretend the source did the narrowing, because the difference is visible: it
+// filters the page that arrived, so six rows can become none while Wikiloc
+// still has more behind them. That is what the note under the dropdown and the
+// count under the results are for.
+//
+// Written down here, and named in the note's own wording, because the sentence
+// is about one site by name. A source added later needs a line here and a
+// sentence of its own.
+const LOCAL_ACTIVITY_FILTER = new Set(['wikiloc']);
+
+// Where the route re-arranging tool gets attached. Another job builds the
+// modal; it calls `setRouteAdjuster` with a function that opens it for one row.
+// Until then the button says so out loud when it is pressed, which is the one
+// thing it must not do silently.
+let adjustRoute = null;
+
+/** Hands this page the tool that re-arranges a route. */
+export function setRouteAdjuster(open) {
+  adjustRoute = typeof open === 'function' ? open : null;
+}
+
+/** Opens that tool for one row. False when there is nothing to open yet, so the
+ *  caller can say so rather than leave a button that appears to do nothing. */
+export function openRouteAdjuster(row) {
+  if (!adjustRoute) return false;
+  adjustRoute(row);
+  return true;
+}
+
 // Failures a list endpoint can answer with that have a sentence of their own.
 // Anything else, including a body this page and the service disagree about,
 // reads as the question having gone unanswered, which is what happened.
@@ -861,6 +972,9 @@ const finder = {
   sourceId: KNOWN_SOURCES[0].id,
   // One activity list per source, so switching back and forth costs nothing.
   catalogues: new Map(),
+  // The service's raw answers, kept because two of them side by side are the
+  // evidence that it reads the `source` parameter at all.
+  answers: new Map(),
   search: {
     query: '',
     sport: '',
@@ -915,9 +1029,22 @@ function sourceLabel(id) {
  *
  *  The list comes from the service and belongs to the source site, so it can
  *  hold a word this page has not learned yet. Printing the slug is honest;
- *  guessing at a translation, or dropping the row, would not be. */
+ *  guessing at a translation, or dropping the row, would not be.
+ *
+ *  Between the two comes the source's own spelling, when it sends one: Wikiloc
+ *  says "Trail Running" for the slug "trail-running", and both are its word, so
+ *  showing the one meant for reading costs nothing and invents nothing. */
 function sportLabel(slug) {
   const key = `sport.${slug}`;
+  const text = t(key);
+  if (text !== key) return text;
+  return finder.catalogues.get(finder.sourceId)?.labels?.[slug] ?? slug;
+}
+
+/** A grade in the reader's language, or the source's own word for it. Same
+ *  rule as the activity above, and the same reason. */
+function gradeLabel(slug) {
+  const key = `grade.${slug}`;
   const text = t(key);
   return text === key ? slug : text;
 }
@@ -946,13 +1073,36 @@ async function loadCatalogue(sourceId) {
   }
   if (!payload || payload.ok !== true) return;
 
-  finder.sources = sourcesFrom(payload, KNOWN_SOURCES);
+  finder.answers.set(sourceId, payload);
+  finder.sources = sourcesFrom(payload, KNOWN_SOURCES, otherAnswer(sourceId));
   const catalogue = catalogueFrom(payload, null);
   if (!catalogue) return;
 
   finder.catalogues.set(sourceId, catalogue);
   if (sourceId === finder.sourceId) applyCatalogue(catalogue);
   renderFinder();
+}
+
+/** The service's answer about some other site, when it has given one. */
+function otherAnswer(sourceId) {
+  for (const [id, payload] of finder.answers) {
+    if (id !== sourceId) return payload;
+  }
+  return null;
+}
+
+/** Asks the service about the second site this page can convert links from,
+ *  once, after the first answer has arrived.
+ *
+ *  It costs one request that makes no upstream call at all, and it buys the
+ *  answer to a question the page cannot otherwise settle: whether the service
+ *  searches one site or two. Two different vocabularies mean it read the
+ *  parameter, and the dropdown then offers what the service can actually do.
+ *  The list is needed anyway the moment somebody switches, so nothing is
+ *  fetched twice. */
+function probeOtherSource() {
+  const next = KNOWN_SOURCES.find((source) => !finder.answers.has(source.id));
+  if (next) loadCatalogue(next.id);
 }
 
 function applyCatalogue(catalogue) {
@@ -1256,6 +1406,24 @@ function renderSearchForm() {
   el.searchSport.disabled = busy || el.searchSport.options.length === 0;
   el.searchSubmit.textContent = t('search.submit');
   el.searchSubmit.disabled = busy || finder.search.status === 'working';
+  renderActivityNote(el.searchActivityNote, el.searchSport, 'search-activity-note');
+}
+
+/** Under the activity dropdown, on a source that will not filter for us.
+ *
+ *  The alternative was to take the control away. It is not offered, because the
+ *  control does narrow the list: our own service drops the rows that are not
+ *  the chosen activity. What it cannot do is claim the source did it, and the
+ *  difference shows, because the narrowing happens to the page that arrived.
+ *  So the control stays and the sentence says where the work happens; the count
+ *  under the results then says how much of it happened. On Komoot, whose filter
+ *  is real, there is nothing to explain and no line at all. */
+function renderActivityNote(note, select, id) {
+  const show = LOCAL_ACTIVITY_FILTER.has(finder.sourceId);
+  note.hidden = !show;
+  note.textContent = show ? t('activity.notFiltered') : '';
+  if (show) select.setAttribute('aria-describedby', id);
+  else select.removeAttribute('aria-describedby');
 }
 
 function renderNearbyForm() {
@@ -1300,6 +1468,7 @@ function renderNearbyForm() {
   }
   el.nearbySubmit.disabled = busy || finder.nearby.status === 'working';
   el.nearbySport.disabled = busy || el.nearbySport.options.length === 0;
+  renderActivityNote(el.nearbyActivityNote, el.nearbySport, 'nearby-activity-note');
 }
 
 function renderPlacePanel() {
@@ -1370,8 +1539,13 @@ function fillSelect(select, options, value) {
 
 /** Puts focus back after Load more redrew the list.
  *
- *  The replacement button when there is one, the first row that was appended
- *  when there is not, so the visitor lands on what they asked for either way. */
+ *  The replacement button when there is one, the last card that was appended
+ *  when there is not, so the visitor lands on what they asked for either way.
+ *  A card is not a control, so it is focused rather than one of its four
+ *  buttons: landing on the card reads out its name and its figures, where
+ *  landing on GPX reads out one verb and nothing about which route it belongs
+ *  to. That is what `tabindex="-1"` on the card is for, and it keeps the cards
+ *  themselves out of the tab order. */
 function restoreMoreFocus(mode) {
   const out = mode === 'search' ? el.searchOut : el.nearbyOut;
   const again = out.querySelector('[data-more]:not([disabled])');
@@ -1379,8 +1553,8 @@ function restoreMoreFocus(mode) {
     again.focus();
     return;
   }
-  const rows = out.querySelectorAll('.row');
-  if (rows.length) rows[rows.length - 1].focus();
+  const cards = out.querySelectorAll('.route-card');
+  if (cards.length) cards[cards.length - 1].focus();
 }
 
 
@@ -1399,7 +1573,14 @@ function renderResults(mode) {
   }
 
   if (shown && shown.rows.length > 0) {
-    parts.push(`<div class="results">${shown.rows.map(rowMarkup).join('')}</div>`);
+    // `role="group"` because a label on a plain div is not announced. The cards
+    // stay articles rather than list items: each one is a self-contained thing
+    // with a name, which is what an article is.
+    parts.push(
+      `<div class="results" role="group" aria-label="${escapeText(
+        t('finder.list', { source }),
+      )}">${shown.rows.map((row, index) => cardMarkup(row, index, mode)).join('')}</div>`,
+    );
 
     const count =
       shown.totalKnown === null
@@ -1436,40 +1617,257 @@ function renderResults(mode) {
         <p>${t(`empty.${mode}.body`)}</p>
       </div>`);
   }
+
+  // Said whether the list is full or empty, and especially when it is empty: on
+  // a source that will not filter for us, this count is the entire difference
+  // between "there is nothing there" and "there is plenty there, and none of it
+  // is what you asked for". Without it, choosing an activity looks like a
+  // control that broke the page.
+  const asideCount = shown?.setAside?.otherActivity ?? 0;
+  if (asideCount > 0) {
+    const key = asideCount === 1 ? 'finder.setAside.one' : 'finder.setAside.many';
+    parts.push(`<p class="dropped-note">${t(key, { count: formatNumber(asideCount) })}</p>`);
+  }
   if (panel.status === 'error') parts.push(errorMarkup(panel.errorKey));
 
   out.innerHTML = parts.join('');
   out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
 }
 
-/** One row: a name, what the source claims, and a way to convert it. */
-function rowMarkup(row, index) {
-  const claim = claimSentence(row.published, {
-    source: row.publishedBy || sourceLabel(finder.sourceId),
-    t,
-    // One decimal on a row, two in the report. A row only has to be enough to
-    // recognise the route by; the report is the measurement.
-    km: (metres) => formatKm(metres, 1),
-    metres: (value) => formatNumber(value),
-    joinList,
-  });
-  // Only when it is not the activity that was asked for. On Komoot the filter
-  // is real, so every row would repeat the word the visitor just chose, six
-  // times down the screen. On Wikiloc there is no filter to trust, so the word
-  // is the only thing telling a walker that row four is a via ferrata.
-  const asked = panelState(finder.tab === 'nearby' ? 'nearby' : 'search').sport;
-  const sport =
-    row.sport && row.sport !== asked
-      ? `<span class="row-sport">${escapeText(sportLabel(row.sport))}</span>`
-      : '';
-  return `<button class="row" type="button" data-index="${index}"${
-    state.view === 'working' ? ' disabled' : ''
-  }>
-      <span class="row-title">${escapeText(row.title)}</span>
-      ${sport}
-      <span class="row-claim">${escapeText(claim)}</span>
-      ${icon('link', 'row-go')}
-    </button>`;
+// ----------------------------------------------------------------- the card
+//
+// A card is a row with more room, and the extra room is exactly where this
+// page could start lying. Everything on a card that came from the source site
+// is inside one region with the source's name at the top of it; nothing
+// outside that region is a number. The list solved the same problem with a
+// sentence per row, which a card cannot afford four times over, so it is
+// solved once here, at the level of the block.
+//
+// What was taken from the shape the owner showed, and what was not:
+//   kept    the anatomy and the density: a picture across the top, the title
+//           under it, a grid of figures with a drawn mark each, the rating, the
+//           date, and four controls in one row.
+//   kept    the two labels over the picture, because that is the one place they
+//           cost no vertical space at all.
+//   dropped the coloured pills. This page has two colours and both mean
+//           something: cyan for what you can press, warm red for what changes
+//           what you do on the hill. An activity is neither, so it is set in
+//           the same mono the rest of the page uses for a label.
+//   dropped the filled green button. The primary button here is the page's own
+//           cyan, and it is the only filled thing on the card, so it is
+//           obviously the one that does the work.
+//   dropped the rounded box on a light panel, the drop shadow and the hover
+//           lift. The list is separated by hairlines like everything else, and
+//           a card lifts with the accent, the way a row does.
+
+/** One card: the source's picture, the source's figures under the source's
+ *  name, and four things to do with the link. */
+function cardMarkup(row, index, mode) {
+  const source = row.publishedBy || sourceLabel(finder.sourceId);
+  const uid = `${mode}-${index}`;
+  const busy = state.view === 'working' ? ' disabled' : '';
+  // A source that cannot filter upstream has been promised, in writing under
+  // its own dropdown, that every card says its own activity.
+  const always = LOCAL_ACTIVITY_FILTER.has(finder.sourceId);
+  const activity = activityWord(row, panelState(mode).sport, { always });
+  const marks = [
+    activity ? `<span class="card-mark">${escapeText(sportLabel(activity))}</span>` : '',
+    row.difficulty
+      ? `<span class="card-mark card-grade" title="${escapeText(
+          t('grade.label', { source, grade: gradeLabel(row.difficulty) }),
+        )}">${escapeText(gradeLabel(row.difficulty))}</span>`
+      : '',
+  ].join('');
+
+  const image = cardImage(row);
+  const picture = image
+    ? `<div class="card-shape">
+        <img
+          class="card-image"
+          src="${escapeText(image.src)}"
+          alt="${escapeText(t('card.thumbAlt', { source }))}"
+          width="${image.width}"
+          height="${image.height}"
+          loading="lazy"
+          decoding="async"
+        />
+        ${marks ? `<span class="card-marks">${marks}</span>` : ''}
+      </div>`
+    : '';
+
+  // Named by its own title, so focus landing on the card after Load more reads
+  // out which route it landed on rather than the word "article".
+  //
+  // The three buttons go dead while a conversion runs; the link to the source
+  // site does not, because it asks nothing of this page. Opening the original
+  // in another tab while we work is a reasonable thing to want.
+  return `<article
+      class="route-card"
+      data-index="${index}"
+      tabindex="-1"
+      aria-labelledby="title-${uid}"
+    >
+      ${picture}
+      <div class="card-text">
+        <h3 class="card-title" id="title-${uid}">${escapeText(row.title)}</h3>
+        ${!image && marks ? `<span class="card-marks card-marks-inline">${marks}</span>` : ''}
+        ${claimBlock(row, source, uid)}
+        <div class="card-actions">
+          <button class="primary-button card-primary" type="button" data-act="gpx" aria-label="${escapeText(
+            t('card.gpx.label'),
+          )}"${busy}>${icon('download')}<span>${t('card.gpx')}</span></button>
+          ${iconButton('chart', 'map', t('card.chart'), busy)}
+          ${iconButton('adjust', 'sliders', t('card.adjust'), busy)}
+          <a
+            class="icon-button"
+            href="${escapeText(row.url)}"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="${escapeText(t('card.open', { source }))}"
+            aria-label="${escapeText(t('card.open', { source }))}"
+          >${icon('external')}</a>
+        </div>
+        <p class="card-note" data-note role="status" hidden></p>
+      </div>
+    </article>`;
+}
+
+/** One of the three square controls beside the GPX button. The drawing is the
+ *  whole label, so the words go in both the tooltip and the accessible name. */
+function iconButton(action, mark, label, busy) {
+  return `<button
+      class="icon-button"
+      type="button"
+      data-act="${action}"
+      title="${escapeText(label)}"
+      aria-label="${escapeText(label)}"${busy}
+    >${icon(mark)}</button>`;
+}
+
+/** Everything the source claims, under the source's name, in one region.
+ *
+ *  THE RULE THIS SOLVES. Every figure here is the site's own and this product
+ *  exists to doubt them, so not one of them may read as something we measured.
+ *  A row spends a whole sentence saying so. A card cannot, so it names the
+ *  source once, at the top, and puts every claimed figure inside the region
+ *  that heading names, with a rule down its edge tying them together. Nothing
+ *  outside this region is a number: the title is a name, the activity and the
+ *  grade are words, and the four controls are verbs.
+ *
+ *  The heading is a real heading, and the region a real region, so a screen
+ *  reader reaches the figures through "What Komoot says" rather than meeting
+ *  twelve unattributed numbers in a row.
+ *
+ *  With nothing at all published, the sentence the list already uses stands on
+ *  its own. That is not a broken card: it is the same statement, and it is
+ *  worth making, because a source that publishes no figures is exactly the case
+ *  where converting the route is the only way to learn anything. */
+function claimBlock(row, source, uid) {
+  const figures = cardFigures(row);
+  const stars = starPortion(row.rating);
+  const updated = updatedMonth(row.updatedAt);
+
+  if (figures.length === 0 && !stars && !updated) {
+    return `<p class="card-claim-empty">${escapeText(
+      claimSentence(row.published, {
+        source,
+        t,
+        km: (metres) => formatKm(metres, 1),
+        metres: (value) => formatNumber(value),
+        joinList,
+      }),
+    )}</p>`;
+  }
+
+  const grid = figures.length
+    ? `<dl class="card-grid">${figures.map(figureMarkup).join('')}</dl>`
+    : '';
+  const footing = [
+    stars ? ratingMarkup(stars, source) : '',
+    updated
+      ? `<span class="card-updated">${escapeText(
+          t('card.updated', { when: formatMonth(updated) }),
+        )}</span>`
+      : '',
+  ].join('');
+
+  return `<section class="card-claim" aria-labelledby="claim-${uid}">
+      <h4 class="card-claim-head" id="claim-${uid}">${escapeText(t('card.claim', { source }))}</h4>
+      ${grid}
+      ${footing ? `<p class="card-footing">${footing}</p>` : ''}
+    </section>`;
+}
+
+/** One figure: a drawn mark, the site's number, and what the number is of. */
+function figureMarkup(figure) {
+  if (figure.key === 'distance') {
+    return statMarkup('distance', t('measure.distance'), `${formatKm(figure.metres, 1)} km`);
+  }
+  if (figure.key === 'ascent') {
+    return statMarkup('ascent', t('measure.ascent'), `${formatNumber(figure.metres)} m`);
+  }
+  if (figure.key === 'duration') {
+    const { hours, minutes } = durationParts(figure.seconds);
+    const spent =
+      hours === 0
+        ? t('card.time.m', { m: formatNumber(minutes) })
+        : minutes === 0
+          ? t('card.time.h', { h: formatNumber(hours) })
+          : t('card.time.hm', { h: formatNumber(hours), m: formatNumber(minutes) });
+    return statMarkup('duration', t('card.duration'), spent);
+  }
+  // The pair is separated by a dot, not a comma, for the reason the place rows
+  // give: in Spanish the comma is already the decimal mark.
+  return statMarkup(
+    'start',
+    t('card.start'),
+    `${formatNumber(figure.lat, 4)} · ${formatNumber(figure.lng, 4)}`,
+    // A coordinate pair is twice as long as any other value here and it must
+    // not break across two lines: half a latitude at the end of a line reads as
+    // a different number.
+    'card-stat-pair',
+  );
+}
+
+function statMarkup(mark, label, value, extra = '') {
+  return `<div class="card-stat${extra ? ` ${extra}` : ''}">
+      <dt>${icon(mark, 'stat-mark')}<span>${escapeText(label)}</span></dt>
+      <dd>${escapeText(value)}</dd>
+    </div>`;
+}
+
+/** The score other walkers on that site gave it.
+ *
+ *  Five drawn stars filled to the fraction of the score, so 4.46 is drawn as
+ *  4.46 rather than rounded to a shape the source never published, and the
+ *  number is printed beside them because the drawing is an impression and the
+ *  number is the claim.
+ *
+ *  One `img` role over the whole thing, carrying the sentence that names the
+ *  source. A screen reader gets "4.46 out of 5, from 13 ratings on Komoot" and
+ *  not a pile of stars followed by two loose numbers. */
+function ratingMarkup(stars, source) {
+  const score = formatNumber(stars.score, stars.score % 1 === 0 ? 0 : 1);
+  const label =
+    stars.count === null
+      ? t('card.rating.none', { score, source })
+      : stars.count === 1
+        ? t('card.rating.one', { score, source })
+        : t('card.rating', { score, count: formatNumber(stars.count), source });
+  const row = `${icon('star')}${icon('star')}${icon('star')}${icon('star')}${icon('star')}`;
+
+  return `<span class="card-rating" role="img" aria-label="${escapeText(label)}">
+      <span class="card-stars">
+        <span class="stars-empty">${row}</span>
+        <span class="stars-full" style="--fill:${(stars.fraction * 100).toFixed(2)}%">${row}</span>
+      </span>
+      <span class="card-score">${escapeText(score)}</span>
+      ${
+        stars.count === null
+          ? ''
+          : `<span class="card-count">(${escapeText(formatNumber(stars.count))})</span>`
+      }
+    </span>`;
 }
 
 function errorMarkup(key) {
@@ -1512,6 +1910,7 @@ function collect() {
   el.searchSport = document.getElementById('search-sport');
   el.searchSportLabel = labelFor('search-sport');
   el.searchSubmit = document.getElementById('search-submit');
+  el.searchActivityNote = document.getElementById('search-activity-note');
   el.searchForm = document.getElementById('search-form');
   el.searchOut = document.getElementById('search-out');
 
@@ -1537,6 +1936,7 @@ function collect() {
   el.nearbySport = document.getElementById('nearby-sport');
   el.nearbySportLabel = labelFor('nearby-sport');
   el.nearbySubmit = document.getElementById('nearby-submit');
+  el.nearbyActivityNote = document.getElementById('nearby-activity-note');
   el.nearbyForm = document.getElementById('nearby-form');
   el.nearbyOut = document.getElementById('nearby-out');
 
@@ -1606,15 +2006,7 @@ function wire() {
     submit();
   });
 
-  el.downloadButton.addEventListener('click', () => {
-    const { gpxText, fileName } = state.result;
-    const url = URL.createObjectURL(new Blob([gpxText], { type: 'application/gpx+xml' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  });
+  el.downloadButton.addEventListener('click', downloadResult);
 
   el.resetButton.addEventListener('click', () => {
     el.input.value = '';
@@ -1785,7 +2177,7 @@ function wireFinder() {
     if (chosen) pickPlace(Number(chosen.dataset.place));
   });
 
-  // One listener per list rather than one per row: the rows are rewritten
+  // One listener per list rather than one per card: the cards are rewritten
   // whenever the language or the page changes.
   for (const mode of ['search', 'nearby']) {
     const out = mode === 'search' ? el.searchOut : el.nearbyOut;
@@ -1793,18 +2185,60 @@ function wireFinder() {
       if (event.target.closest('[data-more]')) {
         // The list is redrawn wholesale, so the button that was just pressed
         // stops existing. Without this a keyboard visitor is dropped at the top
-        // of the document and has to tab past everything to reach the rows they
+        // of the document and has to tab past everything to reach the cards they
         // just asked for.
         runList(mode, { append: true }).then(() => restoreMoreFocus(mode));
         return;
       }
-      const pressed = event.target.closest('.row');
-      if (!pressed) return;
-      const row = panelState(mode).shown?.rows[Number(pressed.dataset.index)];
-      // The whole point of the list: the row is a URL, and a URL goes through
-      // the conversion the link field already runs.
-      if (row) convertFromUrl(row.url);
+      const pressed = event.target.closest('[data-act]');
+      const card = event.target.closest('.route-card');
+      if (!pressed || !card) return;
+      const row = panelState(mode).shown?.rows[Number(card.dataset.index)];
+      if (row) runCardAction(pressed.dataset.act, row, card);
     });
+
+    // `error` does not bubble, so it is caught on the way down. A picture that
+    // did not arrive leaves the browser's own broken-image mark in the middle
+    // of the card, which reads as this page being broken rather than as one
+    // image being missing. The card closes up around it instead.
+    out.addEventListener(
+      'error',
+      (event) => {
+        const image = event.target;
+        if (image instanceof HTMLImageElement) image.closest('.card-shape')?.remove();
+      },
+      true,
+    );
+  }
+}
+
+/** The four things a card can do with its link.
+ *
+ *  Three of them are the same conversion the link field runs, which is what
+ *  makes the file carry our provenance and the measurement ours. The fourth is
+ *  the source's own page, and it is the only one that leaves. */
+function runCardAction(action, row, card) {
+  // Anything said about the last press belongs to the last press.
+  const note = card.querySelector('[data-note]');
+  if (note) note.hidden = true;
+
+  if (action === 'gpx') {
+    convertAndDownload(row.url);
+    return;
+  }
+  if (action === 'chart') {
+    // The map and the profile ARE the report, so this is the conversion with
+    // the ground turned on. Anything else would be a second, lesser map.
+    wantBasemap();
+    convertFromUrl(row.url);
+    return;
+  }
+  if (action === 'adjust' && !openRouteAdjuster(row) && note) {
+    // Nothing installed the tool yet. Said on the card that was pressed, in the
+    // page's own quiet voice, because a button that swallows a press is the one
+    // failure this page must not have.
+    note.textContent = t('card.adjust.missing');
+    note.hidden = false;
   }
 }
 
@@ -1825,5 +2259,6 @@ wireFinder();
 render();
 focusActiveField();
 // The activity list belongs to the source site, so it is asked for rather than
-// written down here.
-loadCatalogue(finder.sourceId);
+// written down here. The second site is asked about straight after, which is
+// how the page finds out whether the service can search more than one.
+loadCatalogue(finder.sourceId).then(probeOtherSource);

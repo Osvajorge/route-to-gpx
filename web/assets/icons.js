@@ -23,6 +23,27 @@ const PATHS = {
   crosshair:
     '<circle cx="12" cy="12" r="6"/><path d="M12 2.5v3.2"/><path d="M12 18.3v3.2"/><path d="M2.5 12h3.2"/><path d="M18.3 12h3.2"/>',
   chevron: '<path d="m7.5 10.5 4.5 4.5 4.5-4.5"/>',
+
+  // The four figures a card prints, one mark each. Each one draws the thing it
+  // measures rather than a symbol standing for it: a line with two ends, a
+  // slope with a climb on it, a dial, a point on the ground.
+  distance:
+    '<path d="M4 12h16"/><path d="M4 9.5v5"/><path d="M20 9.5v5"/><path d="M12 10.5v3"/>',
+  ascent: '<path d="M4 18.5 10 10l3.5 4L20 5.5"/><path d="M20 5.5h-4.5"/><path d="M20 5.5V10"/>',
+  duration: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  start: '<path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z"/><circle cx="12" cy="11" r="2.2"/>',
+
+  // Five points and no fill: the fill is painted over a second copy of this
+  // path, clipped to the score, so a 4.46 is drawn as 4.46 and not as a
+  // rounding of it.
+  star: '<path d="m12 4 2.35 4.76 5.25.77-3.8 3.7.9 5.23L12 15.99l-4.7 2.47.9-5.23-3.8-3.7 5.25-.77Z"/>',
+
+  // The three controls beside Download on a card.
+  map: '<path d="m3.5 6.5 5.5-2 6 2 5.5-2v13l-5.5 2-6-2-5.5 2Z"/><path d="M9 4.5v13"/><path d="M15 6.5v13"/>',
+  sliders:
+    '<path d="M4 8h4"/><path d="M12 8h8"/><path d="M4 16h10"/><path d="M18 16h2"/><circle cx="10" cy="8" r="2"/><circle cx="16" cy="16" r="2"/>',
+  external:
+    '<path d="M13.5 4.5H19.5V10.5"/><path d="m11 13 8.5-8.5"/><path d="M18.5 14v4.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1H10"/>',
 };
 
 export function icon(name, className = '') {

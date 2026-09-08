@@ -63,7 +63,7 @@ export function worldYToLat(worldY) {
 
 /** How the track sits in the trace viewBox: the world point that lands at
  *  viewBox (0, 0), and how many viewBox units one world unit covers. Mercator
- *  keeps angles, so one factor serves both axes — and that single factor is
+ *  keeps angles, so one factor serves both axes, and that single factor is
  *  what lets the tile layer register with the drawing exactly. */
 export function traceFrame(points) {
   let minWX = Infinity;
@@ -227,7 +227,7 @@ export function tileLayer(frame, view) {
     },
     tiles: range.tiles,
     tileShrink: range.shrink,
-    /** A coordinate as CSS pixels inside the chart box — the same space the
+    /** A coordinate as CSS pixels inside the chart box, the same space the
      *  gap label and the tooltip are positioned in. */
     project(lat, lon) {
       return {

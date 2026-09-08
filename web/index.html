@@ -102,6 +102,10 @@
                   </p>
                   <button class="primary-button submit-button" id="search-submit" type="submit"></button>
                 </div>
+                <!-- Shown only for a source whose own activity filter is
+                     refused to callers without an account, so the dropdown
+                     never claims work the source did not do. -->
+                <p class="field-note" id="search-activity-note" hidden></p>
               </form>
               <div class="finder-out" id="search-out"></div>
             </section>
@@ -165,6 +169,7 @@
                   </p>
                   <button class="primary-button submit-button" id="nearby-submit" type="submit"></button>
                 </div>
+                <p class="field-note" id="nearby-activity-note" hidden></p>
               </form>
               <div class="finder-out" id="nearby-out"></div>
             </section>

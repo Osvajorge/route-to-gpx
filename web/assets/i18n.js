@@ -74,6 +74,32 @@ const STRINGS = {
     'claim.descent': '{m} m down',
     'claim.highest': 'a high point of {m} m',
 
+    // A card is denser than a row and cannot spend a sentence on each figure,
+    // so the attribution is spent once, as the heading of the block that holds
+    // every figure. Nothing outside that block is a number.
+    'card.claim': 'What {source} says',
+    'card.duration': 'Time',
+    'card.start': 'Start',
+    'card.time.hm': '{h} h {m} min',
+    'card.time.h': '{h} h',
+    'card.time.m': '{m} min',
+    'card.rating': '{score} out of 5, from {count} ratings on {source}',
+    'card.rating.one': '{score} out of 5, from one rating on {source}',
+    'card.rating.none': '{score} out of 5 on {source}',
+    'card.updated': 'Updated {when}',
+    'card.thumbAlt': 'The shape of this route, as {source} draws it',
+    'card.gpx': 'GPX',
+    'card.gpx.label': 'Convert this route and download the GPX',
+    'card.chart': 'Map and elevation profile',
+    'card.adjust': 'Re-arrange this route',
+    'card.adjust.missing': 'Re-arranging is not built yet. The other three work.',
+    'card.open': 'Open on {source}',
+    'grade.easy': 'Easy',
+    'grade.moderate': 'Moderate',
+    'grade.difficult': 'Difficult',
+    'grade.label': '{source} grades this {grade}',
+
+    'finder.list': 'Routes {source} answered with',
     'finder.working.search': 'Asking {source} which routes match.',
     'finder.working.nearby': 'Asking {source} which routes start near that point.',
     'finder.more': 'Load more',
@@ -84,6 +110,13 @@ const STRINGS = {
       '{source} returned one more route this converter could not open, so it is not listed.',
     'finder.dropped.many':
       '{source} returned {count} more routes this converter could not open, so they are not listed.',
+    // Different from the line above, and the difference matters: those could
+    // not be opened, these could and were not wanted. On a source that will not
+    // filter for us, this sentence is the whole reason a page came back short.
+    'finder.setAside.one':
+      'One more route on these pages was for another activity, so it is not shown.',
+    'finder.setAside.many':
+      '{count} more routes on these pages were for other activities, so they are not shown.',
 
     'empty.search.title': 'Nothing came back for those words.',
     'empty.search.body':
@@ -91,6 +124,16 @@ const STRINGS = {
     'empty.nearby.title': 'Nothing came back within that radius.',
     'empty.nearby.body':
       'Try a wider radius, a different activity, or a point nearer a trailhead.',
+
+    // Not an activity: the setting that narrows nothing. Every other word in
+    // this dropdown belongs to the source site, and is printed as the source
+    // spells it.
+    'sport.all': 'Any activity',
+    // Said under the dropdown on a source whose own activity filter is refused
+    // to us, so the control is honest about where the narrowing happens rather
+    // than removed.
+    'activity.notFiltered':
+      'Wikiloc will not filter by activity for a visitor who is not logged in, so we filter the page it sends us. Every card states its own activity.',
 
     'sport.hike': 'Hiking',
     'sport.touringbicycle': 'Touring bike',
@@ -194,6 +237,8 @@ const STRINGS = {
       'Links are fetched by our server, because a browser is not allowed to read pages on another site directly. The page is parsed and thrown away. Nothing is stored, and there are no accounts.',
     'footer.processing.map':
       'The map background is loaded by your browser directly from OpenStreetMap, so their servers see your IP address and roughly where your route is. You can turn it off on the trace chart.',
+    'footer.processing.thumbnail':
+      'The route drawing on a Komoot card is loaded by your browser directly from Komoot, so their servers see your IP address and which routes you are looking at. Wikiloc cards carry no picture, so nothing is fetched from Wikiloc until you convert one.',
     'footer.source': 'Source code',
   },
 
@@ -262,6 +307,29 @@ const STRINGS = {
     'claim.descent': '{m} m de bajada',
     'claim.highest': 'un techo de {m} m',
 
+    'card.claim': 'Lo que dice {source}',
+    'card.duration': 'Tiempo',
+    'card.start': 'Salida',
+    'card.time.hm': '{h} h {m} min',
+    'card.time.h': '{h} h',
+    'card.time.m': '{m} min',
+    'card.rating': '{score} sobre 5, con {count} valoraciones en {source}',
+    'card.rating.one': '{score} sobre 5, con una valoración en {source}',
+    'card.rating.none': '{score} sobre 5 en {source}',
+    'card.updated': 'Actualizada en {when}',
+    'card.thumbAlt': 'La forma de esta ruta, tal como la dibuja {source}',
+    'card.gpx': 'GPX',
+    'card.gpx.label': 'Convertir esta ruta y descargar el GPX',
+    'card.chart': 'Mapa y perfil de altitud',
+    'card.adjust': 'Reordenar esta ruta',
+    'card.adjust.missing': 'Reordenar todavía no está hecho. Los otros tres sí funcionan.',
+    'card.open': 'Abrir en {source}',
+    'grade.easy': 'Fácil',
+    'grade.moderate': 'Moderada',
+    'grade.difficult': 'Difícil',
+    'grade.label': '{source} la califica como {grade}',
+
+    'finder.list': 'Rutas con las que responde {source}',
     'finder.working.search': 'Preguntando a {source} qué rutas encajan.',
     'finder.working.nearby': 'Preguntando a {source} qué rutas salen cerca de ese punto.',
     'finder.more': 'Cargar más',
@@ -272,6 +340,10 @@ const STRINGS = {
       '{source} devolvió una ruta más que este conversor no sabría abrir, así que no está en la lista.',
     'finder.dropped.many':
       '{source} devolvió {count} rutas más que este conversor no sabría abrir, así que no están en la lista.',
+    'finder.setAside.one':
+      'En estas páginas venía una ruta más de otra actividad, así que no se muestra.',
+    'finder.setAside.many':
+      'En estas páginas venían {count} rutas más de otras actividades, así que no se muestran.',
 
     'empty.search.title': 'No ha vuelto nada con esas palabras.',
     'empty.search.body':
@@ -279,6 +351,10 @@ const STRINGS = {
     'empty.nearby.title': 'No ha vuelto nada dentro de ese radio.',
     'empty.nearby.body':
       'Prueba con un radio mayor, con otra actividad, o con un punto más cerca de un inicio de ruta.',
+
+    'sport.all': 'Cualquier actividad',
+    'activity.notFiltered':
+      'Wikiloc no filtra por actividad para quien no ha iniciado sesión, así que filtramos nosotros la página que nos manda. Cada tarjeta dice su propia actividad.',
 
     'sport.hike': 'Senderismo',
     'sport.touringbicycle': 'Cicloturismo',
@@ -380,6 +456,8 @@ const STRINGS = {
       'Los enlaces los descarga nuestro servidor, porque un navegador no puede leer directamente las páginas de otra web. La página se analiza y se descarta. No se guarda nada y no hay cuentas.',
     'footer.processing.map':
       'Tu navegador carga el fondo del mapa directamente desde OpenStreetMap, así que sus servidores ven tu dirección IP y aproximadamente dónde está tu ruta. Puedes desactivarlo en el gráfico del trazado.',
+    'footer.processing.thumbnail':
+      'El dibujo de la ruta de una tarjeta de Komoot lo carga tu navegador directamente desde Komoot, así que sus servidores ven tu dirección IP y qué rutas estás mirando. Las tarjetas de Wikiloc no llevan imagen, así que no se pide nada a Wikiloc hasta que conviertes una.',
     'footer.source': 'Código fuente',
   },
 };

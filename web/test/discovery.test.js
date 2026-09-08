@@ -123,6 +123,26 @@ test('dropped rows add up across pages, because each page counts its own', () =>
   assert.equal(second.dropped, 5);
 });
 
+test('rows removed on purpose add up too, and stay absent for a source that removes none', () => {
+  // A Wikiloc page of six that filters down to none is not an empty answer, and
+  // the count is the only thing that says so.
+  const first = appendPage(null, {
+    ...listing(['a']),
+    setAside: { otherActivity: 5, outsideRadius: 0 },
+  });
+  assert.deepEqual(first.setAside, { otherActivity: 5, outsideRadius: 0 });
+
+  const second = appendPage(first, {
+    ...listing(['b'], { paging: { page: 1 } }),
+    setAside: { otherActivity: 6, outsideRadius: 2 },
+  });
+  assert.deepEqual(second.setAside, { otherActivity: 11, outsideRadius: 2 });
+
+  // Komoot filters nothing of its own and sends no such key, so there is
+  // nothing for the page to test and nothing for it to say.
+  assert.equal(appendPage(null, listing(['a'])).setAside, null);
+});
+
 test('a total is carried when the source gave one, and stays null when it did not', () => {
   const told = appendPage(null, listing(['a'], { paging: { totalKnown: 40 } }));
   assert.equal(told.totalKnown, 40);
@@ -163,14 +183,35 @@ test('an activity the source has no word for falls back to its default', () => {
 test('the activity list is read from the answer, and a bad default is ignored', () => {
   assert.deepEqual(catalogueFrom({ sports: ['hike', 'mtb'], default: 'mtb' }, null), {
     sports: ['hike', 'mtb'],
+    labels: {},
     default: 'mtb',
   });
   assert.deepEqual(catalogueFrom({ sports: ['hike'], default: 'ski' }, null), {
     sports: ['hike'],
+    labels: {},
     default: 'hike',
   });
   assert.equal(catalogueFrom({ sports: [] }, null), null);
   assert.equal(catalogueFrom({}, null), null);
+});
+
+test("a source that spells its own words is believed, and one that does not keeps its slugs", () => {
+  // Wikiloc sends a label for every activity; Komoot sends none. Neither is a
+  // translation, so both are printed as the site itself writes them.
+  const wikiloc = catalogueFrom(
+    {
+      sports: ['all', 'trail-running'],
+      default: 'all',
+      activities: [
+        { id: 'all', label: 'Any activity', group: null },
+        { id: 'trail-running', label: 'Trail Running', group: 'On Foot' },
+        { id: 'broken', label: '   ' },
+      ],
+    },
+    null,
+  );
+  assert.deepEqual(wikiloc.labels, { all: 'Any activity', 'trail-running': 'Trail Running' });
+  assert.deepEqual(catalogueFrom({ sports: ['hike'], default: 'hike' }, null).labels, {});
 });
 
 // --------------------------------------------------------------- the source
@@ -191,6 +232,21 @@ test('a service that says nothing about sources offers the one it can search', (
 test('a service that names the source it answered for offers both', () => {
   assert.deepEqual(sourcesFrom({ source: 'wikiloc', sports: ['hiking'] }, KNOWN), KNOWN);
   assert.deepEqual(sourcesFrom({ source: { id: 'komoot', label: 'Komoot' } }, KNOWN), KNOWN);
+});
+
+test('a service that answers differently for a different site has read the parameter', () => {
+  // Today's service says nothing about sources, and searches both sites. Asked
+  // about each, it hands back two different vocabularies, and that is the
+  // demonstration: hiding Wikiloc here would hide a search that works.
+  const komoot = { ok: true, sports: ['hike', 'mtb'], default: 'hike' };
+  const wikiloc = { ok: true, sports: ['all', 'hiking'], default: 'all' };
+  assert.deepEqual(sourcesFrom(komoot, KNOWN, wikiloc), KNOWN);
+
+  // One that ignores the parameter answers the same list twice, and is still
+  // offered the single site it searches.
+  assert.deepEqual(sourcesFrom(komoot, KNOWN, { ...komoot }), [KNOWN[0]]);
+  assert.deepEqual(sourcesFrom(komoot, KNOWN, null), [KNOWN[0]]);
+  assert.deepEqual(sourcesFrom(komoot, KNOWN, { ok: false }), [KNOWN[0]]);
 });
 
 test('a service that lists its sources is believed over anything written here', () => {
