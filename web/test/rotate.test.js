@@ -301,22 +301,25 @@ test('a kilometre in a file name is written with a full stop, whatever the page 
 
 // --------------------------------------------------- the artefact, measured
 
-test('rotating a closed ring changes the ground not at all, and the ascent a little', () => {
-  // WHAT THIS PINS, AND WHY IT IS NOT A PASSING GRADE.
-  //
+test('rotating a closed ring changes nothing at all, ascent included', () => {
   // Moving the start of an exactly closed ring gives back the same cyclic list
-  // of edges: nothing is added, nothing is removed, the seam is zero. The
-  // figures that read the points directly say so exactly. The ascent figure
-  // does not, because it is measured off a grid of samples laid down every
-  // `sampleStepM` from wherever the track now starts, and moving the start
-  // moves the grid onto different ground. The wobble that comes back is the
-  // estimator's own noise, and the re-arranger prints it beside the original as
-  // though the arrangement had caused it.
+  // of edges: nothing added, nothing removed, seam zero. Every figure has to
+  // say so, and the ascent used to be the one that did not.
   //
-  // It is bounded here rather than fixed. Any fixed step resampling has a
-  // phase, and taking the phase out means changing how every ascent on this
-  // page is measured, which is a different piece of work from disclosing one.
-  // The bound is what stops it growing quietly in the meantime.
+  // It drifted 1.7% across eight starts, and this test used to bound that at 5%
+  // rather than fix it, on the reasoning that any fixed step resampling has a
+  // phase and taking the phase out means changing the estimator. That reasoning
+  // was wrong, and measuring three candidate fixes is what showed it:
+  //     averaging over several grid phases   drift got WORSE, 1.69% -> 2.48%
+  //     anchoring the grid to the southern    worse again, 2.54%
+  //     making the filter wrap at the seam    1.685% -> 0.0025%
+  // The phase was never the cause. The cause was the seam: a closed ring has no
+  // first sample and no last one, and filtering it with a window clamped at
+  // each end treats whatever the file happens to begin at as a boundary. Move
+  // the start and different ground gets the short window.
+  //
+  // So this is not a tolerance any more. Rotating a ring must not move the
+  // ascent, and it does not.
   const points = ringWithClosedProfile({ sideM: 900, stepM: 18 });
   const base = measure({ points });
   const ring = ringLength(points);
@@ -338,7 +341,14 @@ test('rotating a closed ring changes the ground not at all, and the ascent a lit
       `the ground changed at ${share}: ${after.rawAscentM} against ${base.rawAscentM}`,
     );
 
-    const drift = Math.abs(after.ascentM - base.ascentM) / base.ascentM;
-    assert.ok(drift < 0.05, `the sampling artefact grew to ${(100 * drift).toFixed(1)}% at ${share}`);
+    // Floating point, not tolerance: the same sums in a different order.
+    assert.ok(
+      Math.abs(after.ascentM - base.ascentM) < 0.05,
+      `the ascent moved at ${share}: ${after.ascentM} against ${base.ascentM}`,
+    );
+    assert.ok(
+      Math.abs(after.descentM - base.descentM) < 0.05,
+      `the descent moved at ${share}: ${after.descentM} against ${base.descentM}`,
+    );
   }
 });

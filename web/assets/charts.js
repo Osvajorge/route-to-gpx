@@ -384,7 +384,18 @@ export function renderProfile(points, measurements, t, options = {}) {
   const cut = showGap ? gapIndex(measurements) : -1;
 
   const px = (i) => (cumulative[i] / total) * PROFILE_W;
-  const py = (ele) => PROFILE_H - 12 - ((ele - min) / span) * (PROFILE_H - 24);
+
+  // The axis is the filtered range, so a single bad reading cannot squash the
+  // terrain into the bottom of the box. A reading outside it is drawn at the
+  // edge rather than off the chart, and `clipped` tells the caller it happened
+  // so the report can say so: silently flattening a spike would hide something
+  // that is really in the file.
+  let clipped = 0;
+  const py = (ele) => {
+    const inside = Math.max(min, Math.min(max, ele));
+    if (inside !== ele) clipped += 1;
+    return PROFILE_H - 12 - ((inside - min) / span) * (PROFILE_H - 24);
+  };
 
   const run = (from, to) => {
     let d = '';
@@ -476,6 +487,10 @@ export function renderProfile(points, measurements, t, options = {}) {
     svg,
     px,
     py,
+    // How many readings sat outside the filtered range and were drawn at the
+    // edge. Non-zero means the file holds a height the profile could not show
+    // at a scale that keeps the ground readable, and the report says so.
+    clipped,
     viewBox: { w: PROFILE_W, h: PROFILE_H },
     // Fractions of the plot, not pixels: this chart is stretched to whatever
     // box it is given, so a fraction is right at every size and needs no

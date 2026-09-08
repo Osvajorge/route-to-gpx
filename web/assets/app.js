@@ -509,13 +509,44 @@ function renderReport() {
   el.warning.hidden = !warn;
   if (warn) el.warning.innerHTML = gapWarningMarkup(measurements);
 
-  const elevation =
-    measurements.elevationMinM === null
-      ? '-'
-      : `${formatNumber(measurements.elevationMinM)}-${formatNumber(measurements.elevationMaxM)} m`;
+  // Two rows in this table say what they are, because one of the three
+  // elevation figures is defended and the others are not, and until now
+  // nothing on screen said which.
+  //
+  // Raw ascent is unfiltered ON PURPOSE: it exists to show what a portal
+  // publishes. So it is not filtered, it is labelled. Measured on a 500 point
+  // track with one bad reading, it moved 155% while the defended ascent beside
+  // it did not move at all.
+  //
+  // Elevation now reports the filtered range, and when the file itself holds a
+  // reading outside that range the raw ceiling is printed too, so a bad point
+  // is visible rather than either squashing the chart or vanishing from it.
+  const elevation = (() => {
+    if (measurements.elevationMinM === null) return '-';
+    const shown = `${formatNumber(measurements.elevationMinM)}-${formatNumber(
+      measurements.elevationMaxM,
+    )} m`;
+    const rawMax = measurements.rawElevationMaxM;
+    const rawMin = measurements.rawElevationMinM;
+    const outside =
+      rawMax !== null &&
+      (rawMax - measurements.elevationMaxM > 1 || measurements.elevationMinM - rawMin > 1);
+    return outside
+      ? `${shown} <span class="measure-note">${t('measure.elevation.raw', {
+          min: formatNumber(rawMin),
+          max: formatNumber(rawMax),
+        })}</span>`
+      : shown;
+  })();
+
   el.secondary.innerHTML = `
     ${descentRow(measurements)}
-    ${measureRow(t('measure.rawAscent'), `${formatNumber(measurements.rawAscentM)} m`)}
+    ${measureRow(
+      t('measure.rawAscent'),
+      `${formatNumber(measurements.rawAscentM)} m <span class="measure-note">${t(
+        'measure.rawAscent.note',
+      )}</span>`,
+    )}
     ${measureRow(t('measure.points'), formatNumber(measurements.pointCount))}
     ${measureRow(t('measure.spacing'), `${formatNumber(measurements.meanSpacingM, 1)} m`)}
     ${measureRow(t('measure.elevation'), elevation)}`;

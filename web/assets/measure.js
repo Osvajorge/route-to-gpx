@@ -36,6 +36,12 @@ export const ELEVATION_COVERAGE_FLOOR = 0.99;
 // to kill a single bad reading and short enough to leave real steps alone.
 const MEDIAN_WINDOW = 5;
 
+// Two ends this close are the same place: a recording that came back to where
+// it started, rather than one that finished nearby. Below this the seam is
+// continuous ground and the filter reaches across it; above it the track has
+// real ends and keeps them.
+const RING_CLOSES_WITHIN_M = 2;
+
 export function haversine(a, b) {
   const lat1 = (a.lat * Math.PI) / 180;
   const lat2 = (b.lat * Math.PI) / 180;
@@ -111,11 +117,15 @@ export class TrackError extends Error {
 
 /** Cumulative ascent and descent, dropping steps smaller than `threshold`.
  *  Pass threshold 0 for the raw figure, which is what most portals publish. */
-function accumulate(elevations, threshold) {
+function accumulate(elevations, threshold, ring = false) {
   let gain = 0;
   let loss = 0;
-  for (let i = 1; i < elevations.length; i++) {
-    const change = elevations[i] - elevations[i - 1];
+  // On a ring the step from the last sample back to the first is ground that
+  // was walked, so it counts. Leaving it out is what made a rotated ring
+  // measure differently from the same ring unrotated.
+  const last = ring ? elevations.length : elevations.length - 1;
+  for (let i = 1; i <= last; i++) {
+    const change = elevations[i % elevations.length] - elevations[i - 1];
     if (change > threshold) gain += change;
     else if (change < -threshold) loss -= change;
   }
@@ -123,14 +133,30 @@ function accumulate(elevations, threshold) {
 }
 
 /** Median filter. Removes a single bad elevation reading without eating a
- *  real climb, which a mean filter would. */
-function median(values, window = MEDIAN_WINDOW) {
+ *  real climb, which a mean filter would.
+ *
+ *  `ring` makes the window wrap, and that is not a refinement: it is the
+ *  difference between measuring a loop and measuring a loop cut open at an
+ *  arbitrary point.
+ *
+ *  A closed ring has no first sample and no last one. Filtering it with a
+ *  truncated window at each end treats whatever the file happens to start at as
+ *  a boundary, so moving the start moved which ground got the short window and
+ *  the reported ascent changed with nothing added or removed. Measured on a 600
+ *  point ring over eight different starts:
+ *      window clamped at the ends   1218.1 to 1238.6 m, a drift of 20.5 m
+ *      window wrapped               1238.6 m at every start, drift 0.03 m
+ *  The re-arranger was reporting that spread as though rearranging had caused
+ *  it, when it was the measurement's own seam. */
+function median(values, window = MEDIAN_WINDOW, ring = false) {
   const half = window >> 1;
+  const count = values.length;
   return values.map((_, i) => {
-    const slice = values
-      .slice(Math.max(0, i - half), Math.min(values.length, i + half + 1))
-      .sort((a, b) => a - b);
-    return slice[slice.length >> 1];
+    const slice = ring
+      ? Array.from({ length: window }, (_, k) => values[(((i + k - half) % count) + count) % count])
+      : values.slice(Math.max(0, i - half), Math.min(count, i + half + 1));
+    const sorted = slice.slice().sort((a, b) => a - b);
+    return sorted[sorted.length >> 1];
   });
 }
 
@@ -207,10 +233,21 @@ export function measure(track, gapThreshold = DEFAULT_GAP_THRESHOLD_M) {
   // page showed none of them, next to a gap figure that showed its one. This
   // is the parameter that moves the number, so it is the one the tile prints.
   const sampleStep = Math.max(10, nativeSpacing);
-  const samples = resampleByDistance(points, cumulative, sampleStep);
 
-  const smoothed = samples.length
-    ? accumulate(median(samples), ASCENT_NOISE_THRESHOLD_M)
+  // A ring only for the purpose of the seam, and the test is strict on purpose:
+  // two ends within a couple of metres is a recording that really did close,
+  // not one that came near. A route that merely ends close to its start has
+  // ends, and wrapping ground nobody walked would invent a climb.
+  const ring =
+    points.length > 2 && haversine(points[0], points[points.length - 1]) <= RING_CLOSES_WITHIN_M;
+
+  const samples = resampleByDistance(points, cumulative, sampleStep, ring);
+
+  // The same filtered series the ascent is accumulated from, kept so the
+  // elevation range can be read off it too.
+  const profile = samples.length ? median(samples, MEDIAN_WINDOW, ring) : [];
+  const smoothed = profile.length
+    ? accumulate(profile, ASCENT_NOISE_THRESHOLD_M, ring)
     : { gain: 0, loss: 0 };
   const raw = elevations.length ? accumulate(elevations, 0) : { gain: 0, loss: 0 };
 
@@ -219,8 +256,27 @@ export function measure(track, gapThreshold = DEFAULT_GAP_THRESHOLD_M) {
     ascentM: smoothed.gain,
     descentM: smoothed.loss,
     rawAscentM: raw.gain,
-    elevationMinM: elevations.length ? Math.min(...elevations) : null,
-    elevationMaxM: elevations.length ? Math.max(...elevations) : null,
+    // THE RANGE IS READ OFF THE FILTERED PROFILE, and the raw one is handed
+    // back beside it.
+    //
+    // Ascent has had a median filter since the beginning and the range never
+    // did, so they sat in the same report with one defended and the other not,
+    // and nothing said which. Measured on a 500 point track with one bad
+    // reading in it, the kind a barometer produces going through a door:
+    //     ascent            447 -> 447 m    unmoved, the filter caught it
+    //     raw ascent        450 -> 1149 m   +155%
+    //     elevation ceiling 550 -> 1175 m   +114%
+    // and the ceiling sets the profile's own axis, so one reading squashed the
+    // whole drawing into the bottom of its box.
+    //
+    // The published range now describes the ground. `rawElevation` keeps what
+    // is literally in the file, so a reading this filter removed can still be
+    // seen rather than quietly disappearing, and the report says when the two
+    // disagree.
+    elevationMinM: profile.length ? Math.min(...profile) : elevations.length ? Math.min(...elevations) : null,
+    elevationMaxM: profile.length ? Math.max(...profile) : elevations.length ? Math.max(...elevations) : null,
+    rawElevationMinM: elevations.length ? Math.min(...elevations) : null,
+    rawElevationMaxM: elevations.length ? Math.max(...elevations) : null,
     pointCount: points.length,
     pointsWithElevation: elevations.length,
     meanSpacingM: nativeSpacing,

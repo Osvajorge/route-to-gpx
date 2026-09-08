@@ -2702,3 +2702,17 @@ html.dialog-open body {
     stroke-dasharray: none;
   }
 }
+
+/* A word beside a figure saying what that figure is.
+ *
+ * Three elevation figures sit in one table and only one of them is defended:
+ * ascent has a median filter, raw ascent is unfiltered by design, and the range
+ * used to be unfiltered by accident. Measured with one bad reading in 500
+ * points, raw ascent moved 155% and the ceiling 114% while ascent did not move
+ * at all. Rather than filtering the one whose job is to be unfiltered, each row
+ * now says which it is, at the weight of a unit suffix rather than a claim. */
+.measure-note {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}

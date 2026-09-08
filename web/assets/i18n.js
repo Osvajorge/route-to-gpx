@@ -323,6 +323,8 @@ const STRINGS = {
     // looked like it changed the ascent when it had only swapped the two.
     'measure.descent': 'Descent',
     'measure.rawAscent': 'Raw ascent',
+    'measure.rawAscent.note': 'no filter',
+    'measure.elevation.raw': 'file holds {min}-{max}',
     'measure.points': 'Points',
     'measure.spacing': 'Mean spacing',
     'measure.elevation': 'Elevation',
@@ -696,6 +698,8 @@ const STRINGS = {
     'measure.gap': 'Salto mayor',
     'measure.descent': 'Desnivel negativo',
     'measure.rawAscent': 'Desnivel crudo',
+    'measure.rawAscent.note': 'sin filtro',
+    'measure.elevation.raw': 'el archivo trae {min}-{max}',
     'measure.points': 'Puntos',
     'measure.spacing': 'Espaciado medio',
     'measure.elevation': 'Altitud',
