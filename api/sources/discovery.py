@@ -162,6 +162,11 @@ class Listing:
     # behind a short page: six of six hundred examined is a different sentence
     # from six of six, and the visitor deserves the difference.
     examined: Optional[int] = None
+    # Which sites are in this answer and which are missing, when more than one
+    # was asked. `None` when a single site answered, so the key stays out.
+    # The page needs it: a short list because one site is down reads exactly
+    # like a short list because a valley is empty, and they are not the same.
+    sources: Optional[List[Dict[str, Any]]] = None
 
     def as_dict(self) -> Dict[str, Any]:
         body: Dict[str, Any] = {
@@ -184,4 +189,6 @@ class Listing:
             body["setAside"] = dict(self.set_aside)
         if self.examined is not None:
             body["examined"] = self.examined
+        if self.sources is not None:
+            body["sources"] = self.sources
         return body

@@ -40,6 +40,7 @@ from .sources import (
     SourceError,
     komoot,
     komoot_discovery,
+    merged,
     wikiloc,
     wikiloc_discovery,
 )
@@ -70,10 +71,15 @@ ADAPTERS = {
 # a Komoot word in a Wikiloc request eventually. So the endpoints below choose in
 # the open, in two lines each.
 DISCOVERY = {
+    merged.SOURCE_ID: merged,
     komoot_discovery.SOURCE_ID: komoot_discovery,
     wikiloc_discovery.SOURCE_ID: wikiloc_discovery,
 }
-DEFAULT_SOURCE = komoot_discovery.SOURCE_ID
+# Both sites, because nobody looking for a route near a village cares which
+# website holds it. Asking one at a time is a filing system leaking into a
+# question. A visitor who wants one site can still choose it, and gets that
+# site's whole vocabulary rather than the shorter shared one.
+DEFAULT_SOURCE = merged.SOURCE_ID
 
 # Which HTTP status each failure is. One table, so the three endpoints cannot
 # drift apart in what a code means.
@@ -365,7 +371,15 @@ def search(body: SearchRequest, request: Request):
         # the other accepts the parameter and ignores it. A conversion still gets
         # the plain two: it asks for one route and knows where it lives.
         with http.request_budget(client, calls=http.FILTER_FAN_OUT):
-            if module is wikiloc_discovery:
+            if module is merged:
+                listing = merged.search(
+                    query=body.query,
+                    activity=body.sport,
+                    limit=body.limit,
+                    page=body.page,
+                    near=near,
+                )
+            elif module is wikiloc_discovery:
                 listing = wikiloc_discovery.search(
                     query=body.query,
                     activity=body.sport,
@@ -401,7 +415,16 @@ def nearby(body: NearbyRequest, request: Request):
     try:
         module = discovery_for(body.source)
         with http.request_budget(client, calls=http.FILTER_FAN_OUT):
-            if module is wikiloc_discovery:
+            if module is merged:
+                listing = merged.nearby(
+                    lat=body.lat,
+                    lng=body.lng,
+                    activity=body.sport,
+                    radius_m=body.radiusM,
+                    limit=body.limit,
+                    page=body.page,
+                )
+            elif module is wikiloc_discovery:
                 listing = wikiloc_discovery.nearby(
                     lat=body.lat,
                     lng=body.lng,

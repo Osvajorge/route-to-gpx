@@ -293,6 +293,7 @@ def search(
     activity: Optional[str] = None,
     limit: Optional[Any] = None,
     page: Optional[Any] = None,
+    windows: int = FILTER_WINDOWS,
 ) -> Listing:
     """Words in, links out. Two upstream calls, and never a third.
 
@@ -355,8 +356,9 @@ def nearby(
     radius_m: Optional[Any] = None,
     limit: Optional[Any] = None,
     page: Optional[Any] = None,
+    windows: int = FILTER_WINDOWS,
 ) -> Listing:
-    """A point in, links out. One upstream call, always.
+    """A point in, links out.
 
     The point is turned into a box because `find.do` takes two corners, and it
     is then used a second time to check each row against the circle the visitor
@@ -376,6 +378,7 @@ def nearby(
         circle=(latitude, longitude, radius),
         size=size,
         page=number,
+        windows=windows,
     )
 
     return Listing(
@@ -617,6 +620,7 @@ def _scan(
     circle: Optional[Tuple[float, float, int]],
     size: int,
     page: int,
+    windows: int = FILTER_WINDOWS,
 ) -> Tuple[List[Row], int, Dict[str, int], int, bool]:
     """Reads upstream windows until this page is full, or until it has looked
     far enough.
@@ -642,7 +646,7 @@ def _scan(
     examined = 0
     more = False
 
-    for window in range(FILTER_WINDOWS):
+    for window in range(max(1, min(windows, FILTER_WINDOWS))):
         payload = _answer(
             _find_url(southwest, northeast, window, SCAN_WINDOW), SOURCE_LABEL
         )

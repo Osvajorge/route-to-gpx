@@ -558,11 +558,15 @@ def test_the_sports_endpoint_spends_nothing(monkeypatch):
 
 def test_search_answers_rows_and_places(monkeypatch):
     _answers(monkeypatch, SEARCH_PAYLOAD)
-    response = client.post("/api/search", json={"query": "montseny", "limit": 1000})
+    response = client.post("/api/search", json={"source": "komoot", "query": "montseny", "limit": 1000})
     body = response.json()
 
     assert response.status_code == 200
     assert body["ok"] is True
+    # Both sites by default: nobody looking for a route near a village cares
+    # which website holds it.
+    # One source by name: this test describes the shape of Komoot's own
+    # answer, and asking both would interleave two copies of one stub.
     assert body["source"] == {"id": "komoot", "label": "Komoot"}
     assert body["query"] == {"query": "montseny", "sport": "all", "limit": 25, "page": 0}
     assert len(body["results"]) == 2

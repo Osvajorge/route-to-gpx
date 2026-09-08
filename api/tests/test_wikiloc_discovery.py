@@ -992,8 +992,13 @@ def test_the_endpoints_answer_wikiloc_when_asked_and_komoot_when_not(monkeypatch
     assert len(asked.urls) == 3  # one nearby, then the search's two
 
     # A Wikiloc word sent to Komoot is still refused, which is what keeps the
-    # two dropdowns from being quietly interchangeable.
-    response = client.post("/api/search", json={"query": "montserrat", "sport": "hiking"})
+    # two dropdowns from being quietly interchangeable. The source has to be
+    # named now: with both sites selected, either site's word is accepted for
+    # the activity it names, because refusing one of them would be pedantry.
+    response = client.post(
+        "/api/search",
+        json={"source": "komoot", "query": "montserrat", "sport": "hiking"},
+    )
     assert response.status_code == 400
     assert response.json()["error"] == "sport"
 
