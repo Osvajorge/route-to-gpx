@@ -2084,6 +2084,9 @@ function renderTabs() {
     button.tabIndex = selected ? 0 : -1;
     document.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
   }
+  // One box holds all three tabs, so leaving a results tab has to narrow it
+  // again: the link field is written for a reading width, not for 1520px.
+  widenForResults();
 }
 
 function renderSearchForm() {
@@ -2304,7 +2307,7 @@ function renderResults(mode) {
     // stay articles rather than list items: each one is a self-contained thing
     // with a name, which is what an article is.
     parts.push(
-      `<div class="results results-wide" role="group" aria-label="${escapeText(
+      `<div class="results" role="group" aria-label="${escapeText(
         t('finder.list', { source }),
       )}">${shown.rows.map((row, index) => cardMarkup(row, index, mode)).join('')}</div>`,
     );
@@ -2351,6 +2354,26 @@ function renderResults(mode) {
   out.innerHTML = parts.join('');
   out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
   watchShapes(out, shown?.rows ?? []);
+  widenForResults();
+}
+
+
+/** The panel widens while it holds a grid of results, and only then.
+ *
+ *  The first attempt widened the grid alone, which left the panel's background
+ *  behind it: a 844px box with 1476px of cards standing outside it. Moving the
+ *  width onto the box takes the background, the border and the padding with it.
+ *
+ *  Read from the DOM rather than from state because one box holds all three
+ *  tabs: what matters is whether a grid is visible right now, not which tab
+ *  believes it has results. */
+function widenForResults() {
+  const card = document.querySelector('.step .card');
+  if (!card) return;
+  const grid = [...card.querySelectorAll('.results')].some(
+    (node) => !node.closest('[hidden]'),
+  );
+  card.classList.toggle('is-wide', grid);
 }
 
 

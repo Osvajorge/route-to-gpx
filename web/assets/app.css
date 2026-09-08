@@ -140,12 +140,16 @@ button {
 /* ------------------------------------------------------------------ shell */
 
 .shell {
+  /* Published so `.card.is-wide` can subtract exactly what the shell adds,
+   * rather than the two guessing at each other. */
+  --shell-pad: 18px;
+
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
   max-width: 880px;
   margin: 0 auto;
-  padding: 20px 18px 16px;
+  padding: 20px var(--shell-pad) 16px;
 }
 
 .masthead {
@@ -665,20 +669,23 @@ h1 {
   padding-top: 14px;
 }
 
-/* The results leave the reading width, and only the results.
+/* THE BOX WIDENS, NOT THE GRID INSIDE IT.
  *
- * .shell caps everything at 880px, which is a line length: right for the
- * report, the link field and every paragraph on the page, and wrong for a grid.
- * With the cap on, `minmax(300px, 1fr)` resolved to exactly two columns of
- * 434px however wide the screen was, so a laptop showed two columns and a wall
- * of margin either side.
+ * The first attempt pulled `.results` out of the reading width with a negative
+ * margin and left its background behind: the dark panel stayed 844px while the
+ * cards ran to 1476, sticking out 316px each side. The owner saw the box
+ * sitting there underneath and said so.
  *
- * The negative margin is bounded by the viewport rather than open-ended: at
- * 1512 it gives four columns, at 1920 five, and it can never push the grid
- * wider than the window it is in. Everything else on the page keeps the 880. */
-.results-wide {
-  width: min(1520px, calc(100vw - 36px));
-  margin-inline: calc((min(1520px, 100vw - 36px) - 100%) / -2);
+ * Widening the panel instead takes its background, border and padding along,
+ * so there is one box and the cards are inside it. `.is-wide` is set on the
+ * panel only while a results grid is on screen, so the link field and every
+ * paragraph keep the 880px line length they are written for.
+ *
+ * Bounded by the viewport rather than open-ended: 1280 gives three columns,
+ * 1512 four, and beyond 1520 it stops rather than growing without end. */
+.card.is-wide {
+  width: min(1520px, calc(100vw - 2 * var(--shell-pad)));
+  margin-inline: calc((min(1520px, 100vw - 2 * var(--shell-pad)) - 100%) / -2);
 }
 
 /* An inset well, not a raised card: darker than the surface it sits on, ringed
@@ -2327,6 +2334,18 @@ html.dialog-open body {
 /* ----------------------------------------------------------------- mobile */
 
 @media (max-width: 640px) {
+  /* Side margin was eating a quarter of a phone: 32px of card padding inside
+   * 18px of shell padding is 100px of a 375px screen spent on air, and the
+   * route titles are what paid for it. */
+  .shell {
+    --shell-pad: 12px;
+    padding-top: 14px;
+  }
+
+  .card {
+    padding: 16px 14px;
+  }
+
   .shell {
     padding: 18px 16px 16px;
   }
