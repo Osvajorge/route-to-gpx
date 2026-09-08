@@ -787,8 +787,43 @@ h1 {
 
 .chart-map,
 .card-map {
-  filter: grayscale(1) brightness(0.38) contrast(0.92);
-  opacity: 0.45;
+  /* Damped twice over, which is why it read as almost nothing. Measured on a
+   * real card: raw tiles average 187 of 255, and brightness 0.38 under opacity
+   * 0.45 composited to 50 against a card ground of 32. Eighteen points of
+   * separation is not ground, it is a suggestion of ground.
+   *
+   * 0.62 under 0.70 composites to 91, which is 59 above the card and still far
+   * under the 213 of the cyan line, so the route keeps winning by more than
+   * two to one and the terrain, the contours and the village names underneath
+   * are actually legible. Checked by eye at card size, not only by arithmetic.
+   *
+   * Ground, still, and not a subject: everything a reader is meant to read on
+   * this picture is the line on top of it. */
+  filter: grayscale(1) brightness(0.62) contrast(0.92);
+  opacity: 0.7;
+
+  /* It arrives about a second after the card, because it waits for a whole
+   * frame of tiles rather than showing a part-covered map: on this page a hole
+   * in the ground is what "the recording is missing here" looks like, so a
+   * half-drawn basemap would say something false.
+   *
+   * Waiting is right and appearing all at once is not: the map used to snap in
+   * and pull the eye back to a card the reader had already read. It fades in
+   * instead, over the same 240ms the rest of the page uses. */
+  animation: basemap-arrives 240ms var(--ease) both;
+}
+
+@keyframes basemap-arrives {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-map,
+  .card-map {
+    animation: none;
+  }
 }
 
 .card-trace {

@@ -142,6 +142,31 @@ test('the card map and the chart map are damped by one rule, not two', () => {
   assert.doesNotMatch(declarations('.chart-map'), /filter:/);
 });
 
+test('the damped map stays visible against the card it sits on', () => {
+  // The structure test above passed while the map was effectively invisible,
+  // which is the gap this closes. Damping is two multipliers and it is easy to
+  // tighten one without noticing the other: brightness 0.38 under opacity 0.45
+  // composited raw tiles averaging 187 down to 50, against a card ground of 32.
+  // Eighteen points is not ground.
+  //
+  // Bounded at both ends on purpose. Too dark and the map may as well not be
+  // fetched, which would mean asking OpenStreetMap for tiles nobody can see.
+  // Too bright and it stops being ground and starts competing with the line,
+  // which is the only thing on the picture a reader is meant to read.
+  const shared = block('.chart-map,\n.card-map');
+  const brightness = Number(shared.match(/brightness\(([\d.]+)\)/)?.[1]);
+  const opacity = Number(shared.match(/opacity:\s*([\d.]+)/)?.[1]);
+  assert.ok(Number.isFinite(brightness) && Number.isFinite(opacity), shared);
+
+  const TILE = 187;   // measured on real OpenStreetMap tiles
+  const GROUND = 32;  // the card surface underneath
+  const LINE = 213;   // the cyan the route is drawn in
+  const shown = TILE * brightness * opacity + GROUND * (1 - opacity);
+
+  assert.ok(shown - GROUND > 35, `map only ${(shown - GROUND).toFixed(0)} above the card`);
+  assert.ok(LINE / shown > 1.8, `line only ${(LINE / shown).toFixed(1)}x the map`);
+});
+
 test('the card map sits under the line and takes no presses', () => {
   // Ground, and nothing more. It must never sit over the cyan line it exists to
   // sit under, and it must never eat a press meant for the card.
