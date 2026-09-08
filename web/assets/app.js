@@ -2399,7 +2399,17 @@ function shapeAskable(row) {
 // past it a third time.
 const shapesTried = new Set();
 
-let shapeWatcher = null;
+// One watcher per panel, not one shared between them.
+//
+// A single watcher was a real bug and a quiet one: renderResults runs for
+// search and then for nearby, every time, and watchShapes began by
+// disconnecting whatever it found. So the nearby pass, usually with nothing to
+// observe, destroyed the observer the search pass had just built and returned
+// without making another. The slots sat on screen with their URLs and nobody
+// watching them, and no shape was ever asked for. Nothing threw, nothing
+// logged, and the cards looked exactly like cards for a source that has no
+// geometry, which is the shape the bug was hiding in.
+const shapeWatchers = new Map();
 
 /** Ask for a card's shape when the reader reaches that card, and never before.
  *
@@ -2412,11 +2422,13 @@ let shapeWatcher = null;
  *  Rebuilt on each render because the cards are, and the old one is disconnected
  *  rather than left watching nodes that no longer exist. */
 function watchShapes(container, rows) {
-  shapeWatcher?.disconnect();
+  shapeWatchers.get(container)?.disconnect();
+  shapeWatchers.delete(container);
+
   const slots = container.querySelectorAll('[data-shape-url]');
   if (!slots.length || typeof IntersectionObserver !== 'function') return;
 
-  shapeWatcher = new IntersectionObserver((entries, observer) => {
+  const watcher = new IntersectionObserver((entries, observer) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
       const slot = entry.target;
@@ -2430,7 +2442,8 @@ function watchShapes(container, rows) {
     rootMargin: '120px 0px',
   });
 
-  for (const slot of slots) shapeWatcher.observe(slot);
+  shapeWatchers.set(container, watcher);
+  for (const slot of slots) watcher.observe(slot);
 }
 
 async function askForShape(slot, rows) {
@@ -2475,6 +2488,10 @@ async function askForShape(slot, rows) {
   const source = row?.publishedBy || sourceLabel(finder.sourceId);
   slot.innerHTML = shapeSvg(drawing, t('card.shapeAlt', { source }));
   slot.classList.remove('is-waiting');
+  // A filled slot must stop advertising that it needs filling, or the next
+  // render observes it again and it is only `shapesTried` standing between the
+  // page and a second fetch of a shape it already has.
+  delete slot.dataset.shapeUrl;
 }
 
 /** What the service read to produce this page, in its own numbers.
