@@ -531,5 +531,38 @@ app.include_router(api)
 # Point WEB_ROOT somewhere else, or leave the folder out, to run the service on
 # its own behind a separate static host.
 WEB_ROOT = Path(os.environ.get("WEB_ROOT", Path(__file__).resolve().parent.parent / "web"))
+
+
+class RevalidatedFiles(StaticFiles):
+    """Static files a browser must ask about before reusing.
+
+    The mount sent an ETag and a Last-Modified and no Cache-Control at all,
+    which does not mean "do not cache": with no freshness given, a browser
+    invents one from the age of the file. So it holds a module and serves it
+    back without asking, and a page ends up running yesterday's JavaScript
+    against today's API.
+
+    Found the slow way, twice: an edit to app.css and later one to app.js were
+    both live on the server, correct on disk, and invisible in the browser,
+    which reads as a code bug for as long as it takes to check the network
+    panel. A visitor gets the same thing after a deploy, without the network
+    panel and without knowing to look.
+
+    `no-cache` is revalidate, not refuse. The ETag above still answers 304 for
+    a file that has not changed, so nothing is re-downloaded needlessly; the
+    browser simply never decides on its own that stale is good enough. There is
+    no build step here and no hashed filenames to make staleness impossible, so
+    asking is the honest way to be current.
+    """
+
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        return super().is_not_modified(response_headers, request_headers)
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
 if WEB_ROOT.is_dir():
-    app.mount("/", StaticFiles(directory=WEB_ROOT, html=True), name="web")
+    app.mount("/", RevalidatedFiles(directory=WEB_ROOT, html=True), name="web")
