@@ -126,16 +126,29 @@ export function projectTrace(points) {
 
 // ---------------------------------------------------------------- tile layer
 
-/** Everything a basemap under the trace needs: which zoom, which tiles, where
+/** Everything a basemap under a drawing needs: which zoom, which tiles, where
  *  each one lands, and where a coordinate falls on screen.
  *
- *  `frame` comes from traceFrame, so the tiles inherit the drawing's own fit
- *  and cannot drift from it. `view` is the chart canvas in CSS pixels. Nothing
- *  is fetched and no URL is built: the caller owns the tile source. */
+ *  `frame` comes from fitFrame, so the tiles inherit the drawing's own fit and
+ *  cannot drift from it. `view` is the canvas in CSS pixels, and `view.box` is
+ *  the drawing's box in frame units: the report passes nothing and gets its own
+ *  1000x600, a card passes 320x180. `view.maxTiles` is the caller's ceiling on
+ *  how much it is willing to ask the tile server for, which a card sets far
+ *  lower than the report because nine of them are on screen at once.
+ *
+ *  Nothing is fetched and no URL is built: the caller owns the tile source. */
 export function tileLayer(frame, view) {
+  // The drawing's own box, in the units the frame was fitted in. It defaults to
+  // the report chart because that is the only caller that existed first; a card
+  // fits its shape into a 320x180 box and passes that, so the same arithmetic
+  // serves both. Reading it from the caller rather than assuming 1000x600 is
+  // what stops a card's tiles from being cut to a 5:3 rectangle its drawing
+  // does not occupy, which would slide the ground off the line at every size.
+  const boxW = view.box?.width ?? TRACE_W;
+  const boxH = view.box?.height ?? TRACE_H;
   // The SVG keeps its aspect ratio, so it is letterboxed inside the canvas and
   // the map covers that same rectangle, not the whole box.
-  const cssPerUnit = Math.min(view.width / TRACE_W, view.height / TRACE_H);
+  const cssPerUnit = Math.min(view.width / boxW, view.height / boxH);
   // Above 2 the extra pixels cost four times the data for a difference nobody
   // sees on a chart this small, on the connection most likely to be a phone in
   // a car park.
@@ -143,13 +156,13 @@ export function tileLayer(frame, view) {
   const maxZoom = view.maxZoom ?? 19;
   const maxTiles = view.maxTiles ?? MAX_TILES;
 
-  // Where the track's own 1000x600 box lands once the SVG is letterboxed. The
+  // Where the drawing's own box lands once the SVG is letterboxed. The
   // map is NOT cut to it: the ground carries on past the route in life, and a
   // lighter rectangle inset in a darker card reads as a picture pasted into the
   // chart rather than as the ground the chart sits on. So the plate is the
   // whole box, and the extra is real map either side.
-  const traceW = TRACE_W * cssPerUnit;
-  const traceH = TRACE_H * cssPerUnit;
+  const traceW = boxW * cssPerUnit;
+  const traceH = boxH * cssPerUnit;
   const traceLeft = (view.width - traceW) / 2;
   const traceTop = (view.height - traceH) / 2;
   // The overspill, back in trace units, so the tile maths can stay in them.
@@ -169,8 +182,8 @@ export function tileLayer(frame, view) {
     // and the track still lands where it landed. Only more ground is shown.
     const px0 = frame.worldX0 * worldPx - spillU * perUnit;
     const py0 = frame.worldY0 * worldPx - spillV * perUnit;
-    const px1 = px0 + (TRACE_W + 2 * spillU) * perUnit;
-    const py1 = py0 + (TRACE_H + 2 * spillV) * perUnit;
+    const px1 = px0 + (boxW + 2 * spillU) * perUnit;
+    const py1 = py0 + (boxH + 2 * spillV) * perUnit;
 
     const columns = 2 ** z;
     const txMin = Math.floor(px0 / TILE_SIZE);

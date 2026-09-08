@@ -13,7 +13,7 @@
   --surface-line: #222b34;
   --line-soft: #1b2129;
   --grid: #1b2530;
-  /* Every boundary and rule the page draws, and nothing else. Thirteen uses,
+  /* Every boundary and rule the page draws, and nothing else. Fourteen uses,
    * of which eight are a component edge, so the whole token is held to the 3:1
    * WCAG 2.2 asks of one: 3.26:1 on --bg and 3.01:1 on --surface, where the
    * phone's own field fill matches the card behind it and this line is the
@@ -642,9 +642,8 @@ h1 {
 
 /* ------------------------------------------------------------------ cards */
 
-/* Two to a screen on a laptop, one on a phone, and never three: three would
- * squeeze the 2x2 grid of figures into a column and the card would stop being
- * scannable, which is the only thing it is for.
+/* Up to four to a screen, one on a phone, and the exact number worked out from
+ * how many cards there are as well as how wide the screen is.
  *
  * EACH CARD IS AS TALL AS WHAT IS IN IT. A grid stretches its items to the
  * tallest in the row by default, and a Komoot card carries a drawing of the
@@ -659,14 +658,29 @@ h1 {
  * the truth about it. Nothing changes on a phone: one column has no row to
  * stretch to. */
 .results {
+  /* How many columns, set by the page from the width AND the number of cards.
+   * See columnCount() in cards.js for the rule and for what it fixes.
+   *
+   * `auto-fit` used to decide this on its own, and it can only ever ask how
+   * many columns the width holds. At 1512 the answer was four, so nine cards
+   * came out four, four and one: a card alone on the last row. The same rule
+   * gave one result a single 1410px track and two results a 699px track each.
+   * A count that the page works out answers both. */
+  --card-columns: 1;
+
   display: grid;
-  /* 340px keeps a two-line route title readable and the four figures in two
-   * columns; below about 300 the title runs to four lines and the figures
-   * stack. auto-fit rather than auto-fill so a lone card on a wide screen
-   * grows instead of sitting in a 340px sliver beside empty tracks. */
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(var(--card-columns), minmax(0, 1fr));
   gap: 12px;
   padding-top: 14px;
+
+  /* A ceiling on how wide one card may grow, not on how many there are. 340px
+   * is where a card stops being readable going down; 460px is where it stops
+   * being a card going up, because past that the drawing is half a screen tall
+   * and the two lines of text under it look like a caption that lost its
+   * article. Centred, so a short answer sits under the field that asked for it
+   * rather than hugging one edge of a panel it does not fill. */
+  max-width: calc(var(--card-columns) * 460px + (var(--card-columns) - 1) * 12px);
+  margin-inline: auto;
 }
 
 /* THE BOX WIDENS, NOT THE GRID INSIDE IT.
@@ -749,10 +763,69 @@ h1 {
   background: var(--chart-area);
 }
 
+/* THE GROUND UNDER THE LINE, and it is the report chart's ground: same
+ * OpenStreetMap tiles, cut by the same charts.js arithmetic to the same fit,
+ * damped by the same three filters. Written as one rule with .chart-map so the
+ * two can never be tuned apart. A card is a promise about what the report will
+ * show, and a card whose map looked different from the report's map would be
+ * breaking that promise in the one place a reader would notice.
+ *
+ * Sunk this far because it is ground and not a subject. Everything the reader
+ * is meant to read on this picture is the cyan line on top of it.
+ *
+ * It stays hidden until a whole frame of tiles has arrived. A part-covered card
+ * would show holes in the ground, and on this page a hole is what "the
+ * recording is missing here" looks like. */
+.card-map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.chart-map,
+.card-map {
+  filter: grayscale(1) brightness(0.38) contrast(0.92);
+  opacity: 0.45;
+}
+
 .card-trace {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* One credit for every map in the grid, under the grid, rather than nine
+ * credits in nine corners.
+ *
+ * The licence asks for attribution that a reader can actually see, and nine
+ * 9px credits stacked in nine card corners is the form of attribution that is
+ * technically present and practically invisible, on top of putting the same
+ * link into the tab order nine times. One line, full size, directly under the
+ * cards it belongs to, is both more visible and more honest. It appears only
+ * once ground has actually been painted: crediting a map that did not load
+ * would be a false statement about where the picture came from. */
+.results-credit {
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.results-credit a {
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--field-border);
+}
+
+.results-credit a:hover {
+  color: var(--accent);
 }
 
 /* A soft second stroke under the line, so a route that doubles back on itself
@@ -1578,8 +1651,6 @@ h1 {
 .chart-map {
   position: absolute;
   z-index: 0;
-  filter: grayscale(1) brightness(0.38) contrast(0.92);
-  opacity: 0.45;
   pointer-events: none;
 }
 

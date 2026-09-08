@@ -1,9 +1,12 @@
 import {
   activityWord,
   cardFigures,
+  CARD_TRACE_H,
+  CARD_TRACE_W,
   cardTrace,
+  columnCount,
+  shapeFilled,
   shapeSlot,
-  shapeSvg,
   durationParts,
   sourceOwnWord,
   wording,
@@ -1098,6 +1101,10 @@ function toggleBasemap() {
     if (surface.toggle) surface.toggle.textContent = basemapOn ? t('map.hide') : t('map.show');
     paintBasemap(surface);
   }
+  // The choice was always meant to be the page's, not one chart's. Now that
+  // the cards have ground too, a reader who switched the map off and still saw
+  // nine maps in the list would be right to call the switch broken.
+  repaintCardGround();
 }
 
 /** Turns the ground back on, for a visitor who asked for the map by name.
@@ -1110,6 +1117,193 @@ function wantBasemap() {
   if (basemapOn) return;
   basemapOn = true;
   rememberBasemapChoice(true);
+  // The cards behind the dialog share this choice, so they are brought back
+  // with it. Without this a reader who pressed the map button would close the
+  // dialog onto a list of bare outlines, having just asked for the opposite.
+  repaintCardGround();
+}
+
+// ------------------------------------------------- the ground under a card
+//
+// The same ground, from the same place, cut by the same arithmetic. Nothing
+// here is a second tile engine: charts.js `tileLayer` works out the tiles, the
+// card passes its own 320x180 box instead of the report's 1000x600, and
+// `loadTile` above is the one thing that ever touches the network. So a card
+// and the report it leads to cannot disagree about where the ground is, which
+// they would within a week if this were written twice.
+//
+// WHAT IT COSTS, measured before it was written rather than after.
+//
+//   one report view at 1512      20 to 40 tiles, depending on how far the
+//                                route spreads
+//   one card, uncapped           4 to 12 tiles
+//   nine cards, uncapped         66 tiles, about twice a report view
+//
+// Twice a report view, for a page a visitor may reload several times while
+// trying search terms, is more than this page has any business asking of a
+// service funded by donations. The OpenStreetMap tile usage policy covers
+// ordinary browsing and names heavy use as the thing to avoid, and this
+// project quotes that policy in its own README. So two things bound it:
+//
+//   the cap below           six tiles a card, so nine cards can never exceed
+//                           54 and in practice ask for far fewer
+//   the observer            a card asks only once the reader has reached it,
+//                           so a nine card page that is never scrolled costs
+//                           one row of cards, not nine
+//
+// Six is a floor as well as a ceiling. Below six the coarser zoom stretches a
+// tile past MAX_TILE_STRETCH on a short route, and the card ends up with no
+// ground at all, which is the outcome the cap was meant to avoid.
+const CARD_MAX_TILES = 6;
+
+// Bumped whenever the lists are rebuilt or the choice changes, so tiles still
+// in the air when a new search lands are dropped instead of painted onto a
+// card that is now showing a different route.
+let cardGroundEra = 0;
+
+// And the newest request per card, because the era alone is not enough.
+//
+// A SINGLE COUNTER WAS A REAL BUG, seen the first time three cards drew at
+// once: every card bumped the shared number as it started, so card one's
+// request was already stale by the time card two began, and only the last card
+// on the page ever painted. The two questions are different. The era asks
+// whether this page is still the page that asked; this asks whether the card is
+// still waiting for this particular answer. Both have to be yes.
+const cardGroundWanted = new WeakMap();
+let cardGroundSeq = 0;
+
+// Which rows belong to which results container, so a repaint after a resize or
+// a toggle can find a card's geometry again without re-rendering the list.
+const cardGrids = new Map();
+
+/** Ground under one card's line, or nothing at all.
+ *
+ *  Every rule the report's basemap follows applies here unchanged, for the same
+ *  reasons: the reader's own on/off choice is honoured, a service that has told
+ *  us to stop is not asked again, a tile blown up past legibility is worse than
+ *  no tile, and a frame goes on whole or not at all.
+ *
+ *  IT IS STILL NOT A MEASUREMENT. Real ground under a line decimated to half a
+ *  pixel is the one combination that could make a card look surveyed, so the
+ *  map carries no scale bar, no grid, no distance and no number, exactly as the
+ *  outline did on its own. Converting the route stays the only way to get a
+ *  figure out of this page. */
+async function paintCardGround(slot, drawing, row) {
+  const canvas = slot?.querySelector('.card-map');
+  if (!canvas || !drawing) return;
+
+  if (!basemapOn || basemapBlocked) {
+    canvas.hidden = true;
+    return;
+  }
+
+  const rect = slot.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return;
+
+  const layer = tileLayer(drawing.frame, {
+    width: rect.width,
+    height: rect.height,
+    devicePixelRatio: window.devicePixelRatio,
+    maxZoom: BASEMAP.maxZoom,
+    // The card's own box, so the tiles are cut to the 16:9 the drawing was
+    // fitted into rather than to the report's 5:3.
+    box: { width: CARD_TRACE_W, height: CARD_TRACE_H },
+    maxTiles: CARD_MAX_TILES,
+  });
+
+  if (layer.tileShrink > MAX_TILE_STRETCH) return;
+
+  const era = cardGroundEra;
+  const wanted = ++cardGroundSeq;
+  cardGroundWanted.set(slot, wanted);
+
+  const images = await Promise.all(layer.tiles.map((tile) => loadTile(tileUrl(tile))));
+  if (era !== cardGroundEra || cardGroundWanted.get(slot) !== wanted) return;
+  if (!slot.isConnected) return;
+  // A frame goes on whole or not at all, the same rule the report follows: a
+  // part-covered card would show holes in the ground, and on this page a hole
+  // is what "the recording is missing here" looks like.
+  if (!basemapOn || basemapBlocked || images.some((image) => image === null)) return;
+
+  const compose = canvas.getContext('2d');
+  // A browser out of canvas memory hands back null. Nothing to draw on is the
+  // same outcome as nothing to draw: the line on its own, as before.
+  if (!compose) return;
+  canvas.width = layer.backing.width;
+  canvas.height = layer.backing.height;
+  layer.tiles.forEach((tile, index) => {
+    // Tile rectangles are already in device pixels, so the context is not
+    // scaled again.
+    compose.drawImage(images[index], tile.left, tile.top, tile.width, tile.height);
+  });
+  canvas.hidden = false;
+
+  // The name of the picture changes the moment the picture does. Until the
+  // tiles land it is this page's line and nothing else; now there is ground
+  // under it that belongs to somebody, so the name says so. Announcing a map
+  // that never arrived would be the same lie as crediting one.
+  const source = row?.publishedBy || sourceLabel(finder.sourceId);
+  slot.querySelector('.card-trace')?.setAttribute(
+    'aria-label',
+    t('card.shapeAltMap', { source }),
+  );
+  showResultsCredit(slot);
+}
+
+/** The one credit for every map in one grid, revealed the first time ground
+ *  actually lands. Hidden until then, because attribution for a map that did
+ *  not load is a statement about a picture that is not on the screen. */
+function showResultsCredit(slot) {
+  const credit = slot.closest('.results')?.nextElementSibling;
+  if (credit?.classList.contains('results-credit')) credit.hidden = false;
+}
+
+/** Ground for every card a reader can see right now.
+ *
+ *  Called when the choice changes and after the window has stopped moving, and
+ *  never on a card that is off screen: the whole point of the observer is that
+ *  a page nobody scrolled costs one row of tiles, and a repaint that walked
+ *  every card would hand that saving straight back. */
+function repaintCardGround() {
+  cardGroundEra++;
+  for (const [container, rows] of cardGrids) {
+    if (!container.isConnected) {
+      cardGrids.delete(container);
+      continue;
+    }
+    for (const slot of container.querySelectorAll('.card-shape')) {
+      const canvas = slot.querySelector('.card-map');
+      if (!canvas) continue;
+      if (!basemapOn || basemapBlocked) {
+        canvas.hidden = true;
+        continue;
+      }
+      if (!onScreen(slot) || !inViewport(slot)) continue;
+      const drawing = drawingForSlot(slot, rows);
+      if (drawing) paintCardGround(slot, drawing.drawing, drawing.row);
+    }
+  }
+  if (!basemapOn || basemapBlocked) {
+    for (const credit of document.querySelectorAll('.results-credit')) credit.hidden = true;
+  }
+}
+
+/** A card's row and its drawing, worked out again from the row rather than
+ *  stashed on the element. The trace is a couple of hundred points, so redoing
+ *  it costs nothing, and it is the only way the fit under the line is certain
+ *  to be the fit the line was drawn with. */
+function drawingForSlot(slot, rows) {
+  const index = Number(slot.closest('.route-card')?.dataset.index);
+  const row = Number.isInteger(index) ? rows[index] : null;
+  if (!row) return null;
+  const drawing = cardTrace(row, { fit: fitFrame, project: projectInFrame });
+  return drawing ? { drawing, row } : null;
+}
+
+/** Whether an element is inside the window, not merely in the document. */
+function inViewport(node) {
+  const rect = node.getBoundingClientRect();
+  return rect.bottom > 0 && rect.top < window.innerHeight;
 }
 
 function readingAt(distanceM) {
@@ -2086,7 +2280,7 @@ function renderTabs() {
   }
   // One box holds all three tabs, so leaving a results tab has to narrow it
   // again: the link field is written for a reading width, not for 1520px.
-  widenForResults();
+  layoutResults();
 }
 
 function renderSearchForm() {
@@ -2311,6 +2505,10 @@ function renderResults(mode) {
         t('finder.list', { source }),
       )}">${shown.rows.map((row, index) => cardMarkup(row, index, mode)).join('')}</div>`,
     );
+    // One credit for the whole grid, hidden until ground has actually landed
+    // on a card. See .results-credit for why it is here and not nine times in
+    // nine corners.
+    parts.push(`<p class="results-credit" hidden>${t('map.cardCredit')}</p>`);
 
     const count =
       shown.totalKnown === null
@@ -2354,26 +2552,65 @@ function renderResults(mode) {
   out.innerHTML = parts.join('');
   out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
   watchShapes(out, shown?.rows ?? []);
-  widenForResults();
+  layoutResults();
 }
 
 
-/** The panel widens while it holds a grid of results, and only then.
+/** How many columns each visible grid gets, and whether the panel widens at all.
+ *
+ *  THE PANEL WIDENS FOR A GRID THAT NEEDS THE ROOM, and only then.
  *
  *  The first attempt widened the grid alone, which left the panel's background
  *  behind it: a 844px box with 1476px of cards standing outside it. Moving the
  *  width onto the box takes the background, the border and the padding with it.
  *
+ *  It then widened for any grid at all, which is how one result came to be a
+ *  single card 1410px across. Two columns fit inside the 880px the page is
+ *  written for, so the panel now widens only when a grid wants three or more.
+ *  That is measured rather than guessed: the panel is widened, the grid asked
+ *  how many columns it wants at that width, and the widening taken back if the
+ *  answer is two or fewer. Two passes over one element, once per render.
+ *
  *  Read from the DOM rather than from state because one box holds all three
- *  tabs: what matters is whether a grid is visible right now, not which tab
+ *  tabs: what matters is which grid is visible right now, not which tab
  *  believes it has results. */
-function widenForResults() {
+function layoutResults() {
   const card = document.querySelector('.step .card');
   if (!card) return;
-  const grid = [...card.querySelectorAll('.results')].some(
+  const grids = [...card.querySelectorAll('.results')].filter(
     (node) => !node.closest('[hidden]'),
   );
-  card.classList.toggle('is-wide', grid);
+  card.classList.toggle('is-wide', grids.length > 0);
+
+  let widest = 1;
+  for (const grid of grids) widest = Math.max(widest, columnsFor(grid));
+  if (widest < 3) {
+    card.classList.remove('is-wide');
+    for (const grid of grids) columnsFor(grid);
+  }
+}
+
+/** One grid's column count, worked out from the space it has and the cards it
+ *  holds, and written onto the element for the stylesheet to use.
+ *
+ *  Measured on the container and not on the grid. The grid caps its own width
+ *  at what its current column count allows, so asking the grid how wide it is
+ *  asks it how wide it decided to be a moment ago: with the starting value of
+ *  one column it answered 460px on a 1410px panel, so a three column page came
+ *  out as one card and the panel never widened. The container is the space that
+ *  is actually on offer, which is the question being asked. */
+function columnsFor(grid) {
+  const room = grid.parentElement;
+  const style = room ? getComputedStyle(room) : null;
+  const available = room
+    ? room.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+    : grid.clientWidth;
+  const columns = columnCount({
+    available,
+    count: grid.querySelectorAll('.route-card').length,
+  });
+  grid.style.setProperty('--card-columns', String(columns));
+  return columns;
 }
 
 
@@ -2424,16 +2661,34 @@ const shapeWatchers = new Map();
 function watchShapes(container, rows) {
   shapeWatchers.get(container)?.disconnect();
   shapeWatchers.delete(container);
+  cardGrids.set(container, rows);
 
-  const slots = container.querySelectorAll('[data-shape-url]');
-  if (!slots.length || typeof IntersectionObserver !== 'function') return;
+  // Every shape slot now, not only the ones still missing a shape. A card that
+  // already has its line still has ground to fetch, and the answer to "when"
+  // is the same answer for both: when the reader has reached the card. Nine
+  // cards' worth of tiles for a reader who stopped at the third row is the
+  // crawl this observer exists to prevent, whichever of the two is being
+  // fetched.
+  const slots = container.querySelectorAll('.card-shape');
+  if (!slots.length || typeof IntersectionObserver !== 'function') {
+    // No observer in this browser means no lazy anything. The shapes stay
+    // unfetched, as before, and the ground is painted for what is on screen
+    // now, which is the same bargain made a different way.
+    if (slots.length) repaintCardGround();
+    return;
+  }
 
   const watcher = new IntersectionObserver((entries, observer) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
       const slot = entry.target;
       observer.unobserve(slot);
-      askForShape(slot, rows);
+      if (slot.dataset.shapeUrl) {
+        askForShape(slot, rows);
+        continue;
+      }
+      const found = drawingForSlot(slot, rows);
+      if (found) paintCardGround(slot, found.drawing, found.row);
     }
   }, {
     // A little before the card arrives, so the drawing is there by the time the
@@ -2486,8 +2741,10 @@ async function askForShape(slot, rows) {
     return;
   }
   const source = row?.publishedBy || sourceLabel(finder.sourceId);
-  slot.innerHTML = shapeSvg(drawing, t('card.shapeAlt', { source }));
+  slot.innerHTML = shapeFilled(drawing, t('card.shapeAlt', { source }));
   slot.classList.remove('is-waiting');
+  // The reader is already looking at this card, so its ground is wanted now.
+  paintCardGround(slot, drawing, row);
   // A filled slot must stop advertising that it needs filling, or the next
   // render observes it again and it is only `shapesTried` standing between the
   // page and a second fetch of a shape it already has.
@@ -3171,7 +3428,17 @@ function wire() {
   let redrawTimer = 0;
   window.addEventListener('resize', () => {
     const live = liveTraceSurfaces();
-    if (live.length === 0) return;
+    // The lists are on screen precisely when no chart is, so the column count
+    // and the cards' ground have to be settled before the early return that
+    // exists for the charts.
+    if (live.length === 0) {
+      clearTimeout(redrawTimer);
+      redrawTimer = setTimeout(() => {
+        layoutResults();
+        repaintCardGround();
+      }, 180);
+      return;
+    }
     // The label is anchored to a point on the drawing, so it moves with it,
     // immediately. The map is a full repaint of a canvas, so it waits until the
     // window has stopped moving.
@@ -3179,6 +3446,11 @@ function wire() {
     clearTimeout(redrawTimer);
     redrawTimer = setTimeout(() => {
       for (const surface of liveTraceSurfaces()) paintBasemap(surface);
+      // Columns first: the width a card ends up with is what decides the zoom
+      // its ground is cut at, so repainting before the layout settles would cut
+      // the tiles to the width the card had a moment ago.
+      layoutResults();
+      repaintCardGround();
     }, 180);
   });
 

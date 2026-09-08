@@ -15,13 +15,14 @@ import {
   CARD_TRACE_H,
   CARD_TRACE_W,
   cardTrace,
+  columnCount,
   durationParts,
   sourceOwnWord,
   wording,
   starPortion,
   updatedMonth,
 } from '../assets/cards.js';
-import { fitFrame, projectInFrame, traceFrame } from '../assets/charts.js';
+import { fitFrame, projectInFrame, tileLayer, traceFrame } from '../assets/charts.js';
 
 // The card's drawing is the report's chart at a smaller size, and it is the
 // SAME arithmetic: charts.js is handed in rather than copied, so a card that
@@ -258,6 +259,153 @@ test('the start of the route is where the drawing starts', () => {
   const numbers = drawn.d.match(/[\d.]+/g).map(Number);
   assert.equal(Number(drawn.start.x.toFixed(1)), numbers[0]);
   assert.equal(Number(drawn.start.y.toFixed(1)), numbers[1]);
+});
+
+test('the drawing hands back the fit its ground has to be cut to', () => {
+  // The map under a card is cut by charts.js from THIS frame. A drawing that
+  // kept its fit private would force the painter to work one out again, and two
+  // fits that disagree by a rounding step slide the ground off the route. This
+  // is the whole reason `frame` is on the way out.
+  const drawn = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  const points = KOMOOT_NEARBY.trace.map(([lat, lon]) => ({ lat, lon }));
+  const again = fitFrame(points, { width: CARD_TRACE_W, height: CARD_TRACE_H, pad: 12 });
+  assert.deepEqual(drawn.frame, again);
+});
+
+test("the ground under a card is cut to the card's box, not the report's", () => {
+  // tileLayer used to assume 1000x600. A card is 320x180, which is 16:9 and not
+  // 5:3, so the old assumption letterboxed the tiles inside a rectangle the
+  // drawing does not occupy and slid the map off the line at every size.
+  //
+  // The card slot is exactly 16:9, so with the right box there is no letterbox
+  // at all: the plate is the whole canvas and the drawing's origin is its
+  // corner. That is the shape of the bug, so it is what gets asserted.
+  const drawn = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  const view = {
+    width: 344,
+    height: 344 * (CARD_TRACE_H / CARD_TRACE_W),
+    devicePixelRatio: 2,
+    box: { width: CARD_TRACE_W, height: CARD_TRACE_H },
+  };
+  const fitted = tileLayer(drawn.frame, view);
+  assert.equal(Math.round(fitted.traceOrigin.left), 0);
+  assert.equal(Math.round(fitted.traceOrigin.top), 0);
+
+  // Without the box it falls back to the report's 5:3 and letterboxes, which is
+  // the drift this test exists to catch.
+  const wrong = tileLayer(drawn.frame, { ...view, box: undefined });
+  // 5:3 inside a 16:9 slot letterboxes sideways: 10.75px of dead margin each
+  // side, and the map registered to a rectangle the line does not sit in.
+  assert.ok(wrong.traceOrigin.left > 1, 'the report box would letterbox a card slot');
+});
+
+test('a card asks for far fewer tiles than the report chart does', () => {
+  // The number that decided whether this feature could ship at all. Nine of
+  // these are on screen at once, against one report chart, and the tiles come
+  // from a service funded by donations.
+  const drawn = cardTrace(KOMOOT_NEARBY, PROJECTION);
+  const points = KOMOOT_NEARBY.trace.map(([lat, lon]) => ({ lat, lon }));
+  const card = tileLayer(drawn.frame, {
+    width: 344,
+    height: 194,
+    devicePixelRatio: 2,
+    box: { width: CARD_TRACE_W, height: CARD_TRACE_H },
+    maxTiles: 6,
+  });
+  const report = tileLayer(traceFrame(points), {
+    width: 1000,
+    height: 600,
+    devicePixelRatio: 2,
+  });
+  assert.ok(card.tiles.length <= 6, `a card asked for ${card.tiles.length} tiles`);
+  assert.ok(
+    card.tiles.length < report.tiles.length,
+    `card ${card.tiles.length} is not below report ${report.tiles.length}`,
+  );
+});
+
+test('the tile cap is honoured whatever the route does', () => {
+  // A cap that only holds for tidy routes is not a cap. A route spanning a
+  // continent and one that never moved are the two ends of it.
+  for (const trace of [
+    [[41.0, 2.0], [55.0, 30.0]],
+    [[41.5, 2.1], [41.5000001, 2.1000001]],
+    [[41.0, 179.9], [41.2, -179.9]],
+  ]) {
+    const drawn = cardTrace({ trace }, PROJECTION);
+    const layer = tileLayer(drawn.frame, {
+      width: 344,
+      height: 194,
+      devicePixelRatio: 2,
+      box: { width: CARD_TRACE_W, height: CARD_TRACE_H },
+      maxTiles: 6,
+    });
+    assert.ok(layer.tiles.length <= 6, `${layer.tiles.length} tiles for ${JSON.stringify(trace)}`);
+  }
+});
+
+// ----------------------------------------------------------------- the grid
+
+test('nine cards are never four, four and one', () => {
+  // THE OWNER'S WORDS: four columns and one left over. At 1512 the panel holds
+  // four, so nine cards came out four, four and a single card alone on the last
+  // row, which reads as a card that failed rather than as the end of a list.
+  assert.equal(columnCount({ available: 1410, count: 9 }), 3);
+  assert.equal(columnCount({ available: 1410, count: 5 }), 3);
+});
+
+test('one result is one column, not one card stretched across the panel', () => {
+  // The same rule, from the other end. auto-fit gave a lone result a single
+  // 1410px track and two results 699px each: a route card as wide as a
+  // broadsheet. The count is a ceiling on the columns as well as a floor.
+  assert.equal(columnCount({ available: 1410, count: 1 }), 1);
+  assert.equal(columnCount({ available: 1410, count: 2 }), 2);
+});
+
+test('a last row of two or three is left alone', () => {
+  // A ragged edge is what a grid of an arbitrary number of things looks like.
+  // Only one card by itself looks like a mistake, so only that is worth moving
+  // the whole layout for.
+  assert.equal(columnCount({ available: 1410, count: 6 }), 4);
+  assert.equal(columnCount({ available: 1410, count: 7 }), 4);
+  assert.equal(columnCount({ available: 1410, count: 11 }), 4);
+});
+
+test('a narrow screen is answered by the width, whatever the count', () => {
+  // A phone is one column and stays one column. Nothing about the number of
+  // results may widen a 375px screen.
+  for (const count of [1, 2, 3, 5, 6, 9]) {
+    assert.equal(columnCount({ available: 299, count }), 1);
+  }
+  // And a laptop that holds two holds two, even when three would divide better.
+  assert.equal(columnCount({ available: 900, count: 9 }), 2);
+});
+
+test('never more than four across, however wide the screen', () => {
+  // Five 340px cards is 1760px of grid, wider than the panel may ever grow.
+  assert.equal(columnCount({ available: 4000, count: 20 }), 4);
+  assert.equal(columnCount({ available: 4000, count: 9 }), 3);
+});
+
+test('a count that cannot avoid a lone card keeps the widest fit', () => {
+  // 13 leaves one over at four, three and two alike. Stepping all the way down
+  // would put thirteen cards in a single column, which is far worse than a
+  // ragged row, so the rule stops and keeps what the width allows.
+  assert.equal(columnCount({ available: 1410, count: 13 }), 4);
+});
+
+test('nonsense in gives one column out, never zero and never a crash', () => {
+  // This runs on every render and on every resize. A zero here is a grid with
+  // no columns, which is a page with no results on it.
+  for (const bad of [
+    { available: 1410, count: 0 },
+    { available: 1410, count: Number.NaN },
+    { available: 0, count: 9 },
+    { available: Number.NaN, count: 9 },
+    { available: -50, count: 9 },
+  ]) {
+    assert.equal(columnCount(bad), 1);
+  }
 });
 
 // ---------------------------------------------------------------- the stars

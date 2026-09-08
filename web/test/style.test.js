@@ -22,6 +22,16 @@ function block(selector) {
   return css.slice(at, css.indexOf('}', at));
 }
 
+/** The same, with the comments taken out.
+ *
+ *  A comment that names the thing a rule stopped using is worth keeping and
+ *  must not fail a test that asks whether the rule still uses it. `.results`
+ *  says out loud that it replaced auto-fit, which is exactly the sentence a
+ *  reader needs and exactly the word the test forbids in the declarations. */
+function declarations(selector) {
+  return block(selector).replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 // How loud a text colour is. The ladder ranks by this, not by hex.
 const LOUDNESS = { '--muted': 1, '--text-2': 2, '--text': 3 };
 
@@ -117,4 +127,46 @@ test('the dialog scroller shades the edge it is cutting content at', () => {
   // as more content. `local` is what makes the shade appear only at an end
   // there is something past.
   assert.match(block('.dialog-body'), /no-repeat local/);
+});
+
+test('the card map and the chart map are damped by one rule, not two', () => {
+  // A card is a promise about what the report will show. Two damping rules that
+  // drifted apart would break that promise in the one place a reader would
+  // notice: the same route, the same ground, two different pictures. So the two
+  // selectors share a block, and this fails if anyone splits them.
+  const shared = block('.chart-map,\n.card-map');
+  assert.match(shared, /filter:\s*grayscale\(1\)/);
+  assert.match(shared, /opacity:/);
+  // And neither may quietly grow its own copy of the damping.
+  assert.doesNotMatch(declarations('.card-map'), /filter:/);
+  assert.doesNotMatch(declarations('.chart-map'), /filter:/);
+});
+
+test('the card map sits under the line and takes no presses', () => {
+  // Ground, and nothing more. It must never sit over the cyan line it exists to
+  // sit under, and it must never eat a press meant for the card.
+  const map = block('.card-map');
+  assert.match(map, /z-index:\s*0/);
+  assert.match(map, /pointer-events:\s*none/);
+  assert.match(block('.card-trace'), /z-index:\s*1/);
+});
+
+test('the results grid gets its column count from the page, not from auto-fit', () => {
+  // THE LONE CARD. auto-fit can only ask how many columns the width holds, so
+  // it gave nine cards four, four and one. The count now comes from
+  // columnCount() in cards.js, which asks the number of cards as well. A revert
+  // to auto-fit would bring the bug back with no test failing anywhere else.
+  const grid = declarations('.results');
+  assert.match(grid, /repeat\(var\(--card-columns/);
+  assert.doesNotMatch(grid, /auto-fit|auto-fill/);
+  // And a card may not grow without limit when there are too few to fill a row.
+  assert.match(grid, /max-width:\s*calc\(var\(--card-columns\)/);
+});
+
+test('a phone is one column whatever the page works out', () => {
+  // The narrow rule is the floor under the computed count, so a stale value
+  // from a wide render can never leave a phone with two columns.
+  const narrow = css.slice(css.indexOf('@media (max-width: 640px)'));
+  const rule = narrow.slice(narrow.indexOf('\n  .results {'));
+  assert.match(rule.slice(0, rule.indexOf('}')), /grid-template-columns:\s*1fr/);
 });

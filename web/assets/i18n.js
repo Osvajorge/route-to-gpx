@@ -125,6 +125,12 @@ const STRINGS = {
     'card.rating.none': '{score} out of 5 on {source}',
     'card.updated': 'Updated {when}',
     'card.shapeAlt': 'The shape of this route, drawn here from the line {source} publishes',
+    // Said only once the ground is actually on the card. Two things are on this
+    // picture and they come from two different places, so the name says both:
+    // the line is {source}'s geometry drawn by this page, the ground is not
+    // ours at all. Neither is a measurement, and neither claims to be.
+    'card.shapeAltMap':
+      'The shape of this route, drawn here from the line {source} publishes, over OpenStreetMap ground',
     'card.gpx': 'GPX',
     'card.gpx.label': 'Convert this route and download the GPX',
     'card.chart': 'Map and elevation profile',
@@ -354,6 +360,11 @@ const STRINGS = {
     // the name linking to the copyright page so the licence is one click away.
     'map.attribution':
       '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+    // One credit under the grid, serving every card map above it. Nine credits
+    // in nine 9px corners would be attribution nobody can read, and the same
+    // link nine times in the tab order.
+    'map.cardCredit':
+      'Ground under the outlines: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
 
     'warning.gap':
       '{gap} m unrecorded at km {km}. Your watch will cut straight across. Check that stretch before you go.',
@@ -420,14 +431,24 @@ const STRINGS = {
     'source.file': 'Your file',
     'when.today': 'today',
 
+    // REWRITTEN, NOT APPENDED. The map sentence had become false the moment a
+    // card fetched a tile: it said the background was on the trace chart, and
+    // there are now up to nine more of them in a list of results. A clause
+    // tacked on the end would have been the third growth of a block the owner
+    // has twice asked to shrink, so all four were cut back instead. 98 words
+    // became 86, and the new fact is in.
+    //
+    // Nothing was thinned to get there. Each of these is pinned by the part a
+    // reader could act on, and the map line now names the control that stops it
+    // rather than describing where the control lives.
     'footer.processing.file':
       'GPX files you drop are read in this browser and never uploaded.',
     'footer.processing.url':
-      'Links are fetched by our server, parsed, and thrown away. A card\'s outline is held in memory so it is not fetched twice. Nothing is written down, and there are no accounts.',
+      'Our server fetches links, parses and discards them. A card outline is held in memory so it is not fetched twice. Nothing is written down and there are no accounts.',
     'footer.processing.map':
-      'Your browser loads the map background straight from OpenStreetMap, so they see your IP address and roughly where your route is. You can turn it off on the trace chart.',
+      'Charts and card outlines sit on OpenStreetMap tiles, so they see your IP address and roughly where your routes are. Hide map stops it.',
     'footer.processing.fonts':
-      'Your browser loads the two typefaces straight from Google Fonts, so Google sees your IP address as the page opens, before you press anything.',
+      'Google Fonts serves the two typefaces, so Google sees your IP address as the page opens, before you press anything.',
     'footer.source': 'Source code',
   },
 
@@ -536,6 +557,8 @@ const STRINGS = {
     'card.rating.none': '{score} sobre 5 en {source}',
     'card.updated': 'Actualizada en {when}',
     'card.shapeAlt': 'La forma de esta ruta, dibujada aquí a partir del trazado que publica {source}',
+    'card.shapeAltMap':
+      'La forma de esta ruta, dibujada aquí a partir del trazado que publica {source}, sobre suelo de OpenStreetMap',
     'card.gpx': 'GPX',
     'card.gpx.label': 'Convertir esta ruta y descargar el GPX',
     'card.chart': 'Mapa y perfil de altitud',
@@ -724,6 +747,8 @@ const STRINGS = {
     'map.show': 'Mostrar mapa',
     'map.attribution':
       '© colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+    'map.cardCredit':
+      'Suelo bajo los contornos: © colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
 
     'warning.gap':
       '{gap} m sin grabar en el km {km}. Tu reloj trazará una recta por ahí. Mira ese tramo antes de ir.',
@@ -795,11 +820,11 @@ const STRINGS = {
     'footer.processing.file':
       'Los GPX que sueltas se leen en este navegador y no se suben a ningún sitio.',
     'footer.processing.url':
-      'Los enlaces los descarga nuestro servidor, los analiza y los descarta. El contorno de una tarjeta queda en memoria para no pedirlo dos veces. No se anota nada y no hay cuentas.',
+      'Nuestro servidor descarga los enlaces, los analiza y los descarta. El contorno de una tarjeta queda en memoria para no pedirlo dos veces. No se anota nada y no hay cuentas.',
     'footer.processing.map':
-      'Tu navegador carga el fondo del mapa directamente desde OpenStreetMap, así que ven tu dirección IP y aproximadamente dónde está tu ruta. Puedes desactivarlo en el gráfico del trazado.',
+      'Gráficos y contornos usan teselas de OpenStreetMap, así que ven tu dirección IP y aproximadamente dónde están tus rutas. Ocultar mapa lo apaga.',
     'footer.processing.fonts':
-      'Tu navegador carga las dos tipografías directamente desde Google Fonts, así que Google ve tu dirección IP al abrirse la página, antes de que pulses nada.',
+      'Google Fonts sirve las dos tipografías, así que Google ve tu dirección IP al abrirse la página, antes de que pulses nada.',
     'footer.source': 'Código fuente',
   },
 };

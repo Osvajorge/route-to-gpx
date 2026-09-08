@@ -124,8 +124,14 @@ export function cardTrace(row, { fit, project }) {
   if (points.length < 2) return null;
 
   const box = { width: CARD_TRACE_W, height: CARD_TRACE_H, pad: CARD_TRACE_PAD };
-  const coords = project(points, fit(points, box));
+  const frame = fit(points, box);
+  const coords = project(points, frame);
   return {
+    // The fit itself, handed back rather than kept private, because the ground
+    // under the line has to be cut to exactly this fit. A second fit worked out
+    // at paint time would drift from the drawing by a rounding step and slide
+    // the map off the route.
+    frame,
     // One decimal in a 320 unit box is about a third of a screen pixel, which
     // is below what the stroke can show and keeps the path short.
     d: coords
@@ -135,6 +141,17 @@ export function cardTrace(row, { fit, project }) {
     width: CARD_TRACE_W,
     height: CARD_TRACE_H,
   };
+}
+
+/** Everything inside a card's shape slot: the ground, then the line.
+ *
+ *  One function so the first render and the observer's later injection write
+ *  the same thing. The canvas is empty and hidden until tiles arrive, and it is
+ *  hidden from assistive technology outright: it carries no information the
+ *  line does not, and "canvas" announced nine times is nine announcements of
+ *  nothing. What the ground is, and whose it is, is said once under the grid. */
+function shapeContents(drawing, alt) {
+  return `<canvas class="card-map" aria-hidden="true" hidden></canvas>${shapeSvg(drawing, alt)}`;
 }
 
 /** The markup of one card's shape slot, and whether it has to go and get one.
@@ -160,7 +177,12 @@ export function shapeSlot(drawing, { url = null, alt = '' } = {}) {
   if (!drawing) {
     return url ? `<div class="card-shape is-waiting" data-shape-url="${escapeAttribute(url)}"></div>` : '';
   }
-  return `<div class="card-shape">${shapeSvg(drawing, alt)}</div>`;
+  return `<div class="card-shape">${shapeContents(drawing, alt)}</div>`;
+}
+
+/** The slot's contents, for the observer that fills one in after the fact. */
+export function shapeFilled(drawing, alt) {
+  return shapeContents(drawing, alt);
 }
 
 /** The drawing itself, so the observer can inject exactly what the first render
@@ -185,6 +207,58 @@ function escapeAttribute(text) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ---------------------------------------------------------------- the grid
+
+// Never more than four across. Five 340px cards is 1760px of grid, wider than
+// the panel is ever allowed to grow, and a fifth column would only appear by
+// making every card too narrow to read.
+const MAX_CARD_COLUMNS = 4;
+
+/** How many columns a grid of `count` cards should use.
+ *
+ *  THE BUG THIS FIXES, in the owner's words: four columns and one left over.
+ *  `repeat(auto-fit, minmax(340px, 1fr))` answers one question only, which is
+ *  how many columns the width can hold. At 1512 that is four, so nine cards
+ *  came out four, four, and then a single card alone on the last row, which
+ *  reads as a card that failed to load rather than as the end of a list. The
+ *  same rule stretched one result across the whole 1410px panel and two results
+ *  to 699px each: a route card as wide as a broadsheet, with a 793px drawing
+ *  on top of two lines of text.
+ *
+ *  So the count is asked as well as the width, in this order:
+ *
+ *    1. how many fit          the widest that still gives every card `min`
+ *    2. never more than four  see above
+ *    3. never more than there are cards to put in them
+ *    4. never a last row of one
+ *
+ *  Step four steps down one column at a time and stops at two, because a single
+ *  column of nine cards is a worse answer than a ragged row. If no width from
+ *  the fit down to two avoids the lone card, the widest is kept: that is what
+ *  the page does today, so the rule can never make a layout worse than the one
+ *  it replaces.
+ *
+ *  A last row of two, or three, is left alone. A ragged edge is what a grid of
+ *  an arbitrary number of things looks like; one card by itself is what a
+ *  mistake looks like. Only the second is worth moving the whole layout for.
+ *
+ *  `available` is the space the grid has, in CSS pixels. Everything is in the
+ *  same units and nothing here reads the document, so it is checkable without a
+ *  browser, which is the point of it living beside the other card rules. */
+export function columnCount({ available, count, min = 340, gap = 12 }) {
+  if (!Number.isFinite(count) || count < 1) return 1;
+  if (!Number.isFinite(available) || available <= 0) return 1;
+
+  // c columns of `min` with a gap between each pair: c*min + (c-1)*gap.
+  const fits = Math.floor((available + gap) / (min + gap));
+  const widest = Math.max(1, Math.min(fits, MAX_CARD_COLUMNS, Math.round(count)));
+
+  for (let columns = widest; columns >= 2; columns--) {
+    if (count % columns !== 1) return columns;
+  }
+  return widest;
 }
 
 // --------------------------------------------------------------- the rating

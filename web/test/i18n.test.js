@@ -60,17 +60,24 @@ test('the four privacy statements still say every thing a reader could act on', 
   // still true, in memory rather than on disk, and this test was narrowed with
   // it. A test that pins a sentence the code has outgrown protects the wording
   // and not the reader.
+  //
+  // The map line changed the same way and for the same reason. It used to say
+  // the background was on the trace chart, which was the whole truth until
+  // cards started drawing ground of their own. So the card is now pinned too,
+  // and the way to stop it is pinned by the NAME OF THE CONTROL rather than by
+  // a phrase describing where the control sits: "turn it off on the trace
+  // chart" was a true sentence that had become a wrong instruction.
   const required = {
     en: {
       'footer.processing.file': [/never uploaded/i, /this browser/i],
       'footer.processing.url': [/our server/i, /outline is held in memory/i, /nothing is written down/i, /no accounts/i],
-      'footer.processing.map': [/OpenStreetMap/, /IP address/i, /turn it off/i],
+      'footer.processing.map': [/OpenStreetMap/, /IP address/i, /card outlines/i, /hide map/i],
       'footer.processing.fonts': [/Google/, /IP address/i, /before you press/i],
     },
     es: {
       'footer.processing.file': [/no se suben/i, /navegador/i],
       'footer.processing.url': [/servidor/i, /contorno.*queda en memoria/i, /no se anota nada/i, /no hay cuentas/i],
-      'footer.processing.map': [/OpenStreetMap/, /IP/, /desactivarlo/i],
+      'footer.processing.map': [/OpenStreetMap/, /IP/, /contornos/i, /ocultar mapa/i],
       'footer.processing.fonts': [/Google/, /IP/, /antes de que pulses/i],
     },
   };
