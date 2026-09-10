@@ -2622,19 +2622,46 @@ function columnsFor(grid) {
  *
  *  A row with no URL is nothing to ask about, and a row that already failed is
  *  not asked twice: a source that had no shape a minute ago still has none, and
- *  retrying on every scroll would turn a quiet failure into a loop. */
+ *  retrying on every scroll would turn a quiet failure into a loop.
+ *
+ *  A shape that already arrived is handed straight back, so a card that is
+ *  rebuilt draws immediately instead of asking again. */
 function shapeAskable(row) {
   if (!row || typeof row.url !== 'string' || !row.url) return null;
   if (Array.isArray(row.trace) && row.trace.length >= 2) return null;
-  if (shapesTried.has(row.url)) return null;
+
+  const known = shapesByUrl.get(row.url);
+  if (known) {
+    // Put it back on the row so every later render finds it there, which is
+    // where a row that arrived with its own geometry keeps it.
+    row.trace = known;
+    return null;
+  }
+  if (shapesFailed.has(row.url)) return null;
+  if (shapesInFlight.has(row.url)) return null;
   return row.url;
 }
 
-// Every URL asked about, whether it answered or not. Lives for the session,
-// which is the right span: a shape that arrived is on the row already, and one
-// that did not is not going to arrive by asking again while the reader scrolls
-// past it a third time.
-const shapesTried = new Set();
+// SHAPES ALREADY IN HAND, keyed by route URL.
+//
+// This exists because remembering only that a URL had been asked about lost
+// shapes outright. A render that landed while a fetch was in flight replaced
+// the slot and the row, so the answer arrived with nowhere to put it, and the
+// URL was already marked as asked. The card stayed blank for the rest of the
+// session and asked for nothing, which looks exactly like a source that
+// publishes no geometry.
+//
+// Keeping the answer rather than the fact of having asked fixes that and costs
+// a few kilobytes: a rebuilt card finds its shape and draws at once.
+const shapesByUrl = new Map();
+
+// Asked and refused. A source that had no shape a minute ago still has none,
+// and retrying on every scroll would turn a quiet failure into a loop.
+const shapesFailed = new Set();
+
+// Asked and still waiting. Without this a sweep and the observer could both
+// reach the same slot and send the same request twice.
+const shapesInFlight = new Set();
 
 // One watcher per panel, not one shared between them.
 //
@@ -2699,13 +2726,106 @@ function watchShapes(container, rows) {
 
   shapeWatchers.set(container, watcher);
   for (const slot of slots) watcher.observe(slot);
+
+  // And a sweep, because an observer alone is not enough to be sure.
+  //
+  // A browser suspends observer delivery for a page that is not being looked
+  // at, and it is not guaranteed to deliver the backlog the instant the page
+  // comes back. A reader who opens this in a background tab and switches to it
+  // later would find cards that never asked for anything, and the failure is
+  // invisible: a card with no drawing looks exactly like a card from a source
+  // that publishes no geometry.
+  //
+  // The sweep asks the same question the observer asks, by measurement rather
+  // than by notification: is this slot within a screenful. So it fetches
+  // nothing the observer would not have fetched, and the reader-driven rule is
+  // unchanged. `shapesInFlight` means a slot reached by both is still asked once.
+  sweepVisibleSlots(container);
+}
+
+/** Ask for whatever is already on screen, without waiting to be told.
+ *
+ *  Runs beside the observer rather than instead of it: the observer is still
+ *  what catches a card scrolled to later, and this is what catches the cards
+ *  that were on screen all along while nobody was watching the page. */
+function sweepVisibleSlots(container) {
+  const rows = cardGrids.get(container) ?? [];
+  const margin = 120;
+  for (const slot of container.querySelectorAll('.card-shape')) {
+    if (slot.closest('[hidden]')) continue;
+    const box = slot.getBoundingClientRect();
+    if (box.height === 0) continue;
+    const reached = box.top < window.innerHeight + margin && box.bottom > -margin;
+    if (!reached) continue;
+
+    if (slot.dataset.shapeUrl) {
+      askForShape(slot, rows);
+      continue;
+    }
+    const found = drawingForSlot(slot, rows);
+    if (found) paintCardGround(slot, found.drawing, found.row);
+  }
+}
+
+/** Sweep every panel that has slots waiting. */
+function sweepAllSlots() {
+  for (const container of shapeWatchers.keys()) sweepVisibleSlots(container);
+}
+
+// THREE WAYS TO NOTICE, because one was not enough.
+//
+// The observer is the right primary mechanism and it stays. What it is not is
+// a guarantee: a browser suspends delivery for a page nobody is looking at,
+// and the backlog does not always arrive the moment the page comes back. Four
+// separate attempts to watch this work end to end failed for that reason, and
+// a card with no drawing looks exactly like a card from a source that
+// publishes no geometry, so the failure says nothing.
+//
+// A mechanism whose failure is invisible needs more than one way to fire. All
+// three ask the same question, whether a slot is within a screenful, so none
+// of them fetches anything the observer would not have, and the rule that
+// nothing is fetched ahead of the reader is unchanged.
+if (typeof document !== 'undefined') {
+  // Coming back to a tab that was in the background while its results arrived.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) sweepAllSlots();
+  });
+
+  // Scrolling, which is what the observer is meant to catch. Passive, and
+  // throttled with a timer rather than a frame: `requestAnimationFrame` does
+  // not run for a page nobody is looking at, which is the same suspension that
+  // stops the observer, so throttling on frames would have left this fallback
+  // asleep in exactly the case it exists for. This project has been caught by
+  // that once already, in the converter.
+  //
+  // A rectangle read per slot on a list of at most a couple of dozen, at most
+  // once every 100ms.
+  let scheduled = false;
+  const look = () => {
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(() => {
+      scheduled = false;
+      sweepAllSlots();
+    }, 100);
+  };
+  window.addEventListener('scroll', look, { passive: true });
+  window.addEventListener('resize', look, { passive: true });
 }
 
 async function askForShape(slot, rows) {
   const url = slot.dataset.shapeUrl;
-  if (!url || shapesTried.has(url)) return;
-  shapesTried.add(url);
+  if (!url) return;
 
+  // Already in hand from an earlier card or an earlier render: draw and stop.
+  const known = shapesByUrl.get(url);
+  if (known) {
+    fillShapeSlot(slot, url, known, rows);
+    return;
+  }
+  if (shapesFailed.has(url) || shapesInFlight.has(url)) return;
+
+  shapesInFlight.add(url);
   let trace = null;
   try {
     const response = await fetch(`${API_BASE}/shape`, {
@@ -2714,25 +2834,43 @@ async function askForShape(slot, rows) {
       body: JSON.stringify({ url }),
     });
     const answer = await response.json();
-    if (answer?.ok && Array.isArray(answer.trace)) trace = answer.trace;
+    if (answer?.ok && Array.isArray(answer.trace) && answer.trace.length >= 2) {
+      trace = answer.trace;
+    }
   } catch {
     // A shape that does not arrive is not an error to announce. The card
     // simply has no drawing, which is what every Wikiloc card looked like
     // before any of this, and the route is still there to convert.
+  } finally {
+    shapesInFlight.delete(url);
   }
 
-  // The slot may be gone: a new search, a language switch, or Load more will
-  // have rebuilt the list while this was in flight.
-  if (!slot.isConnected) return;
-
   if (!trace) {
-    slot.remove();
+    shapesFailed.add(url);
+    if (slot.isConnected) slot.remove();
     return;
   }
 
+  // KEPT BEFORE IT IS DRAWN, and that order is the fix.
+  //
+  // A render landing while this was in flight used to replace the slot and the
+  // row, so the answer arrived with nowhere to put it and was thrown away,
+  // while the URL was already marked as asked. The card stayed blank for the
+  // rest of the session and never asked again.
+  shapesByUrl.set(url, trace);
+
+  // The slot may be gone: a new search, a language switch, or Load more will
+  // have rebuilt the list while this was in flight. The shape is kept either
+  // way, and the next render finds it.
+  if (!slot.isConnected) return;
+  fillShapeSlot(slot, url, trace, rows);
+}
+
+/** Put a shape into the slot waiting for it, and onto its row. */
+function fillShapeSlot(slot, url, trace, rows) {
+  const row = rows.find((candidate) => candidate?.url === url);
   // Onto the row as well as the screen, so a re-render draws it without asking
   // again, and so the row and the card can never disagree about the shape.
-  const row = rows.find((candidate) => candidate?.url === url);
   if (row) row.trace = trace;
 
   const drawing = cardTrace({ trace }, { fit: fitFrame, project: projectInFrame });
@@ -2746,8 +2884,7 @@ async function askForShape(slot, rows) {
   // The reader is already looking at this card, so its ground is wanted now.
   paintCardGround(slot, drawing, row);
   // A filled slot must stop advertising that it needs filling, or the next
-  // render observes it again and it is only `shapesTried` standing between the
-  // page and a second fetch of a shape it already has.
+  // render asks about a shape the page is already holding.
   delete slot.dataset.shapeUrl;
 }
 
