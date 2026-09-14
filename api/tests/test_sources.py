@@ -4,6 +4,8 @@ The parts that talk to Komoot and Wikiloc are exercised by
 `api/tests/test_live.py`, which is skipped unless you ask for it.
 """
 
+import base64
+
 import pytest
 
 from api.core import gpx, twkb
@@ -41,7 +43,7 @@ def test_komoot_reads_the_tour_id_from_every_link_shape():
     assert komoot.tour_id("https://www.komoot.com/images/tour/placeholder.webp") is None
 
 
-def test_komoot_keeps_the_two_id_spaces_apart():
+def test_komoot_lets_the_e_prefix_alone_pick_the_endpoint():
     """The "e" picks the endpoint, so dropping it hands back another route.
 
     A bare /smarttour/ id is usually a valid /tour/ id as well, belonging to
@@ -258,7 +260,7 @@ def test_wikiloc_does_not_mistake_a_number_in_the_path_for_a_trail():
     assert wikiloc.trail_id("https://www.wikiloc.com/") is None
 
 
-def test_komoot_keeps_the_two_id_spaces_apart():
+def test_komoot_keeps_the_two_id_spaces_apart_through_locale_slug_and_embed():
     """A smart tour id is usually a valid tour id as well, belonging to somebody
     else's route. Sending it to the wrong endpoint answers 200 with the wrong
     mountain, so the prefix has to pick the endpoint."""
@@ -301,3 +303,114 @@ def test_komoot_reads_the_climb_under_either_name():
     # A flat route publishes 0.0, which is an answer and not a missing field.
     assert komoot._first({"uphill": 0.0}, "elevation_up", "uphill") == 0.0
     assert komoot._first({}, "elevation_up", "uphill") is None
+
+
+def _wikiloc_page(geom_block: str) -> str:
+    """A trail page cut down to the two things the adapter reads out of it."""
+    return (
+        '<html><body><section id="trail-data"><dl>'
+        "<div><dt>Distancia</dt><dd>24,37 km</dd></div>"
+        "</dl></section>"
+        '<script>L.WklTrail.fromTwkbBase64({"nom":"Aneto",'
+        f"{geom_block}}});</script></body></html>"
+    )
+
+
+def _wikiloc_fetch(monkeypatch, page: str):
+    monkeypatch.setattr(wikiloc, "fetch_text", lambda url: (200, page))
+    return wikiloc.fetch("https://www.wikiloc.com/rutas-alpinismo/aneto-8001213")
+
+
+def test_a_wikiloc_page_we_cannot_parse_is_still_an_answer_and_not_a_crash(monkeypatch):
+    """Every malformed coordinate block has to land as `track`, never as a 500.
+
+    `base64.b64decode` raises on a length that is not a multiple of four, which
+    is what a transfer cut short looks like, and the TWKB reader walks the bytes
+    by index, so it raises `IndexError` on anything that is not TWKB. Both used
+    to escape `/api/convert` untouched, and FastAPI turns an escaped exception
+    into a 500 in `text/plain` that the web page cannot read at all: it looks
+    for an `error` key a plain-text body does not have.
+    """
+    real = _encode_twkb([(0.70626, 42.67820, 1456.5), (0.70630, 42.67840, 1457.2)])
+
+    blocks = {
+        # A transfer cut short: the base64 stops one character past a group.
+        "truncated base64": '"geom":"' + base64.b64encode(real).decode()[:-3] + 'Q"',
+        # Readable base64, but the bytes are not TWKB and the reader runs off
+        # the end of them.
+        "base64 that is not TWKB": '"geom":"'
+        + base64.b64encode(b"hello world").decode()
+        + '"',
+        # The header promises five points and the blob carries none of them.
+        "a header with no points after it": '"geom":"'
+        + base64.b64encode(b"\xa2\x08\x01\x05").decode()
+        + '"',
+        # Digits where the coordinates belong.
+        "digits where coordinates belong": '"geom":"'
+        + base64.b64encode(b"1234567890").decode()
+        + '"',
+        # The marker is there and the block behind it is empty.
+        "an empty block": '"geom":""',
+        # The marker is there and no block follows it.
+        "a marker with no block": '"geom":',
+    }
+
+    for shape, block in blocks.items():
+        with pytest.raises(SourceError) as raised:
+            _wikiloc_fetch(monkeypatch, _wikiloc_page(block))
+        assert raised.value.code == "track", f"{shape} did not come out as `track`"
+
+
+def test_a_wikiloc_block_holding_no_points_is_a_missing_track(monkeypatch):
+    """Well-formed TWKB that decodes to nothing is a page without a track.
+
+    This blob reads cleanly to its last byte, so the half-read check lets it
+    past. Only the point count stops it from reaching GPX and handing the
+    visitor an empty file instead of a reason.
+    """
+    block = '"geom":"' + base64.b64encode(_encode_twkb([])).decode() + '"'
+
+    with pytest.raises(SourceError) as raised:
+        _wikiloc_fetch(monkeypatch, _wikiloc_page(block))
+    assert raised.value.code == "track"
+    assert "fewer than two points" in raised.value.detail
+
+
+def test_wikiloc_keeps_the_minus_on_an_altitude_below_sea_level():
+    """The Dead Sea is the case: -415 m read as 415 m is 830 metres of error."""
+    assert wikiloc._number("-415 m") == -415.0
+    assert round(wikiloc._number("-1.362 ft")) == -415
+    # Spanish and English separators, both carrying the sign.
+    assert wikiloc._number("-1.234,5 m") == -1234.5
+    assert wikiloc._number("-1,234.5 m") == -1234.5
+
+    page = """<section id="trail-data"><dl>
+        <div><dt>Altitud mínima</dt><dd>-415 m</dd></div>
+        <div><dt>Altitud máxima</dt><dd>-210 m</dd></div>
+      </dl></section>"""
+    stats = wikiloc._statistics(page)
+    assert stats["elevation_min"] == -415.0
+    assert stats["elevation_max"] == -210.0
+
+
+def test_a_hyphen_between_two_figures_is_not_a_minus_sign():
+    """A range still reads as its second figure, the way it did before signs."""
+    assert wikiloc._number("1456-3407 m") == 3407.0
+
+
+def test_wikiloc_never_publishes_a_distance_or_a_climb_below_zero():
+    """Wikiloc puts the direction in the label, so a minus there is not a figure.
+
+    `Desnivel negativo` names the descent and the number under it is the size of
+    that descent. A descent of minus 2215 metres is a climb, and the report
+    would then hold it against the measured climb and call the page wrong.
+    """
+    page = """<section id="trail-data"><dl>
+        <div><dt>Distancia</dt><dd>-24,37 km</dd></div>
+        <div><dt>Desnivel positivo</dt><dd>-2.215 m</dd></div>
+        <div><dt>Desnivel negativo</dt><dd>-2.215 m</dd></div>
+      </dl></section>"""
+    stats = wikiloc._statistics(page)
+    assert stats["distance"] == 24370.0
+    assert stats["ascent"] == 2215.0
+    assert stats["descent"] == 2215.0
