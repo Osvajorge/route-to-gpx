@@ -346,7 +346,7 @@ const STRINGS = {
     // disagreement is the headline and the arithmetic is not.
     'method.summary': 'How ascent is measured',
     'method.sampling':
-      "The height profile is sampled every {step} m, never finer than the recording's own spacing, then median filtered over {window} samples. Rises under {noise} m are dropped as GPS noise.",
+      "The height profile is sampled every {step} m, never finer than the recording's own spacing, then median filtered over {window} samples. A turn under {noise} m is jitter, not climbing.",
     'chart.trace': 'Route trace',
     'chart.profile': 'Elevation profile',
     'chart.start': 'start / finish',
@@ -735,7 +735,7 @@ const STRINGS = {
 
     'method.summary': 'Cómo se mide el desnivel',
     'method.sampling':
-      'El perfil de alturas se muestrea cada {step} m, nunca más fino que el espaciado del propio registro, y pasa un filtro de mediana de {window} muestras. Las subidas de menos de {noise} m se descartan como ruido del GPS.',
+      'El perfil de alturas se muestrea cada {step} m, nunca más fino que el espaciado del propio registro, y pasa un filtro de mediana de {window} muestras. Un cambio de sentido de menos de {noise} m es ruido, no desnivel.',
     'chart.trace': 'Trazado',
     'chart.profile': 'Perfil de altitud',
     'chart.start': 'salida / llegada',

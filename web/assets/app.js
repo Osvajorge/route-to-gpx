@@ -3,9 +3,11 @@ import {
   cardFigures,
   CARD_TRACE_H,
   CARD_TRACE_W,
+  cardShapeChoice,
   cardTrace,
   columnCount,
   shapeFilled,
+  shapeRefusal,
   shapeSlot,
   durationParts,
   sourceOwnWord,
@@ -31,13 +33,7 @@ import {
 } from './discovery.js';
 import { detectLanguage, rememberLanguage, translate } from './i18n.js';
 import { icon } from './icons.js';
-import {
-  buildGpx,
-  DEFAULT_GAP_THRESHOLD_M,
-  measure,
-  parseGpx,
-  TrackError,
-} from './measure.js';
+import { buildGpx, measure, parseGpx, TrackError } from './measure.js';
 import {
   fitFrame,
   indexAtDistance,
@@ -342,7 +338,7 @@ async function convertFromFile(file) {
  *  opened from a card must never read the report's: the two can be different
  *  routes at the same moment. */
 function makeResult({ track, gpxText, published, source, fileName }) {
-  const measurements = measure(track, DEFAULT_GAP_THRESHOLD_M);
+  const measurements = measure(track);
   const rebuilt = source.url ? buildGpx(track, source) : gpxText;
   return {
     track,
@@ -504,7 +500,8 @@ function renderReport() {
   el.reportAdjust.setAttribute('aria-label', t('card.adjust'));
   el.resetButton.innerHTML = `${icon('back')}<span>${t('step2.reset')}</span>`;
 
-  el.tiles.innerHTML = measuredTiles(measurements, published);
+  // Rung 2: the report's own <h1> is the route's name, and these sit under it.
+  el.tiles.innerHTML = measuredTiles(measurements, published, 2);
   renderMethod(measurements);
 
   renderCharts();
@@ -524,6 +521,22 @@ function renderReport() {
   // Elevation now reports the filtered range, and when the file itself holds a
   // reading outside that range the raw ceiling is printed too, so a bad point
   // is visible rather than either squashing the chart or vanishing from it.
+  //
+  // THE ALLOWANCE IS THE FILTER'S OWN REACH, NOT A ROUND NUMBER. This note used
+  // to fire at any difference over a metre, and on a clean 6% ramp it printed
+  // "1,001-1,599, file holds 1,000-1,600" with nothing wrong with the file: a
+  // median shaves any extreme narrower than half its window, so the two ranges
+  // always differ a little and a flat metre called that the file's fault. It
+  // fired that way on twelve of twenty one real files. `elevationFilterEffectM`
+  // is how far the filter can move one reading on this profile, read off the
+  // profile rather than assumed, and with it only the one file whose own
+  // contents really do disagree still says so.
+  //
+  // AND IT IS ASKED BOTH WAYS. It used to fire only when the file sat outside
+  // our range, so the case where OUR range sat outside the FILE, which is what
+  // an extrapolated profile does, could never be reported. Resampling no longer
+  // reaches past the first and last recorded height, so that side is now an
+  // invariant rather than a warning, and the check is kept honest by asking it.
   const elevation = (() => {
     if (measurements.elevationMinM === null) return '-';
     const shown = `${formatNumber(measurements.elevationMinM)}-${formatNumber(
@@ -531,10 +544,12 @@ function renderReport() {
     )} m`;
     const rawMax = measurements.rawElevationMaxM;
     const rawMin = measurements.rawElevationMinM;
-    const outside =
+    const allowance = measurements.elevationFilterEffectM;
+    const disagrees =
       rawMax !== null &&
-      (rawMax - measurements.elevationMaxM > 1 || measurements.elevationMinM - rawMin > 1);
-    return outside
+      (Math.abs(rawMax - measurements.elevationMaxM) > allowance ||
+        Math.abs(measurements.elevationMinM - rawMin) > allowance);
+    return disagrees
       ? `${shown} <span class="measure-note">${t('measure.elevation.raw', {
           min: formatNumber(rawMin),
           max: formatNumber(rawMax),
@@ -567,9 +582,23 @@ function renderReport() {
   })}</span>`;
 }
 
-function tile(label, value, unit, note, warn) {
+/** One measured figure, under a real heading.
+ *
+ *  THE LADDER WAS UPSIDE DOWN. A source's claim on a card is headed by an
+ *  <h4 class="card-claim-head">; the three figures this page exists to produce
+ *  were headed by a <span>. Enumerating the headings on the report gave exactly
+ *  one, the <h1>, whose text is the route's name in the source's own words. So
+ *  a reader moving by heading through the surface built to hold our numbers
+ *  found the source's title and nothing else, and Distance, Ascent and Largest
+ *  gap were not in the document outline at all.
+ *
+ *  `level` is the rung in the page's own outline, not a size: 2 on the report
+ *  under its <h1>, 3 in the preview dialog under its <h2>, 4 in the re-arranger
+ *  under the <h3> that names its measured figures. The look is set by
+ *  .tile-label and does not move with it. */
+function tile(label, value, unit, note, warn, level) {
   return `<div class="tile${warn ? ' tile-warn' : ''}">
-      <span class="tile-label">${label}</span>
+      <h${level} class="tile-label">${label}</h${level}>
       <span class="tile-value">${value}<span class="tile-unit">${unit}</span></span>
       <span class="tile-note">${note}</span>
     </div>`;
@@ -596,7 +625,7 @@ function descentRow(measurements) {
  *  the source published one. Written once and used on the report and in the
  *  preview dialog, so the two can never drift into saying different things
  *  about the same file. */
-function measuredTiles(measurements, published) {
+function measuredTiles(measurements, published, level) {
   const warn = measurements.gapExceedsThreshold;
   return `
     ${tile(
@@ -605,6 +634,7 @@ function measuredTiles(measurements, published) {
       'km',
       distanceNote(comparison(measurements.distanceM, published?.distanceM ?? null, 'km', 2), measurements),
       false,
+      level,
     )}
     ${tile(
       t('measure.ascent'),
@@ -612,8 +642,16 @@ function measuredTiles(measurements, published) {
       'm',
       ascentNote(comparison(measurements.ascentM, published?.ascentM ?? null, 'm', 0), measurements),
       false,
+      level,
     )}
-    ${tile(t('measure.gap'), formatNumber(measurements.largestGapM), 'm', gapNote(measurements), warn)}`;
+    ${tile(
+      t('measure.gap'),
+      formatNumber(measurements.largestGapM),
+      'm',
+      gapNote(measurements),
+      warn,
+      level,
+    )}`;
 }
 
 /** The distance tile's note, whatever else that note is already saying.
@@ -629,7 +667,13 @@ function measuredTiles(measurements, published) {
  *  What the distance absorbed is a sum, so the honest disclosure is that sum:
  *  on a three hole file the largest gap was 1 091 m and the straight ground was
  *  2 731 m, so printing the largest would have understated the borrowed
- *  distance by two and a half times. */
+ *  distance by two and a half times.
+ *
+ *  WHAT IT IS NOT. It is not a correction. Subtracting it from the distance
+ *  does not give the ground actually walked: the walker covered at least each
+ *  chord and almost certainly more, so the subtraction takes away ground that
+ *  was walked as well as ground that was invented. This figure says how much of
+ *  the distance is a straight line nobody recorded, and that is all it says. */
 function distanceNote(against, measurements) {
   // Below the threshold there is no gap to have absorbed. Every recording has
   // chords between its points; the ones this page calls gaps are the ones this
@@ -709,12 +753,16 @@ function hasProfile(measurements) {
   return measurements.pointsWithElevation >= 2;
 }
 
+/** The gap tile's note. The threshold is read off the track's own spacing now
+ *  rather than fixed at 100 m, so it is a measured figure like every other one
+ *  on this page and is printed the same way. */
 function gapNote(measurements) {
+  const threshold = formatNumber(measurements.gapThresholdM);
   return measurements.gapExceedsThreshold
     ? `${t('gap.at', { km: formatKm(measurements.largestGapAtM, 1) })} · ${t('gap.threshold', {
-        threshold: measurements.gapThresholdM,
+        threshold,
       })}`
-    : t('gap.none', { threshold: measurements.gapThresholdM });
+    : t('gap.none', { threshold });
 }
 
 function gapWarningMarkup(measurements) {
@@ -1468,7 +1516,8 @@ function renderPreview() {
   });
   dressCloseButton(el.previewClose);
 
-  el.previewTiles.innerHTML = measuredTiles(measurements, published);
+  // Rung 3: under the dialog's <h2 class="dialog-title">.
+  el.previewTiles.innerHTML = measuredTiles(measurements, published, 3);
   drawTrace(surfaces.preview, track.points, measurements);
   drawProfile(el.previewProfile, track.points, measurements);
 
@@ -1523,7 +1572,7 @@ function renderRotate() {
   // from the recording that arrived. This is the whole reason the dialog is
   // worth building: the competitor's rotation opens a hole in the middle of the
   // file and the distance it prints does not include it.
-  const after = measure({ points: arranged.points }, DEFAULT_GAP_THRESHOLD_M);
+  const after = measure({ points: arranged.points });
   const startM = measurements.cumulative[startIndex] ?? 0;
   const seamAtM = arranged.seamIndex > 0 ? after.cumulative[arranged.seamIndex - 1] : 0;
   const changed = arranged.reversed || arranged.startIndex > 0;
@@ -1570,7 +1619,8 @@ function renderRotate() {
   drawTrace(surfaces.rotate, arranged.points, after);
 
   el.rotateMeasuredHead.textContent = t('rotate.measured');
-  el.rotateTiles.innerHTML = arrangementTiles(after, measurements);
+  // Rung 4: under the <h3 class="dialog-subhead"> that names these figures.
+  el.rotateTiles.innerHTML = arrangementTiles(after, measurements, 4);
   el.rotateSecondary.innerHTML = descentRow(after);
 
   // A recording with no times loses nothing, and a line reporting that nothing
@@ -1587,7 +1637,7 @@ function renderRotate() {
 }
 
 /** What this arrangement measures, with the original beside each figure. */
-function arrangementTiles(after, before) {
+function arrangementTiles(after, before, level) {
   return `
     ${tile(
       t('measure.distance'),
@@ -1595,6 +1645,7 @@ function arrangementTiles(after, before) {
       'km',
       distanceNote(t('rotate.against', { value: `${formatKm(before.distanceM)} km` }), after),
       false,
+      level,
     )}
     ${tile(
       t('measure.ascent'),
@@ -1602,6 +1653,7 @@ function arrangementTiles(after, before) {
       'm',
       ascentNote(t('rotate.against', { value: `${formatNumber(before.ascentM)} m` }), after),
       false,
+      level,
     )}
     ${tile(
       t('measure.gap'),
@@ -1609,6 +1661,7 @@ function arrangementTiles(after, before) {
       'm',
       gapNote(after),
       after.gapExceedsThreshold,
+      level,
     )}`;
 }
 
@@ -1640,7 +1693,10 @@ function renderSeam(seamM, seamAtM, thresholdM, changed) {
     return;
   }
   panel.className = 'dialog-note';
-  panel.textContent = t('rotate.seam.small', { gap: formatSeam(seamM), threshold: thresholdM });
+  panel.textContent = t('rotate.seam.small', {
+    gap: formatSeam(seamM),
+    threshold: formatNumber(thresholdM),
+  });
 }
 
 /** The sentence written into the file itself: what was done to the track and
@@ -2614,34 +2670,6 @@ function columnsFor(grid) {
 }
 
 
-/** The URL to ask about, when a row arrived without its shape.
- *
- *  Komoot rows never reach this: their geometry rides in the thumbnail URL, so
- *  `cardTrace` already drew them. Wikiloc search results carry no coordinates
- *  at all, so their cards have to ask.
- *
- *  A row with no URL is nothing to ask about, and a row that already failed is
- *  not asked twice: a source that had no shape a minute ago still has none, and
- *  retrying on every scroll would turn a quiet failure into a loop.
- *
- *  A shape that already arrived is handed straight back, so a card that is
- *  rebuilt draws immediately instead of asking again. */
-function shapeAskable(row) {
-  if (!row || typeof row.url !== 'string' || !row.url) return null;
-  if (Array.isArray(row.trace) && row.trace.length >= 2) return null;
-
-  const known = shapesByUrl.get(row.url);
-  if (known) {
-    // Put it back on the row so every later render finds it there, which is
-    // where a row that arrived with its own geometry keeps it.
-    row.trace = known;
-    return null;
-  }
-  if (shapesFailed.has(row.url)) return null;
-  if (shapesInFlight.has(row.url)) return null;
-  return row.url;
-}
-
 // SHAPES ALREADY IN HAND, keyed by route URL.
 //
 // This exists because remembering only that a URL had been asked about lost
@@ -2655,13 +2683,51 @@ function shapeAskable(row) {
 // a few kilobytes: a rebuilt card finds its shape and draws at once.
 const shapesByUrl = new Map();
 
-// Asked and refused. A source that had no shape a minute ago still has none,
-// and retrying on every scroll would turn a quiet failure into a loop.
+// Asked and refused FOR GOOD: a route that publishes no geometry, an address
+// no adapter reads, a page that is gone or private. A source that has no shape
+// for this route now has none in a minute, so asking again would buy the same
+// answer at the same price.
+//
+// A refusal that may not last is not in here. It used to be: every non-ok
+// answer landed in this set, so one 429 from the shared request budget wrote
+// the card off for the session, and the service coming back changed nothing.
+// `shapeRefusal` in cards.js is where the two are told apart.
 const shapesFailed = new Set();
 
 // Asked and still waiting. Without this a sweep and the observer could both
 // reach the same slot and send the same request twice.
 const shapesInFlight = new Set();
+
+// Refused in a way that may pass: the moment each URL may be asked again, and
+// how many times it has been refused, which is what makes the wait grow.
+const shapeRetryAt = new Map();
+const shapeRefusals = new Map();
+
+// The moment EVERY shape may be asked again. A `busy` answer is this client's
+// whole request budget rather than one route's, so one of them pauses the lot.
+let shapesPausedUntil = 0;
+
+// Waiting to be asked for, and at most two of them asked at a time.
+//
+// WHY A CEILING AT ALL, AND WHAT THIS PAGE CAN AND CANNOT DECIDE. A shape is
+// one inbound request PER CARD, and it spends the same 20-per-minute bucket as
+// /api/sports, which this page calls three times on every load. A single
+// ordinary session reaches it: 3 + a search + five shapes + Load more + five
+// shapes + a second search + five shapes is 21. Whether a per-card fetch should
+// spend the same bucket as a thing the reader actually asked for is a question
+// for the service, and it is answered in api/app.py, not here.
+//
+// What this page can decide is the shape of its own spending, and bursts were
+// the worst available shape. A sweep fired every visible slot's request in the
+// same millisecond, so the bucket's boundary landed in the middle of a row and
+// took out part of a grid at once. Two at a time puts that boundary between
+// cards, and a `busy` answer now pauses the queue rather than emptying it.
+const SHAPES_AT_ONCE = 2;
+const shapeQueue = [];
+
+// One timer, for the earliest thing that is waiting on a clock.
+let shapeTimer = null;
+let shapeTimerDue = Infinity;
 
 // One watcher per panel, not one shared between them.
 //
@@ -2765,6 +2831,16 @@ function sweepVisibleSlots(container) {
     const found = drawingForSlot(slot, rows);
     if (found) paintCardGround(slot, found.drawing, found.row);
   }
+
+  // And send whatever the queue is now allowed to send.
+  //
+  // NOT ONLY WHAT THIS SWEEP ADDED. A slot already in the queue is skipped
+  // above, correctly, so a sweep that finds nothing new used to leave a full
+  // queue untouched. That is exactly the state a paused queue is in: one `busy`
+  // answer pauses every shape and leaves the rest queued, and coming back to
+  // the tab swept, matched nothing new, and drained nothing. Nine cards sat
+  // waiting with the service long since recovered.
+  drainShapes();
 }
 
 /** Sweep every panel that has slots waiting. */
@@ -2813,7 +2889,12 @@ if (typeof document !== 'undefined') {
   window.addEventListener('resize', look, { passive: true });
 }
 
-async function askForShape(slot, rows) {
+/** Offer one waiting slot to the queue, or fill it from what is already held.
+ *
+ *  Called by the observer and by both sweeps, so it is offered far more often
+ *  than it is asked: everything that decides whether a request goes out lives
+ *  below, in one place. */
+function askForShape(slot, rows) {
   const url = slot.dataset.shapeUrl;
   if (!url) return;
 
@@ -2823,47 +2904,148 @@ async function askForShape(slot, rows) {
     fillShapeSlot(slot, url, known, rows);
     return;
   }
-  if (shapesFailed.has(url) || shapesInFlight.has(url)) return;
+  if (shapesFailed.has(url)) return;
+  if (shapesInFlight.has(url) || shapeQueue.includes(url)) return;
 
+  // A refusal that may pass costs one request after eight seconds, then after
+  // sixteen, and so on to a ten minute ceiling. Not one per scroll event, and
+  // not one for the rest of the session.
+  const due = Math.max(shapesPausedUntil, shapeRetryAt.get(url) ?? 0);
+  const now = Date.now();
+  if (due > now) {
+    shapeLater(due - now);
+    return;
+  }
+
+  shapeQueue.push(url);
+  drainShapes();
+}
+
+/** Send what the queue is allowed to send, and no more. */
+function drainShapes() {
+  const now = Date.now();
+  if (shapesPausedUntil > now) {
+    shapeLater(shapesPausedUntil - now);
+    return;
+  }
+  while (shapeQueue.length > 0 && shapesInFlight.size < SHAPES_AT_ONCE) {
+    fetchShape(shapeQueue.shift());
+  }
+}
+
+/** Come back and look again when a clock runs out.
+ *
+ *  A drain AND a sweep. The drain is for what is already queued, which after a
+ *  pause is everything; the sweep is for slots that were offered while a clock
+ *  was running and turned away, and it asks the observer's own question, which
+ *  is whether the slot is on screen. A reader who has scrolled away in the
+ *  meantime is not fetched for.
+ *
+ *  One timer, always set to the earliest thing waiting, so a long wait set
+ *  first cannot swallow a short one set after it. */
+function shapeLater(ms) {
+  const due = Date.now() + Math.max(50, ms);
+  if (shapeTimer !== null && shapeTimerDue <= due) return;
+  if (shapeTimer !== null) clearTimeout(shapeTimer);
+  shapeTimerDue = due;
+  shapeTimer = setTimeout(() => {
+    shapeTimer = null;
+    shapeTimerDue = Infinity;
+    // Nothing is asked for on behalf of a page nobody is looking at. Coming
+    // back to the tab fires a sweep of its own, which is where this picks up.
+    if (typeof document !== 'undefined' && document.hidden) return;
+    drainShapes();
+    sweepAllSlots();
+  }, due - Date.now());
+}
+
+async function fetchShape(url) {
   shapesInFlight.add(url);
   let trace = null;
+  let refusal = null;
   try {
     const response = await fetch(`${API_BASE}/shape`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     });
-    const answer = await response.json();
-    if (answer?.ok && Array.isArray(answer.trace) && answer.trace.length >= 2) {
+    const answer = await response.json().catch(() => null);
+    if (response.ok && answer?.ok && Array.isArray(answer.trace) && answer.trace.length >= 2) {
       trace = answer.trace;
+    } else {
+      refusal = shapeRefusal({
+        status: response.status,
+        error: typeof answer?.error === 'string' ? answer.error : null,
+        retryAfter: response.headers.get('Retry-After'),
+        tries: (shapeRefusals.get(url) ?? 0) + 1,
+      });
     }
   } catch {
     // A shape that does not arrive is not an error to announce. The card
     // simply has no drawing, which is what every Wikiloc card looked like
-    // before any of this, and the route is still there to convert.
+    // before any of this, and the route is still there to convert. It is not a
+    // route without geometry either: a connection is the least permanent thing
+    // on this page, so it is read as a wait rather than as an answer.
+    refusal = shapeRefusal({ tries: (shapeRefusals.get(url) ?? 0) + 1 });
   } finally {
     shapesInFlight.delete(url);
   }
 
-  if (!trace) {
+  if (trace) {
+    // KEPT BEFORE IT IS DRAWN, and that order is the fix.
+    //
+    // A render landing while this was in flight used to replace the slot and
+    // the row, so the answer arrived with nowhere to put it and was thrown
+    // away, while the URL was already marked as asked. The card stayed blank
+    // for the rest of the session and never asked again.
+    shapesByUrl.set(url, trace);
+    shapeRetryAt.delete(url);
+    shapeRefusals.delete(url);
+    // Every slot on the page that is still waiting for this URL, not only the
+    // one that asked: a new search, a language switch or Load more rebuilds
+    // the list, and the slot that asked is gone while the card is still there.
+    fillShapesFor(url, trace);
+  } else if (refusal.permanent) {
     shapesFailed.add(url);
-    if (slot.isConnected) slot.remove();
-    return;
+    shapeRefusals.delete(url);
+    dropShapesFor(url);
+  } else {
+    // The slot stays. It is where a later answer lands, and this refusal is
+    // about a minute of somebody's day rather than about the route.
+    const wait = refusal.waitMs;
+    shapeRefusals.set(url, (shapeRefusals.get(url) ?? 0) + 1);
+    shapeRetryAt.set(url, Date.now() + wait);
+    if (refusal.everyShape) shapesPausedUntil = Math.max(shapesPausedUntil, Date.now() + wait);
+    shapeLater(wait);
   }
 
-  // KEPT BEFORE IT IS DRAWN, and that order is the fix.
-  //
-  // A render landing while this was in flight used to replace the slot and the
-  // row, so the answer arrived with nowhere to put it and was thrown away,
-  // while the URL was already marked as asked. The card stayed blank for the
-  // rest of the session and never asked again.
-  shapesByUrl.set(url, trace);
+  drainShapes();
+}
 
-  // The slot may be gone: a new search, a language switch, or Load more will
-  // have rebuilt the list while this was in flight. The shape is kept either
-  // way, and the next render finds it.
-  if (!slot.isConnected) return;
-  fillShapeSlot(slot, url, trace, rows);
+/** Fill every slot on the page still waiting for this URL. */
+function fillShapesFor(url, trace) {
+  for (const [container, rows] of cardGrids) {
+    if (!container.isConnected) {
+      cardGrids.delete(container);
+      continue;
+    }
+    for (const slot of [...container.querySelectorAll('.card-shape')]) {
+      if (slot.dataset.shapeUrl === url) fillShapeSlot(slot, url, trace, rows ?? []);
+    }
+  }
+}
+
+/** Drop every slot on the page waiting for a shape that is not coming. */
+function dropShapesFor(url) {
+  for (const [container] of cardGrids) {
+    if (!container.isConnected) {
+      cardGrids.delete(container);
+      continue;
+    }
+    for (const slot of [...container.querySelectorAll('.card-shape')]) {
+      if (slot.dataset.shapeUrl === url) slot.remove();
+    }
+  }
 }
 
 /** Put a shape into the slot waiting for it, and onto its row. */
@@ -2881,8 +3063,12 @@ function fillShapeSlot(slot, url, trace, rows) {
   const source = row?.publishedBy || sourceLabel(finder.sourceId);
   slot.innerHTML = shapeFilled(drawing, t('card.shapeAlt', { source }));
   slot.classList.remove('is-waiting');
-  // The reader is already looking at this card, so its ground is wanted now.
-  paintCardGround(slot, drawing, row);
+  // Ground only for a card the reader has actually reached. An answer is filled
+  // into every slot waiting for it, wherever it is, and some of those are in a
+  // panel behind a tab or four rows further down; painting those would fetch
+  // tiles ahead of the reader, which is the one thing this whole design exists
+  // to avoid. The sweep paints the rest when they are reached.
+  if (onScreen(slot) && inViewport(slot)) paintCardGround(slot, drawing, row);
   // A filled slot must stop advertising that it needs filling, or the next
   // render asks about a shape the page is already holding.
   delete slot.dataset.shapeUrl;
@@ -3143,9 +3329,21 @@ function cardMarkup(row, index, mode) {
   // request at all. Wikiloc sends none in a search result, so its cards carry
   // the URL to ask about and `watchShapes` does the asking. Either way no
   // picture is loaded from anybody: what a card draws, it draws itself.
+  //
+  // BOTH ANSWERS OUT OF ONE CALL, because the two used to be worked out in the
+  // wrong order. The drawing was read off the row first and the URL asked for
+  // second, and asking for the URL was also what put a cached shape onto the
+  // row. So a render where the shape was already in hand got neither, and the
+  // card came back with no slot element at all: nothing for the observer to
+  // watch, nothing for a sweep to find. Running the same search twice was
+  // enough, and it never recovered.
+  const shape = cardShapeChoice(row, { known: shapesByUrl, failed: shapesFailed });
+  // Onto the row as well, which is where a row that arrived with its own
+  // geometry keeps it, and where the ground under the line is cut from.
+  if (shape.trace) row.trace = shape.trace;
   const drawing = cardTrace(row, { fit: fitFrame, project: projectInFrame });
   const picture = shapeSlot(drawing, {
-    url: drawing ? null : shapeAskable(row),
+    url: drawing ? null : shape.url,
     alt: t('card.shapeAlt', { source }),
   });
 

@@ -180,6 +180,96 @@ export function shapeSlot(drawing, { url = null, alt = '' } = {}) {
   return `<div class="card-shape">${shapeContents(drawing, alt)}</div>`;
 }
 
+/** What a card gets for its shape: a trace to draw, or a URL to ask about.
+ *
+ *  ONE ANSWER, BECAUSE THE TWO USED TO BE WORKED OUT IN THE WRONG ORDER. The
+ *  caller read the drawing off the row first and asked this question second,
+ *  and the answer to the second question was also what put a cached shape onto
+ *  the row. So on any render where the shape was already in hand, the drawing
+ *  was read from a row that did not have it yet and the URL came back null
+ *  because it did. The card got neither, `shapeSlot` returned an empty string,
+ *  and there was no element on the page at all: nothing for the observer to
+ *  watch, nothing for a sweep to find, nothing to fill. Searching twice for the
+ *  same thing blanked every card, permanently.
+ *
+ *  Both answers come out of one call now, so there is no order to get wrong.
+ *
+ *  A shape already in flight still returns its URL. The slot is what a late
+ *  answer is filled into, so a render that lands mid-fetch must still leave one
+ *  on the page; asking twice is stopped where the asking happens, not by
+ *  withholding the element that holds the answer.
+ *
+ *  `known` is every shape in hand, keyed by route URL. `failed` is the URLs a
+ *  source has refused for good. A refusal that might not last is not in it. */
+export function cardShapeChoice(row, { known = null, failed = null } = {}) {
+  const trace = Array.isArray(row?.trace) && row.trace.length >= 2 ? row.trace : null;
+  if (trace) return { trace, url: null };
+
+  const url = typeof row?.url === 'string' && row.url ? row.url : null;
+  if (!url) return { trace: null, url: null };
+
+  const cached = known?.get(url) ?? null;
+  if (Array.isArray(cached) && cached.length >= 2) return { trace: cached, url: null };
+
+  if (failed?.has(url)) return { trace: null, url: null };
+  return { trace: null, url };
+}
+
+// How long to wait before asking again for a shape the service could not give
+// us this time, and the longest that wait is ever allowed to grow to.
+//
+// Only ever a floor: a `Retry-After` the service actually sent wins over both,
+// because the service knows when its own bucket refills and we are guessing.
+//
+// THE WAIT DOUBLES, WHICH IS WHAT KEEPS THIS FROM BEING THE LOOP THE OLD CODE
+// WAS AVOIDING. Writing a refusal off as permanent was one wrong way to stop a
+// card asking forever; asking every eight seconds for as long as the page is
+// open is the other. Doubling to a ten minute ceiling costs a card left on
+// screen for an hour about ten requests, and it never gives up, so a service
+// that comes back an hour later is still answered.
+export const SHAPE_RETRY_MS = 8000;
+export const SHAPE_RETRY_CEILING_MS = 600000;
+
+/** Whether a refused shape is refused for good, and how long to wait if not.
+ *
+ *  THE REFUSALS ARE NOT ALIKE AND WERE TREATED ALIKE. `track` means this route
+ *  publishes no geometry, which is true today and true in a minute. `busy` is
+ *  this client's own request budget, which refills. `network` is the source
+ *  site answering 403 or not answering, which is a minute of that site's day.
+ *  Recording all three as permanent meant one 429 blanked a card for the rest
+ *  of the session: five refusals, then the service back, and scrolling, two
+ *  re-renders and a fresh search produced no further request at all.
+ *
+ *  `busy` is the client's whole budget rather than this URL's, so it is said
+ *  so here and the caller pauses every shape, not one.
+ *
+ *  An answer this does not recognise is temporary. A card that asks again in
+ *  eight seconds costs one request; a card wrongly written off costs the
+ *  drawing for the session, and the failure looks exactly like a source that
+ *  publishes no geometry.
+ *
+ *  `tries` is how many times this URL has already been refused this way, and it
+ *  is what stops "not permanent" turning into "asks forever at the same rate". */
+export function shapeRefusal({ status = 0, error = null, retryAfter = null, tries = 1 } = {}) {
+  const round = Number.isFinite(tries) && tries > 1 ? Math.min(tries, 20) : 1;
+  const ours = Math.min(SHAPE_RETRY_MS * 2 ** (round - 1), SHAPE_RETRY_CEILING_MS);
+  // Said in seconds by the service, held as a number of milliseconds here.
+  const sent = Number(retryAfter);
+  const wait = Number.isFinite(sent) && sent > 0 ? Math.max(sent * 1000, ours) : ours;
+
+  // The route itself has no shape to give, or never will have one at this
+  // address. Asking again would get the same answer at the same price.
+  if (error === 'track' || error === 'domain' || error === 'notfound' || error === 'private') {
+    return { permanent: true, waitMs: 0, everyShape: false };
+  }
+
+  if (error === 'busy' || status === 429) {
+    return { permanent: false, waitMs: wait, everyShape: true };
+  }
+
+  return { permanent: false, waitMs: wait, everyShape: false };
+}
+
 /** The slot's contents, for the observer that fills one in after the fact. */
 export function shapeFilled(drawing, alt) {
   return shapeContents(drawing, alt);

@@ -138,14 +138,15 @@ over the whole list that nothing was guessed.
 | Measure | Note |
 | --- | --- |
 | Distance | haversine over consecutive points |
-| Ascent | profile resampled along the track, median filtered, 1 m step threshold |
+| Ascent | profile resampled along the track, median filtered, committed when the profile turns back on itself by 1 m |
 | Raw ascent | no filter and no threshold, which is how most portals publish it |
 | Elevation range | lowest and highest point |
 | Points, points with elevation | how much of the track carries height at all |
 | Mean spacing | distance between consecutive points |
 | **Largest gap, and the distance it happens at** | the headline number |
+| Borrowed distance | how much of the distance above is straight line across a gap |
 
-Two details that are easy to get wrong, and were:
+Four details that are easy to get wrong, and were:
 
 - **Do not accumulate ascent point to point on a dense track.** A recording
   with points two metres apart puts every single elevation change below any
@@ -156,6 +157,33 @@ Two details that are easy to get wrong, and were:
   the same way. A track recorded every 19.5 m, resampled to 5 m, reported 120 m
   of ascent where the real figure was 624 m. The step is
   `max(10 m, mean spacing)`.
+- **Do not apply the noise threshold per sample step.** Sampling fixed the
+  first mistake and hid a worse one. A threshold of 1 m against a step of 10 m
+  is a cutoff at a 10% gradient, not a noise filter, and every watch file is
+  denser than 10 m, so most real recordings lost their climb in full. A 24 km
+  recording of an 800 m col printed an ascent of 0 m beside an elevation range
+  798 m wide, in the same table, with nothing between them:
+
+  | grade of an 800 m climb | 2.0% | 4.0% | 6.7% | 10.0% | 13.3% |
+  | --- | --- | --- | --- | --- | --- |
+  | threshold per step | 0 | 0 | 0 | 797 | 797 |
+  | threshold on the reversal | 800 | 800 | 799 | 798 | 798 |
+
+  The threshold belongs on the change of direction: a climb is committed when
+  the profile turns back on itself by more than 1 m, however many samples it
+  took to get there. That keeps a gentle ramp and still rejects jitter, and on
+  the Komoot tour this page has always disagreed with it took the gap from
+  47.0 m to 13.3 m, 9.8% of the published figure down to 2.8%.
+- **Do not let the grid run past the last recorded height.** The sample grid
+  started at distance zero while taking its first height from the first point
+  that carried one, so a head with no heights was extrapolated backwards along
+  the first recorded leg, over ground with no height in the file at all. The
+  invention was that leg's grade times the length of the head, so nothing
+  bounded it: on a track missing heights for 2 km and then descending at 30%,
+  the page printed a ceiling of 2 044 m for a file whose highest reading is
+  1 450 m, with no note, and scaled the profile's own axis to it. The grid now
+  runs between the first and last recorded height and not one metre outside
+  them, and the published range is inside the file's own range by construction.
 
 Those three parameters are on the page, not only here. The ascent tile prints
 the step in its note, the way the gap tile prints its threshold, and the fold
@@ -163,10 +191,23 @@ under the tiles names all three with the values the measurement actually used.
 Ascent is the figure a reader can watch disagree with the source by a fifth,
 and a site that hides how a number was made is what this one exists to answer.
 
-Gap threshold defaults to 100 m. Above it the report escalates: the tile turns
-to the warning skin, both charts draw the gap as a straight dashed chord in the
-warning colour with a mark at each end, and a line underneath says what it
-means for the walk.
+**The gap threshold is read off the track, not fixed at 100 m.** A gap is a
+step far outside the spacing the rest of the file keeps: `max(50 m, 2 x the
+95th percentile of the steps)`. A flat number was the wrong question asked
+twice. A route drawn at 150 m spacing has every step over 100 m, so the page
+reported 100% of it as straight line across untracked ground; twenty holes of
+60 m in a track recorded every 20 m are 1 200 m of straight line, and every one
+of them sat under 100 m, so the page reported nothing at all. The floor and the
+multiple were read off twenty one real files: the largest single step in a
+recording with no visible hole was 42.4 m and the smallest step that was plainly
+a hole was 58.5 m.
+
+Above the threshold the report escalates: the tile turns to the warning skin,
+both charts draw the gap as a straight dashed chord in the warning colour with a
+mark at each end, and a line underneath says what it means for the walk. The
+borrowed distance beside the distance tile is the total of every gap, not the
+largest, and it is **a floor on what was missed, not a correction to subtract**:
+the walker covered at least each chord and almost certainly more.
 
 ## Running it
 
@@ -205,8 +246,9 @@ node --test 'web/test/*.test.js'
 The Python tests cover the TWKB reader against an encoder written from the
 specification, the URL parsing, and Wikiloc's statistics block in both the
 metric and the imperial rendering of the same route. The Node tests cover the
-arithmetic, including the two ascent mistakes described above. Neither suite
-touches the network.
+arithmetic, including all four measurement mistakes described above, and one
+test reads this module's own source to check that no function is called with an
+argument it does not take. Neither suite touches the network.
 
 ## Layout
 

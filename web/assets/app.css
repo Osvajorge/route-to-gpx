@@ -656,7 +656,14 @@ h1 {
  *
  * So the stretch goes, and a card without a drawing is simply shorter, which is
  * the truth about it. Nothing changes on a phone: one column has no row to
- * stretch to. */
+ * stretch to.
+ *
+ * IT DID NOT GO. The paragraph above was written and the declaration was never
+ * added, so the default stretch stood and the void came back bigger: measured
+ * at 1280 on a three card row, a card whose shape request was refused sat at
+ * its natural 257.2px stretched to 493.7px, with 246.5px of nothing between the
+ * figures and the buttons. `align-items: start` below is the sentence made
+ * true, and it is pinned by a test now rather than by a comment. */
 .results {
   /* How many columns, set by the page from the width AND the number of cards.
    * See columnCount() in cards.js for the rule and for what it fixes.
@@ -673,12 +680,33 @@ h1 {
   gap: 12px;
   padding-top: 14px;
 
+  /* Each card as tall as what is in it. This is the declaration the paragraph
+   * above describes; without it the row's tallest card sets every card's
+   * height, and `margin-top: auto` on .card-actions opens the void under the
+   * short one. The cost is a ragged bottom edge on a mixed row, which is the
+   * truth about a list where one source publishes a shape and the other does
+   * not. */
+  align-items: start;
+
   /* A ceiling on how wide one card may grow, not on how many there are. 340px
    * is where a card stops being readable going down; 460px is where it stops
    * being a card going up, because past that the drawing is half a screen tall
    * and the two lines of text under it look like a caption that lost its
    * article. Centred, so a short answer sits under the field that asked for it
-   * rather than hugging one edge of a panel it does not fill. */
+   * rather than hugging one edge of a panel it does not fill.
+   *
+   * WIDTH FIRST, THEN THE CEILING, THEN THE CENTRING. `.results` is a flex item
+   * in a column, so its width comes from the cross axis, and an auto cross-axis
+   * margin cancels flex stretch outright: the grid fell back to its content and
+   * the ceiling below was never reached. Measured at 1280 in a 1178px panel,
+   * with cards whose content was narrower than the space: grid 796.9px, cards
+   * 257.6px each, which is 82px under the 340px floor this comment calls the
+   * bottom of readable. With the width declared the grid was 1178 and the cards
+   * 384.7. The stated width also makes the box definite, so the auto margins
+   * have something to halve and the centring below still happens, which is the
+   * case the ceiling exists for: a single result is 460px in the middle of the
+   * panel rather than 460px against its left edge. */
+  width: 100%;
   max-width: calc(var(--card-columns) * 460px + (var(--card-columns) - 1) * 12px);
   margin-inline: auto;
 }
@@ -1462,10 +1490,30 @@ h1 {
   border-radius: var(--radius-card);
 }
 
+/* Rung one, and a real heading in the markup.
+ *
+ * It was a <span> at rung three: 11.5px, weight 400, no tracking, --muted. The
+ * source's claim on a card is an <h4> at 11.5px, weight 500, 0.06em tracking,
+ * --text-2. So the label over a figure this page measured itself was quieter on
+ * every axis than the label over a figure it exists to doubt, and it was not a
+ * heading at all. Both halves are fixed: the element is an h2/h3/h4 chosen by
+ * where the tile sits, and the weight, colour and tracking are rung one's.
+ *
+ * THE SIZE IS RUNG TWO'S, AND THAT IS THE LADDER'S OWN RULE. The ladder says
+ * rank is carried by weight, colour and tracking, and the size scale is left
+ * alone. Taking this to rung one's 12px was measured at 375 in Spanish and cost
+ * a line: "Desnivel positivo" wrapped, and the three tiles grew from 253px to
+ * 273.8px on an 812px phone, on the one surface where the Largest gap tile
+ * being on screen is the whole point. At 11.5px it is one line and 253px, to
+ * the pixel, while still being louder than the source's heading on every axis
+ * that carries rank. Nothing under it moves: .tile-value and .tile-note are
+ * untouched. */
 .tile-label {
   font-family: var(--font-mono);
   font-size: 11.5px;
-  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
 }
 
 .tile-value {
@@ -2218,15 +2266,22 @@ html.dialog-open body {
  *
  *   1  our headings      12px / 600 / --text   / 0.06em
  *      .dialog-kicker, .dialog-subhead, .chart-title
+ *      .tile-label is rung one in weight, colour and tracking at 11.5px; see
+ *      the rule itself for the phone measurement that holds the size there
  *   2  the source's      11.5px / 500 / --text-2 / 0.06em
  *      .card-claim-head, which is "What Komoot says"
  *   3  the figures each one governs   11.5px / 400 / --muted / normal
- *      .tile-label, .tile-note, .control-label, .card-stat dt at 10.5
+ *      .tile-note, .control-label, .card-stat dt at 10.5
  *
  * Rung two was raised on its own and briefly outranked rung one, which put the
  * heading naming somebody else's numbers above the headings over ours. Rank is
  * carried by weight, colour and tracking, so the size scale moves by half a
- * pixel and no figure changes size. */
+ * pixel and no figure changes size.
+ *
+ * .tile-label moved up from rung three, where it was the one label over our own
+ * figures that the source's heading outranked on every axis at once. It is a
+ * heading element now as well as a heading in the type, so Distance, Ascent and
+ * Largest gap are in the document outline rather than absent from it. */
 .dialog-kicker {
   font-family: var(--font-mono);
   font-size: 12px;

@@ -9,12 +9,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  buildGpx,
-  DEFAULT_GAP_THRESHOLD_M,
-  haversine,
-  measure,
-} from '../assets/measure.js';
+import { buildGpx, haversine, measure } from '../assets/measure.js';
 import {
   arrange,
   changedFileName,
@@ -149,7 +144,7 @@ test('rotation of a near-closing loop opens a measurable seam and reports it', (
 
   // And the file measures it: the hole this tool made is now the largest gap,
   // and it is over the threshold the report warns at.
-  const after = measure({ points: out.points }, DEFAULT_GAP_THRESHOLD_M);
+  const after = measure({ points: out.points });
   assert.ok(Math.abs(after.largestGapM - out.seamM) < 1);
   assert.equal(after.gapExceedsThreshold, true);
 });
@@ -306,49 +301,85 @@ test('rotating a closed ring changes nothing at all, ascent included', () => {
   // of edges: nothing added, nothing removed, seam zero. Every figure has to
   // say so, and the ascent used to be the one that did not.
   //
-  // It drifted 1.7% across eight starts, and this test used to bound that at 5%
-  // rather than fix it, on the reasoning that any fixed step resampling has a
-  // phase and taking the phase out means changing the estimator. That reasoning
-  // was wrong, and measuring three candidate fixes is what showed it:
-  //     averaging over several grid phases   drift got WORSE, 1.69% -> 2.48%
-  //     anchoring the grid to the southern    worse again, 2.54%
-  //     making the filter wrap at the seam    1.685% -> 0.0025%
-  // The phase was never the cause. The cause was the seam: a closed ring has no
-  // first sample and no last one, and filtering it with a window clamped at
-  // each end treats whatever the file happens to begin at as a boundary. Move
-  // the start and different ground gets the short window.
+  // A closed ring has no first sample and no last one, and filtering it with a
+  // window clamped at each end treats whatever the file happens to begin at as
+  // a boundary, so moving the start hands different ground the short window.
+  // The filter's window reaching across the seam is what fixes that.
   //
-  // So this is not a tolerance any more. Rotating a ring must not move the
-  // ascent, and it does not.
-  const points = ringWithClosedProfile({ sideM: 900, stepM: 18 });
-  const base = measure({ points });
-  const ring = ringLength(points);
+  // AND THE GEOMETRY IS VARIED, BECAUSE THE FIRST TIME IT WAS NOT. The wrap was
+  // once defended with a single figure, 1.7% of drift down to 0.0%, read off
+  // one call of the generator below at sideM 900 and stepM 18. At those numbers
+  // the perimeter is 3 600 m and the points are exactly 18 m apart, so the
+  // sample step equals the native spacing and the resampler is an identity map:
+  // every source of rotation sensitivity except the seam had been removed by
+  // construction, and the 0.0% was an artefact of the fixture. Changing one
+  // number brought it back. Measured again across the geometries this test now
+  // uses, clamped window against wrapped:
+  //     side 900 step 18   3.261% -> 0.001%     side 1000 step 18  3.326% -> 0.093%
+  //     side 900 step 17   3.396% -> 0.089%     side 900 step 6    1.769% -> 0.003%
+  //     side 900 step 23   5.023% -> 0.228%
+  // The wrap is kept because it holds across all of them, not because of the
+  // one that flattered it. The tolerance below is the residue that is left, and
+  // it is a tenth of a per cent rather than a fifth of one.
+  for (const geometry of [
+    { sideM: 900, stepM: 18 },
+    { sideM: 900, stepM: 17 },
+    { sideM: 900, stepM: 23 },
+    { sideM: 1000, stepM: 18 },
+    { sideM: 900, stepM: 6 },
+  ]) {
+    const points = ringWithClosedProfile(geometry);
+    const base = measure({ points });
+    const ring = ringLength(points);
+    const named = `side ${geometry.sideM} step ${geometry.stepM}`;
 
-  for (const share of [0.05, 0.2, 0.25, 0.5, 0.75, 0.9]) {
-    const out = arrange(points, { startIndex: Math.round(ring * share) });
-    const after = measure({ points: out.points });
+    for (const share of [0.05, 0.2, 0.25, 0.5, 0.75, 0.9]) {
+      const out = arrange(points, { startIndex: Math.round(ring * share) });
+      const after = measure({ points: out.points });
 
-    assert.equal(out.seamM, 0, `a closed ring opened a seam at ${share}`);
-    assert.equal(after.pointCount, base.pointCount);
-    assert.ok(
-      Math.abs(after.distanceM - base.distanceM) < 0.01,
-      `distance moved at ${share}: ${after.distanceM} against ${base.distanceM}`,
-    );
-    // Read off the points in the order they are in, with no grid between, so
-    // this one is rotation proof and shows the ground really is the same.
-    assert.ok(
-      Math.abs(after.rawAscentM - base.rawAscentM) < 0.1,
-      `the ground changed at ${share}: ${after.rawAscentM} against ${base.rawAscentM}`,
-    );
+      assert.equal(out.seamM, 0, `a closed ring opened a seam at ${share}`);
+      assert.equal(after.pointCount, base.pointCount);
+      assert.ok(
+        Math.abs(after.distanceM - base.distanceM) < 0.01,
+        `distance moved at ${named} ${share}: ${after.distanceM} against ${base.distanceM}`,
+      );
+      // Read off the points in the order they are in, with no grid between, so
+      // this one is rotation proof and shows the ground really is the same.
+      assert.ok(
+        Math.abs(after.rawAscentM - base.rawAscentM) < 0.1,
+        `the ground changed at ${named} ${share}: ${after.rawAscentM} against ${base.rawAscentM}`,
+      );
 
-    // Floating point, not tolerance: the same sums in a different order.
-    assert.ok(
-      Math.abs(after.ascentM - base.ascentM) < 0.05,
-      `the ascent moved at ${share}: ${after.ascentM} against ${base.ascentM}`,
-    );
-    assert.ok(
-      Math.abs(after.descentM - base.descentM) < 0.05,
-      `the descent moved at ${share}: ${after.descentM} against ${base.descentM}`,
-    );
+      assert.ok(
+        Math.abs(after.ascentM - base.ascentM) < base.ascentM * 0.003,
+        `the ascent moved at ${named} ${share}: ${after.ascentM} against ${base.ascentM}`,
+      );
+      assert.ok(
+        Math.abs(after.descentM - base.descentM) < base.descentM * 0.003,
+        `the descent moved at ${named} ${share}: ${after.descentM} against ${base.descentM}`,
+      );
+    }
   }
+});
+
+test('the wrap that survives is the filter, not the accumulator', () => {
+  // WHICH HALF OF THE OLD FIX WAS REAL. The filter's window and the accumulator
+  // both used to reach across the seam, and only one of them had to. Measured
+  // by taking each away on its own, rotation drift in ascent across the five
+  // geometries above:
+  //     both wrapped               0.001% to 0.228%
+  //     only the filter wrapped    0.001% to 0.228%    identical
+  //     neither wrapped            1.685% to 5.023%
+  // So the accumulator's wrap bought nothing, and it cost something: it joined
+  // the last sample to the first across no ground at all, which turned ordinary
+  // barometric drift round a flat loop into a hard descent. It is gone. Both
+  // properties it was credited with are still here and are checked in
+  // measure.test.js: a closed ring climbs exactly as much as it falls, and a
+  // flat ring carrying drift is not given a descent it never made.
+  const points = ringWithClosedProfile({ sideM: 900, stepM: 23 });
+  const result = measure({ points });
+  assert.ok(
+    Math.abs(result.ascentM - result.descentM) < 1e-6,
+    `${result.ascentM} up against ${result.descentM} down`,
+  );
 });

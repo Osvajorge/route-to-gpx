@@ -14,9 +14,14 @@ import {
   cardFigures,
   CARD_TRACE_H,
   CARD_TRACE_W,
+  cardShapeChoice,
   cardTrace,
   columnCount,
   durationParts,
+  shapeRefusal,
+  SHAPE_RETRY_CEILING_MS,
+  SHAPE_RETRY_MS,
+  shapeSlot,
   sourceOwnWord,
   wording,
   starPortion,
@@ -585,4 +590,149 @@ test('wording never hands back an empty word for a real slug', () => {
   for (const slug of ['hiking', 'mtb_easy', 'T4']) {
     assert.ok(wording(slug, {}).text.length > 0);
   }
+});
+
+// ------------------------------------------- the shape a card is given, or asks for
+//
+// Every rule below failed in the browser and nowhere else, because the two
+// answers a card needs about its shape were worked out by two calls with a side
+// effect between them. They come out of one call now, and these are the
+// properties that call has to keep.
+
+const SHAPE = [
+  [41.77, 2.39],
+  [41.78, 2.4],
+  [41.79, 2.41],
+];
+const ROW = { url: 'https://www.wikiloc.com/trails/matagalls-1', title: 'Matagalls' };
+
+/** What the card actually ends up with, markup and all. Asking cardShapeChoice
+ *  on its own would pass while the page still rendered nothing. */
+function slotFor(row, held) {
+  const choice = cardShapeChoice(row, held);
+  const drawing = choice.trace
+    ? cardTrace({ trace: choice.trace }, PROJECTION)
+    : cardTrace(row, PROJECTION);
+  return shapeSlot(drawing, { url: drawing ? null : choice.url, alt: 'a route' });
+}
+
+test('a card whose shape is already in hand is given the shape, not nothing', () => {
+  // THE BLANKING. On a render where the shape was cached, the drawing was read
+  // off a row that did not carry it yet and the URL came back null because the
+  // reading of it was what put the shape on the row. The card got neither and
+  // there was no element on the page at all: nothing for the observer to watch,
+  // nothing for a sweep to find, nothing to fill. Running the same search twice
+  // blanked all five Wikiloc cards for the rest of the session.
+  const known = new Map([[ROW.url, SHAPE]]);
+  const choice = cardShapeChoice({ ...ROW }, { known });
+  assert.deepEqual(choice.trace, SHAPE);
+  assert.equal(choice.url, null);
+
+  const markup = slotFor({ ...ROW }, { known });
+  assert.notEqual(markup, '', 'the card was rendered with no shape element at all');
+  assert.match(markup, /card-trace/);
+});
+
+test('a card is never left with neither a drawing nor something to ask', () => {
+  // The property under the test above, over every state the page can be in.
+  const states = [
+    ['nothing known yet', { known: new Map(), failed: new Set() }],
+    ['shape in hand', { known: new Map([[ROW.url, SHAPE]]), failed: new Set() }],
+    ['asked and still waiting', { known: new Map(), failed: new Set() }],
+  ];
+  for (const [what, held] of states) {
+    assert.notEqual(slotFor({ ...ROW }, held), '', `${what} produced no element`);
+  }
+});
+
+test('a shape still in flight keeps its slot on the page', () => {
+  // A render landing mid-fetch used to withhold the URL, so the card came back
+  // with no slot and the answer had nowhere to land. Asking twice is stopped
+  // where the asking happens; the element that holds the answer always exists.
+  const held = { known: new Map(), failed: new Set() };
+  const first = cardShapeChoice({ ...ROW }, held);
+  const second = cardShapeChoice({ ...ROW }, held);
+  assert.equal(first.url, ROW.url);
+  assert.equal(second.url, ROW.url);
+});
+
+test('a row carrying its own geometry asks for nothing', () => {
+  // Komoot reads its shape out of the thumbnail URL, so its cards never ask.
+  const choice = cardShapeChoice({ ...ROW, trace: SHAPE }, { known: new Map() });
+  assert.deepEqual(choice.trace, SHAPE);
+  assert.equal(choice.url, null);
+});
+
+test('a route refused for good is not asked about again', () => {
+  const failed = new Set([ROW.url]);
+  const choice = cardShapeChoice({ ...ROW }, { known: new Map(), failed });
+  assert.equal(choice.url, null);
+  assert.equal(choice.trace, null);
+  // And the card carries no empty slot advertising a shape nobody will send.
+  assert.equal(slotFor({ ...ROW }, { known: new Map(), failed }), '');
+});
+
+test('a one point trace is not a shape and is not mistaken for one', () => {
+  const known = new Map([[ROW.url, [[41.77, 2.39]]]]);
+  const choice = cardShapeChoice({ ...ROW }, { known });
+  assert.equal(choice.trace, null);
+  assert.equal(choice.url, ROW.url, 'a useless cached answer must still be askable');
+});
+
+test('a route that publishes no geometry is refused for good', () => {
+  for (const error of ['track', 'domain', 'notfound', 'private']) {
+    assert.equal(shapeRefusal({ status: 422, error }).permanent, true, error);
+  }
+});
+
+test('a full request budget is a wait, not a verdict about the route', () => {
+  // THE MEASURED BUG. Every non-ok answer was recorded the same way, so one 429
+  // wrote five cards off for the session: the service came back and scrolling,
+  // two re-renders and a fresh search produced no further request at all.
+  const busy = shapeRefusal({ status: 429, error: 'busy', retryAfter: '2' });
+  assert.equal(busy.permanent, false);
+  // The bucket is this client's, not this route's, so one of these pauses all.
+  assert.equal(busy.everyShape, true);
+  assert.ok(busy.waitMs >= SHAPE_RETRY_MS);
+});
+
+test('a source site having a bad minute is not the route having no shape', () => {
+  const refused = shapeRefusal({ status: 422, error: 'network' });
+  assert.equal(refused.permanent, false);
+  assert.equal(refused.everyShape, false, 'one site refusing must not pause the other');
+});
+
+test('an answer no rule here recognises is waited on rather than believed', () => {
+  for (const answer of [{}, { status: 500 }, { status: 502, error: 'teapot' }]) {
+    assert.equal(shapeRefusal(answer).permanent, false, JSON.stringify(answer));
+    assert.ok(shapeRefusal(answer).waitMs >= SHAPE_RETRY_MS);
+  }
+});
+
+test('a Retry-After the service sent outranks our own floor', () => {
+  // The service knows when its own bucket refills and we do not.
+  assert.equal(shapeRefusal({ status: 429, error: 'busy', retryAfter: '45' }).waitMs, 45000);
+  // And a shorter one never talks us into hammering it.
+  assert.equal(shapeRefusal({ status: 429, error: 'busy', retryAfter: '1' }).waitMs, SHAPE_RETRY_MS);
+  for (const junk of [null, '', 'soon', '-3', '0']) {
+    assert.equal(shapeRefusal({ status: 429, error: 'busy', retryAfter: junk }).waitMs, SHAPE_RETRY_MS);
+  }
+});
+
+test('a refusal that keeps happening is asked about less and less often', () => {
+  // The other way to get this wrong. Writing a refusal off as permanent asked
+  // once and never again; asking every eight seconds for as long as the page is
+  // open is the loop the old comment was afraid of. The wait doubles, so a card
+  // left on screen for an hour costs about ten requests instead of 450.
+  const waits = [1, 2, 3, 4, 5].map((tries) => shapeRefusal({ status: 500, tries }).waitMs);
+  assert.deepEqual(waits, [8000, 16000, 32000, 64000, 128000]);
+  for (let i = 1; i < waits.length; i++) assert.ok(waits[i] > waits[i - 1]);
+});
+
+test('the wait grows but never runs away, and never gives up either', () => {
+  // A ceiling, because a wait that keeps doubling reaches days, and a service
+  // that came back yesterday would never be noticed. And no attempt limit: a
+  // limit is just the permanent refusal again, wearing a number.
+  assert.equal(shapeRefusal({ status: 500, tries: 40 }).waitMs, SHAPE_RETRY_CEILING_MS);
+  assert.equal(shapeRefusal({ status: 500, tries: 400 }).permanent, false);
 });

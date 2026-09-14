@@ -1,9 +1,11 @@
 // Run with:  node --test web/test/
 //
-// Four rules that live in the stylesheet and nowhere else. Each one was broken
-// once, none of them by a mistake in reasoning: a token was moved, a heading
-// was raised, a phone was measured last. So each is pinned here, where a change
-// that breaks it again fails before it ships rather than after.
+// The rules that live in the stylesheet and in the markup, and nowhere a unit
+// test of the arithmetic would ever reach. Each one was broken once, none of
+// them by a mistake in reasoning: a token was moved, a heading was raised, a
+// phone was measured last, a paragraph was written and the declaration it
+// describes was never added. So each is pinned here, where a change that breaks
+// it again fails before it ships rather than after.
 //
 // These read the declarations outside the media query. The narrow width has one
 // test of its own, which reads inside it.
@@ -14,6 +16,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const css = readFileSync(fileURLToPath(new URL('../assets/app.css', import.meta.url)), 'utf8');
+// Two of the rules below are half markup: a heading that is set like a heading
+// and is not one is the defect, not half of it.
+const js = readFileSync(fileURLToPath(new URL('../assets/app.js', import.meta.url)), 'utf8');
+const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
 
 /** The declarations of one rule, by its exact selector. */
 function block(selector) {
@@ -35,17 +41,22 @@ function declarations(selector) {
 // How loud a text colour is. The ladder ranks by this, not by hex.
 const LOUDNESS = { '--muted': 1, '--text-2': 2, '--text': 3 };
 
-/** Size, weight and loudness of one rule, for comparing two of them. */
+/** Size, weight, loudness and tracking of one rule, for comparing two of them.
+ *
+ *  Tracking is here because the ladder says out loud that rank is carried by
+ *  weight, colour and tracking, and the test was checking two of the three. */
 function type(selector) {
   const body = block(selector);
   const size = /font-size:\s*([\d.]+)px/.exec(body);
   const weight = /font-weight:\s*(\d+)/.exec(body);
   const colour = /color:\s*var\((--[a-z0-9-]+)\)/.exec(body);
+  const tracking = /letter-spacing:\s*([\d.]+)em/.exec(body);
   return {
     size: size ? Number(size[1]) : null,
     // A rule that does not set one inherits 400 from the body.
     weight: weight ? Number(weight[1]) : 400,
     loudness: colour ? LOUDNESS[colour[1]] : null,
+    tracking: tracking ? Number(tracking[1]) : 0,
   };
 }
 
@@ -76,11 +87,12 @@ test('no heading over our own figures is quieter than the source heading', () =>
   // stands over figures we measured ourselves, and one pass left all of them
   // lighter, dimmer and smaller than that one.
   const source = type('.card-claim-head');
-  for (const ours of ['.dialog-kicker', '.dialog-subhead', '.chart-title']) {
+  for (const ours of ['.dialog-kicker', '.dialog-subhead', '.chart-title', '.tile-label']) {
     const head = type(ours);
     assert.ok(head.weight >= source.weight, `${ours} is lighter than .card-claim-head`);
     assert.ok(head.loudness >= source.loudness, `${ours} is dimmer than .card-claim-head`);
     assert.ok(head.size >= source.size, `${ours} is smaller than .card-claim-head`);
+    assert.ok(head.tracking >= source.tracking, `${ours} is tighter than .card-claim-head`);
   }
 });
 
@@ -194,4 +206,63 @@ test('a phone is one column whatever the page works out', () => {
   const narrow = css.slice(css.indexOf('@media (max-width: 640px)'));
   const rule = narrow.slice(narrow.indexOf('\n  .results {'));
   assert.match(rule.slice(0, rule.indexOf('}')), /grid-template-columns:\s*1fr/);
+});
+
+test('the figures this page measured itself are headings in the document too', () => {
+  // THE INVERTED LADDER. A source's claim on a card got a real <h4>; Distance,
+  // Ascent and Largest gap got <span>. Enumerating the headings on the report
+  // returned exactly one, the <h1>, whose text is the route's name in the
+  // source's own words. A reader moving by heading through the surface built to
+  // hold our numbers found the source's title and nothing else.
+  assert.match(js, /<h\$\{level\} class="tile-label">/, '.tile-label is not a heading element');
+  assert.doesNotMatch(js, /<span class="tile-label">/);
+
+  // The rung is chosen per surface rather than fixed, because the same tile is
+  // used on the report under an <h1> and in two dialogs under an <h2>.
+  assert.match(js, /measuredTiles\(measurements, published, 2\)/, 'the report is not rung 2');
+  assert.match(js, /measuredTiles\(measurements, published, 3\)/, 'the preview is not rung 3');
+  assert.match(js, /arrangementTiles\(after, measurements, 4\)/, 'the re-arranger is not rung 4');
+
+  // The two drawings on the report are ours as well, and were spans.
+  assert.doesNotMatch(html, /<span class="chart-title">/);
+});
+
+test('the results grid reaches the width it works out for itself', () => {
+  // `.results` is a flex item in a column, so its width is a cross size, and an
+  // auto cross-axis margin cancels flex stretch outright. The grid fell back to
+  // its content: measured at 1280 in a 1178px panel, 796.9px of grid and 257.6px
+  // cards, 82px under the 340px floor the rule above it calls the bottom of
+  // readable. A declared width is what makes the box definite again, and it is
+  // also what leaves the auto margins something to halve, so the centring the
+  // ceiling exists for still happens.
+  const grid = declarations('.results');
+  assert.match(grid, /margin-inline:\s*auto/, 'the grid no longer centres itself');
+  assert.match(grid, /width:\s*100%/, 'auto margins without a declared width size the grid to content');
+});
+
+test('a card is as tall as what is in it', () => {
+  // The comment over `.results` has described this since the void was first
+  // fixed. The declaration was never written, so the default stretch stood and
+  // the void came back bigger: a card whose shape was refused sat at its natural
+  // 257.2px stretched to 493.7px, with 246.5px of nothing between the figures
+  // and the buttons. A comment is not a declaration, which is why this is a test.
+  assert.match(declarations('.results'), /align-items:\s*start/);
+  // And the void only opens because the buttons are pushed to the bottom, so
+  // the pair belongs together: if this ever stops being true, so does the rule.
+  assert.match(declarations('.card-actions'), /margin-top:\s*auto/);
+});
+
+test('a sweep drains the queue it did not add to', () => {
+  // A source-text rule, because the queue it is about lives in app.js behind a
+  // `window` this suite has no browser for. It is here because the defect it
+  // pins was found by measurement and would come back silently: a slot already
+  // queued is skipped by the sweep, correctly, so a sweep that matched nothing
+  // new drained nothing. That is exactly the state a paused queue is in. One
+  // `busy` answer pauses every shape and leaves the rest queued; coming back to
+  // the tab swept, matched nothing, and left nine cards waiting on a service
+  // that had recovered thirty seconds earlier. Measured on a live list: one
+  // request spent, then nothing at all until this line existed.
+  const sweep = js.slice(js.indexOf('function sweepVisibleSlots('));
+  const body = sweep.slice(0, sweep.indexOf('\n}\n'));
+  assert.match(body, /drainShapes\(\);/, 'sweepVisibleSlots no longer drains the queue');
 });
