@@ -32,8 +32,9 @@ const STRINGS = {
     'action.convert': 'Convert',
     'action.converting': 'Working',
     'action.example': 'Load an example',
+    'action.choosefile': 'Choose a .gpx file',
     'step1.hint':
-      'komoot.com/tour/… · komoot.com/smarttour/… · any wikiloc.com trail page · or drop a .gpx anywhere on this page',
+      'komoot.com/tour/… · komoot.com/smarttour/… · any wikiloc.com trail page · or measure a .gpx you already have: drop it anywhere on this page, or choose it below',
     'step1.drop': 'Drop the .gpx to measure it',
 
     'search.label': 'What to look for',
@@ -271,13 +272,13 @@ const STRINGS = {
 
     'error.domain.title': 'We do not recognise that link.',
     'error.domain.body':
-      'We read Komoot tour and smarttour links, and any Wikiloc trail page. From anywhere else, export the GPX there and drop the file here. We measure it exactly the same.',
+      'We read Komoot tour and smarttour links, and any Wikiloc trail page. From anywhere else, export the GPX there and drop it here, or choose it. We measure it exactly the same.',
     'error.track.title': 'That page no longer carries the track where we expected it.',
     'error.track.body':
-      'The page loaded but carries no coordinate block, usually because the route is private or the site changed its format. Export the GPX there and drop the file here.',
+      'The page loaded but carries no coordinate block, usually because the route is private or the site changed its format. Export the GPX there, then drop it here or choose it.',
     'error.private.title': 'That route is private.',
     'error.private.body':
-      'Its owner has not published the track, so there is nothing for us to read. If it is your own route, export the GPX from your account and drop the file here.',
+      'Its owner has not published the track, so there is nothing for us to read. If it is your own route, export the GPX from your account, then drop it here or choose it.',
     'error.highlight.title': 'That link is a highlight, not a route.',
     'error.highlight.body':
       'A Komoot highlight is a single place: a viewpoint, a spring, a hut. Open it, pick one of the tours that pass through it, and paste that link instead.',
@@ -298,7 +299,7 @@ const STRINGS = {
       'Wait a few seconds and try the same link again. We read the source sites slowly on purpose, so nothing is broken.',
     'error.network.title': 'We could not reach the source site.',
     'error.network.body':
-      'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site and drop the file here.',
+      'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site, then drop it here or choose it.',
     'error.query.title': 'There is nothing to search for yet.',
     'error.query.body':
       'A search needs at least two characters. Type the name of a route, a peak or a village.',
@@ -477,8 +478,9 @@ const STRINGS = {
     'action.convert': 'Convertir',
     'action.converting': 'Trabajando',
     'action.example': 'Cargar un ejemplo',
+    'action.choosefile': 'Elegir un fichero .gpx',
     'step1.hint':
-      'komoot.com/tour/… · komoot.com/smarttour/… · cualquier página de ruta de wikiloc.com · o suelta un .gpx en cualquier punto de la página',
+      'komoot.com/tour/… · komoot.com/smarttour/… · cualquier página de ruta de wikiloc.com · o mide un .gpx que ya tengas: suéltalo en cualquier punto de la página, o elígelo abajo',
     'step1.drop': 'Suelta el .gpx para medirlo',
 
     'search.label': 'Qué buscar',
@@ -673,13 +675,13 @@ const STRINGS = {
 
     'error.domain.title': 'No reconocemos ese enlace.',
     'error.domain.body':
-      'Leemos enlaces de tour y de smarttour de Komoot, y cualquier página de ruta de Wikiloc. Desde otro sitio, exporta allí el GPX y suelta el fichero aquí. Lo medimos exactamente igual.',
+      'Leemos enlaces de tour y de smarttour de Komoot, y cualquier página de ruta de Wikiloc. Desde otro sitio, exporta allí el GPX y suéltalo aquí, o elígelo. Lo medimos exactamente igual.',
     'error.track.title': 'Esa página ya no lleva el track donde lo esperábamos.',
     'error.track.body':
-      'La página cargó pero no lleva bloque de coordenadas, casi siempre porque la ruta es privada o el sitio cambió de formato. Exporta allí el GPX y suelta el fichero aquí.',
+      'La página cargó pero no lleva bloque de coordenadas, casi siempre porque la ruta es privada o el sitio cambió de formato. Exporta allí el GPX y suéltalo aquí, o elígelo.',
     'error.private.title': 'Esa ruta es privada.',
     'error.private.body':
-      'Quien la subió no ha publicado el track, así que no hay nada que leer. Si es tuya, exporta el GPX desde tu cuenta y suelta el fichero aquí.',
+      'Quien la subió no ha publicado el track, así que no hay nada que leer. Si es tuya, exporta el GPX desde tu cuenta y suéltalo aquí, o elígelo.',
     'error.highlight.title': 'Ese enlace es un highlight, no una ruta.',
     'error.highlight.body':
       'Un highlight de Komoot es un sitio concreto: un mirador, una fuente, un refugio. Ábrelo, elige una de las rutas que pasan por ahí y pega ese enlace.',
@@ -700,7 +702,7 @@ const STRINGS = {
       'Espera unos segundos y prueba otra vez con el mismo enlace. Leemos los sitios de origen despacio a propósito, así que no se ha roto nada.',
     'error.network.title': 'No pudimos llegar al sitio de origen.',
     'error.network.body':
-      'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suelta el fichero aquí.',
+      'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suéltalo aquí, o elígelo.',
     'error.query.title': 'Todavía no hay nada que buscar.',
     'error.query.body':
       'Una búsqueda necesita al menos dos caracteres. Escribe el nombre de una ruta, de un pico o de un pueblo.',

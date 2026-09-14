@@ -200,6 +200,16 @@
 
               <p class="hint" id="step1-hint"></p>
               <button id="example" class="link-button" type="button"></button>
+              <!-- A drop is a pointer gesture, and measuring a local file is
+                   what every failure message recommends. So the same feature
+                   is also reachable from the keyboard. -->
+              <button id="choose-file" class="link-button" type="button"></button>
+              <input
+                id="gpx-file"
+                type="file"
+                accept=".gpx,application/gpx+xml,application/xml,text/xml"
+                hidden
+              />
             </section>
 
             <ol id="progress" class="stages" aria-live="polite" hidden></ol>

@@ -426,6 +426,8 @@ function renderStepOne() {
   el.hint.textContent = t('step1.hint');
   el.exampleButton.textContent = t('action.example');
   el.exampleButton.hidden = state.view === 'working';
+  el.chooseFileButton.textContent = t('action.choosefile');
+  el.chooseFileButton.hidden = state.view === 'working';
   el.dropNote.textContent = t('step1.drop');
   renderFinder();
 }
@@ -3561,6 +3563,8 @@ function collect() {
   el.convertButton = document.getElementById('convert');
   el.hint = document.getElementById('step1-hint');
   el.exampleButton = document.getElementById('example');
+  el.chooseFileButton = document.getElementById('choose-file');
+  el.fileInput = document.getElementById('gpx-file');
   el.dropNote = document.querySelector('.drop-note');
 
   el.tabs = document.getElementById('tabs');
@@ -3714,6 +3718,16 @@ function wire() {
     // at still on it. Losing a page of results because you opened one of them
     // is the kind of thing that makes a tool annoying.
     focusActiveField();
+  });
+
+  // The same feature as the drop below, for anyone not using a pointer.
+  el.chooseFileButton.addEventListener('click', () => el.fileInput.click());
+  el.fileInput.addEventListener('change', () => {
+    const file = el.fileInput.files[0];
+    if (file) convertFromFile(file);
+    // Cleared so that choosing the SAME file twice fires `change` again. A
+    // file that failed to measure is exactly the one a visitor retries.
+    el.fileInput.value = '';
   });
 
   // Drag and drop anywhere on the page.
