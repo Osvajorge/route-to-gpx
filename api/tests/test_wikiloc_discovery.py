@@ -223,14 +223,6 @@ MONASTERY = (41.6067129, 1.8108377)
 FIVE_KM = 5000
 
 
-@pytest.fixture(autouse=True)
-def _empty_buckets():
-    """Every test starts where a fresh process starts: nothing spent."""
-    for buckets in (service._inbound, http._clients, http._sites, http._geocoder):
-        buckets._levels.clear()
-    yield
-
-
 class _Asked:
     """Stands in for Wikiloc and Photon, and remembers what it was asked for.
 

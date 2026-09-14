@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from api import app as service
 from api import http
+from api import limits
 from api.sources import SourceError, komoot, komoot_discovery
 
 
@@ -104,14 +105,6 @@ EMPTY_NEARBY_PAYLOAD = {
     "_embedded": {"items": []},
     "page": {"size": 10, "totalElements": 0, "totalPages": 0, "number": 0},
 }
-
-
-@pytest.fixture(autouse=True)
-def _empty_buckets():
-    """Every test starts where a fresh process starts: nothing spent."""
-    for buckets in (service._inbound, http._clients, http._sites):
-        buckets._levels.clear()
-    yield
 
 
 class _Asked:
@@ -681,3 +674,38 @@ def test_the_inbound_guard_refuses_the_twenty_first_request():
     # The liveness probe is exempt: the platform calls it on a schedule, and
     # counting it would refuse the probe and evict real visitors to do it.
     assert client.get("/api/health").status_code == 200
+
+
+# --- the harness itself -------------------------------------------------------
+
+# The service holds four families of buckets in module state, and a test that
+# spends from one leaves it spent for whatever runs next. The reset that undoes
+# that lives in `api/tests/conftest.py`.
+_EVERY_FAMILY = (
+    (service._inbound, "a-visitor"),
+    (http._clients, "a-visitor"),
+    (http._sites, "komoot"),
+    (http._geocoder, "photon"),
+)
+
+
+def test_a_test_can_spend_from_every_bucket_family():
+    """The spending half of the pair below, which needs a dirty process to read.
+
+    Read the two together and in this order. On its own this one proves only
+    that `_EVERY_FAMILY` names four families that can really be charged.
+    """
+    for buckets, key in _EVERY_FAMILY:
+        buckets.spend(key, limits.now())
+        assert buckets._levels[key].tokens == buckets.capacity - 1
+
+
+def test_the_next_test_finds_every_bucket_family_full_again():
+    """The reset used to be three copies in three files, and they drifted: the
+    copy that lived here cleared `_inbound`, `_clients` and `_sites` and left
+    `_geocoder` alone. That was not harmless: `test_a_list_answer_is_never_a_track`
+    above spends a Photon token, and the old copy left it spent for every test
+    that ran after it. This is the test that would have said so.
+    """
+    for buckets, key in _EVERY_FAMILY:
+        assert key not in buckets._levels, key
