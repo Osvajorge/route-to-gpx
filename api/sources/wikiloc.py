@@ -85,7 +85,7 @@ def fetch(url: str) -> Route:
         # can we, so the message covers both.
         raise SourceError("track")
 
-    points, header = twkb.decode(base64.b64decode(found.group(1)))
+    points, header = _coordinates(found.group(1))
     if header["bytes_read"] != header["bytes_total"]:
         raise SourceError("track", "the coordinate block stops halfway through")
     if len(points) < 2:
@@ -117,6 +117,27 @@ def fetch(url: str) -> Route:
     )
 
 
+def _coordinates(encoded: str):
+    """Decodes the base64 TWKB block, or says the block cannot be read.
+
+    Neither step trusts its input. `base64.b64decode` raises on a block whose
+    length is not a multiple of four, which is what a transfer cut short looks
+    like, and `twkb.decode` walks the bytes by index and raises `IndexError` on
+    anything that is not TWKB. Both escape as a 500 in `text/plain`, the one
+    shape this service promises never to return, so both become the same
+    `track` the visitor already gets for a page with no block at all.
+    """
+    try:
+        raw = base64.b64decode(encoded)
+    except (ValueError, TypeError):
+        raise SourceError("track", "the coordinate block is not readable base64")
+
+    try:
+        return twkb.decode(raw)
+    except (IndexError, ValueError, OverflowError):
+        raise SourceError("track", "the coordinate block is not readable TWKB")
+
+
 def _normalise(text: str) -> str:
     plain = re.sub(r"<[^>]+>", " ", text)
     plain = html.unescape(plain).lower().strip()
@@ -132,9 +153,15 @@ def _number(text: str) -> Optional[float]:
     number in English, so neither separator can be assumed. What holds in both
     is the shape: a separator with exactly three digits after it groups
     thousands, and anything else marks the decimal.
+
+    A leading minus belongs to the figure: a trail round the Dead Sea publishes
+    a minimum altitude below sea level, and dropping the sign turns 400 metres
+    down into 400 metres up. A hyphen straight after a digit is not a sign, it
+    joins two figures, so the lookbehind leaves `1456-3407 m` reading as 3407
+    the way it always did.
     """
     plain = _normalise(text)
-    found = re.search(r"(\d[\d.,]*)\s*(km|mi|ft|m)\b", plain)
+    found = re.search(r"(?<!\d)(-?\d[\d.,]*)\s*(km|mi|ft|m)\b", plain)
     if not found:
         return None
 
@@ -175,6 +202,9 @@ def _statistics(page: str) -> Dict[str, object]:
             else:
                 value = _number(raw)
                 if value is not None:
-                    stats[field] = value
+                    # Distance, ascent and descent are magnitudes: Wikiloc puts
+                    # the direction in the label, `Desnivel negativo`, never in
+                    # the number. Only the two altitudes sit below sea level.
+                    stats[field] = value if field.startswith("elevation") else abs(value)
             break
     return stats
