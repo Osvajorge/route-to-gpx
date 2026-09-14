@@ -33,7 +33,7 @@ import {
 } from './discovery.js';
 import { detectLanguage, rememberLanguage, translate } from './i18n.js';
 import { icon } from './icons.js';
-import { buildGpx, measure, parseGpx, TrackError } from './measure.js';
+import { buildGpx, measure, parseGpx } from './measure.js';
 import {
   fitFrame,
   indexAtDistance,
@@ -177,6 +177,20 @@ function fail(errorKey) {
   setView('error');
 }
 
+/** A dropped or chosen file that could not be read, with its name taken back
+ *  out of the link field.
+ *
+ *  The name goes in there while the file is being worked on, to say which file
+ *  that is. Left behind after a failure it becomes something the visitor never
+ *  typed and the field cannot use: pressing Convert reads `walk.gpx` as a link,
+ *  fails to place it on either site, and answers with a second error, worded
+ *  differently, about the same file that failed a moment ago. */
+function failDroppedFile() {
+  state.url = '';
+  el.input.value = '';
+  fail('file');
+}
+
 /** Takes the link field's error panel down when work starts somewhere else.
  *
  *  The panel belongs to step one, which every tab shares, so without this a
@@ -187,6 +201,25 @@ function clearRouteError() {
   if (state.view !== 'error') return;
   state.errorKey = null;
   setView('idle');
+}
+
+// How long the page waits for one conversion before it gives up on it.
+//
+// A conversion is one request that fetches somebody else's page, rebuilds the
+// track from it and hands it back, so it is allowed to be slow. What it is not
+// allowed to be is endless: without a bound, a service that accepts the request
+// and never answers leaves the word "Working" on screen, every control in step
+// one disabled, and nothing the visitor can press. This is the exit.
+const CONVERT_TIMEOUT_MS = 60000;
+
+/** A signal that gives up after `ms`, or nothing at all where the browser has
+ *  no such thing.
+ *
+ *  Nothing is the right fallback: an unbounded wait is the behaviour this page
+ *  had before the bound existed, and it is a far smaller failure than every
+ *  conversion on an older browser dying on a TypeError. */
+function givesUpAfter(ms) {
+  return typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(ms) : undefined;
 }
 
 /** Fetches one link, rebuilds the track and measures it. Hands back the
@@ -213,9 +246,13 @@ async function convertRoute(url) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
+      signal: givesUpAfter(CONVERT_TIMEOUT_MS),
     });
     payload = await response.json();
   } catch {
+    // A request that was never answered and one that failed on the way are the
+    // same sentence to the reader: we did not reach the site, try again. The
+    // abort lands here because aborting the fetch errors the body read too.
     fail('network');
     return null;
   }
@@ -306,14 +343,14 @@ async function convertFromFile(file) {
   try {
     text = await file.text();
   } catch {
-    return fail('file');
+    return failDroppedFile();
   }
 
   let track;
   try {
     track = parseGpx(text);
-  } catch (error) {
-    return fail(error instanceof TrackError ? 'file' : 'file');
+  } catch {
+    return failDroppedFile();
   }
 
   setStage(3);
@@ -355,6 +392,16 @@ function showReport(result) {
   state.result = result;
   state.hover = null;
   setView('report');
+  // Step one has just been hidden, and whatever was focused inside it went with
+  // it: the link field, the card that was pressed, the button in the dialog.
+  // Focus then falls to the top of the document, so a keyboard visitor is left
+  // above a page that changed underneath them and a screen reader says nothing
+  // at all. Landing on Download names the step that replaced step one and is
+  // the thing most visitors came for.
+  //
+  // Here rather than at each caller: three roads reach the report, this was on
+  // one of them, and the other two were the same silent jump.
+  el.downloadButton.focus();
 }
 
 function reset() {
@@ -851,6 +898,30 @@ function renderCharts() {
     trace: drawTrace(surfaces.trace, track.points, measurements),
     profile: drawProfile(el.profileFigure, track.points, measurements),
   };
+  makeCursorReachable(el.traceFigure, t('chart.trace'), measurements.distanceM);
+  makeCursorReachable(el.profileFigure, t('chart.profile'), measurements.distanceM);
+}
+
+/** The chart's cursor, made reachable by a keyboard.
+ *
+ *  The reading under a pointer is the only place on this page where the height
+ *  at a given distance exists at all: the tiles give the total climb and the
+ *  highest point, and the drawing gives the shape, but "how high is it at
+ *  km 12" is in the hover and nowhere else. Left to the pointer alone it is a
+ *  measurement this page took and then put out of reach.
+ *
+ *  A slider, because that is what the cursor is: one position along a route,
+ *  moved with the keys every slider is moved with, reading out where it is.
+ *  Done here rather than in the markup because the route's length is the range,
+ *  and the name has to change with the language. */
+function makeCursorReachable(figure, name, distanceM) {
+  const plot = figure.querySelector('.chart-canvas');
+  plot.tabIndex = 0;
+  plot.setAttribute('role', 'slider');
+  plot.setAttribute('aria-label', name);
+  plot.setAttribute('aria-valuemin', '0');
+  plot.setAttribute('aria-valuemax', String(Math.round(distanceM)));
+  plot.setAttribute('aria-valuenow', String(Math.round(state.hover ?? 0)));
 }
 
 /** The profile's axis numbers, written into the gutters either side of the
@@ -998,6 +1069,19 @@ function tileUrl(tile) {
 // that has just asked us to go away is the last thing to poll.
 let basemapBlocked = false;
 
+/** A tile already asked for, moved to the young end of the cache.
+ *
+ *  Re-inserting is what makes "least recently used" mean used rather than
+ *  fetched: without it, the tile under the middle of a route, drawn in every
+ *  frame since the page opened, is the first one the eviction throws away. */
+function recallTile(url) {
+  const pending = tileCache.get(url);
+  if (!pending) return null;
+  tileCache.delete(url);
+  tileCache.set(url, pending);
+  return pending;
+}
+
 /** One tile, or null if it did not arrive. This never rejects: a tile that
  *  fails is a quieter chart, not something to report.
  *
@@ -1008,7 +1092,7 @@ let basemapBlocked = false;
  *  under the track. The refusal is only legible in the headers, and only fetch
  *  can read them. */
 function loadTile(url) {
-  const pending = tileCache.get(url);
+  const pending = recallTile(url);
   if (pending) return pending;
 
   const request = (async () => {
@@ -1029,7 +1113,14 @@ function loadTile(url) {
     }
   })();
 
-  if (tileCache.size >= TILE_CACHE_MAX) tileCache.clear();
+  // The oldest one, not all of them. Emptying the cache at the ceiling meant
+  // that the frame which filled it threw away every tile on screen with it, so
+  // from that moment on each pan refetched the whole plate, filled the cache
+  // again and emptied it again. A Map hands its keys back in insertion order,
+  // so the first key is the least recently used one.
+  while (tileCache.size >= TILE_CACHE_MAX) {
+    tileCache.delete(tileCache.keys().next().value);
+  }
   tileCache.set(url, request);
   return request.then((image) => {
     // A tile that failed is dropped rather than remembered, so a later frame
@@ -1374,6 +1465,9 @@ function showHover(distanceM) {
   if (!state.result || !chartData) return;
   const { track, measurements } = state.result;
   const { index, label } = readingAt(distanceM);
+  // Where the cursor is, so a key press can move it on from here rather than
+  // from the start of the route every time.
+  state.hover = distanceM;
 
   const traceCursor = el.traceFigure.querySelector('.trace-cursor');
   const point = chartData.trace.coords[index];
@@ -1391,6 +1485,14 @@ function showHover(distanceM) {
 
   el.traceFigure.querySelector('.chart-reading').textContent = label;
   el.profileFigure.querySelector('.chart-reading').textContent = label;
+  // The same sentence again, on the slider, because the printed one is beside
+  // the chart rather than inside it and is read at the moment focus arrives,
+  // not at each step. `aria-valuetext` is what a slider says when it moves.
+  for (const figure of [el.traceFigure, el.profileFigure]) {
+    const plot = figure.querySelector('.chart-canvas');
+    plot.setAttribute('aria-valuenow', String(Math.round(distanceM)));
+    plot.setAttribute('aria-valuetext', label);
+  }
 
   const canvas = el.traceFigure.querySelector('.chart-canvas');
   const { width, height } = canvas.getBoundingClientRect();
@@ -1405,12 +1507,16 @@ function showHover(distanceM) {
 
 function clearHover() {
   if (!state.result) return;
+  state.hover = null;
   el.traceFigure.querySelector('.trace-cursor')?.setAttribute('hidden', '');
   el.profileFigure.querySelector('.profile-cursor')?.setAttribute('hidden', '');
   const tooltip = el.traceFigure.querySelector('.chart-tooltip');
   if (tooltip) tooltip.hidden = true;
   for (const figure of [el.traceFigure, el.profileFigure]) {
     figure.querySelector('.chart-reading').textContent = '';
+    const plot = figure.querySelector('.chart-canvas');
+    plot.setAttribute('aria-valuenow', '0');
+    plot.removeAttribute('aria-valuetext');
   }
 }
 
@@ -2075,6 +2181,18 @@ function adoptEcho(panel, mode, echo) {
 
 async function runList(mode, { append = false } = {}) {
   const panel = panelState(mode);
+  // Nearby cannot be asked without an activity, and the activities belong to
+  // the source site, so they are fetched rather than written down here. One
+  // throttled /api/sports at load therefore used to end the tab for the rest of
+  // the session: an empty dropdown, disabled because it is empty, and a refusal
+  // telling the visitor to pick from it. Nothing ever asked again. Pressing the
+  // button asks again, which is the moment the visitor has said they want it.
+  if (mode === 'nearby' && !append && choicesFor(mode).sports.length === 0) {
+    panel.status = 'working';
+    panel.errorKey = null;
+    renderFinder();
+    await loadCatalogue(finder.sourceId);
+  }
   // Load more asks the SAME question the rows on screen already answer. Reading
   // the form again here is how six routes near Montseny get a second page from
   // wherever the coordinate boxes happen to say by then, and how a count from
@@ -2088,7 +2206,13 @@ async function runList(mode, { append = false } = {}) {
   if (body.errorKey) {
     // Refused here rather than upstream: a blank query or a latitude that is
     // not a number spends a request to be told what this page already knows.
-    panel.errorKey = body.errorKey;
+    //
+    // Except one: "pick an activity from the list" over a list that is empty
+    // because it never arrived. The page must not print an instruction its own
+    // controls cannot carry out, and the true fault is the one that stopped the
+    // list from coming, so that is what it says instead.
+    const listMissing = body.errorKey === 'sport' && choicesFor(mode).sports.length === 0;
+    panel.errorKey = listMissing ? 'network' : body.errorKey;
     panel.status = 'error';
     if (!append) panel.shown = null;
     renderFinder();
@@ -2532,6 +2656,64 @@ function restoreMoreFocus(mode) {
 }
 
 
+/** An empty live region, put in the document before there is anything to say.
+ *
+ *  A region is watched from the moment it exists, and what is announced is what
+ *  changes INSIDE it afterwards. A region that arrives already holding its text
+ *  has changed nothing, so whether it is read out at all comes down to when the
+ *  screen reader happened to take its picture of the page: the first answer, the
+ *  one the visitor actually pressed a button for, is the one most at risk.
+ *
+ *  Every status line in a results panel is written by replacing the whole list,
+ *  so this one lives outside the list and is never replaced.
+ *
+ *  Off screen rather than `hidden`, because `hidden` would take it out of the
+ *  accessibility tree along with everything it has to say. The rules are here
+ *  rather than in the stylesheet because the element is too. */
+function addLiveRegion(out) {
+  const say = document.createElement('p');
+  say.setAttribute('role', 'status');
+  say.style.cssText =
+    'position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap';
+  out.before(say);
+  return say;
+}
+
+/** What a results panel says out loud when it settles.
+ *
+ *  Only failures spoke before this. A search that worked replaced the panel
+ *  with nine cards and announced nothing, which to somebody who cannot see them
+ *  appear is a button that did nothing at all.
+ *
+ *  The error is the one state left out: it has its own `role="alert"` in the
+ *  panel, and saying it here as well would say it twice. */
+function announceResults(mode, panel, source) {
+  const region = mode === 'search' ? el.searchSay : el.nearbySay;
+  const shown = panel.shown;
+  let text = '';
+  if (panel.status === 'working') {
+    text = t(`finder.working.${mode}`, { source });
+  } else if (panel.status === 'empty') {
+    text = t(`empty.${mode}.title`);
+  } else if (panel.status === 'ready') {
+    // The count when the source published one, and the list's own name when it
+    // did not, because that is every honest thing this page can say about what
+    // came back without inventing a number the source never gave.
+    text =
+      shown.totalKnown === null
+        ? t('finder.list', { source })
+        : t('finder.count', {
+            source,
+            shown: formatNumber(shown.rows.length),
+            total: formatNumber(shown.totalKnown),
+          });
+  }
+  // Writing the same sentence again is a change, and a change is announced.
+  // Redrawing the page for a language switch or a resize must not re-read the
+  // result of a search nobody has run again.
+  if (region.textContent !== text) region.textContent = text;
+}
+
 function renderResults(mode) {
   const panel = panelState(mode);
   const out = mode === 'search' ? el.searchOut : el.nearbyOut;
@@ -2548,7 +2730,10 @@ function renderResults(mode) {
   parts.push(missingSourcesMarkup(shown));
 
   if (panel.status === 'working') {
-    parts.push(`<p class="finder-status" role="status">${icon('active')}<span>${t(
+    // Said out loud by the panel's own live region, which is why there is no
+    // `role` here: this paragraph is drawn and thrown away with the list, and
+    // announcing it here as well would say the same sentence twice.
+    parts.push(`<p class="finder-status">${icon('active')}<span>${t(
       `finder.working.${mode}`,
       { source },
     )}</span></p>`);
@@ -2598,7 +2783,7 @@ function renderResults(mode) {
   }
 
   if (panel.status === 'empty') {
-    parts.push(`<div class="finder-empty" role="status">
+    parts.push(`<div class="finder-empty">
         <h2>${t(`empty.${mode}.title`)}</h2>
         <p>${t(`empty.${mode}.body`)}</p>
       </div>`);
@@ -2609,6 +2794,7 @@ function renderResults(mode) {
 
   out.innerHTML = parts.join('');
   out.setAttribute('aria-busy', panel.status === 'working' ? 'true' : 'false');
+  announceResults(mode, panel, source);
   watchShapes(out, shown?.rows ?? []);
   layoutResults();
 }
@@ -3352,6 +3538,11 @@ function cardMarkup(row, index, mode) {
   // Named by its own title, so focus landing on the card after Load more reads
   // out which route it landed on rather than the word "article".
   //
+  // The title is an h2: the only heading above it is step one's h1, and the
+  // "nothing came back" block and the error panel that stand in this same slot
+  // when there are no cards are h2 as well. It was an h3, which both skipped a
+  // level and made the level of this slot depend on whether the search worked.
+  //
   // The three buttons go dead while a conversion runs; the link to the source
   // site does not, because it asks nothing of this page. Opening the original
   // in another tab while we work is a reasonable thing to want.
@@ -3363,7 +3554,7 @@ function cardMarkup(row, index, mode) {
     >
       ${picture}
       <div class="card-text">
-        <h3 class="card-title" id="title-${uid}">${escapeText(row.title)}</h3>
+        <h2 class="card-title" id="title-${uid}">${escapeText(row.title)}</h2>
         ${marks ? `<span class="card-marks card-marks-inline">${marks}</span>` : ''}
         ${claimBlock(row, source, uid)}
         <div class="card-actions">
@@ -3386,6 +3577,18 @@ function cardMarkup(row, index, mode) {
         }</p>
       </div>
     </article>`;
+}
+
+/** Says one sentence on one card's own status line, after the list has been
+ *  redrawn under it. By place in the list, which does not move, because the
+ *  element itself has been replaced by an identical one. */
+function noteOnCard(listId, index, text) {
+  const note = document
+    .getElementById(listId)
+    ?.querySelector(`.route-card[data-index="${index}"] [data-note]`);
+  if (!note) return;
+  note.textContent = text;
+  note.hidden = false;
 }
 
 /** Finds one card's control again after the list has been redrawn under it. */
@@ -3581,6 +3784,7 @@ function collect() {
   el.searchActivityNote = document.getElementById('search-activity-note');
   el.searchForm = document.getElementById('search-form');
   el.searchOut = document.getElementById('search-out');
+  el.searchSay = addLiveRegion(el.searchOut);
 
   el.geoHere = document.getElementById('geo-here');
   el.geoNote = document.getElementById('geo-note');
@@ -3607,6 +3811,7 @@ function collect() {
   el.nearbyActivityNote = document.getElementById('nearby-activity-note');
   el.nearbyForm = document.getElementById('nearby-form');
   el.nearbyOut = document.getElementById('nearby-out');
+  el.nearbySay = addLiveRegion(el.nearbyOut);
 
   el.progress = document.getElementById('progress');
   el.error = document.getElementById('error');
@@ -3672,6 +3877,19 @@ function submit() {
   convertFromUrl(value);
 }
 
+/** What is on the clipboard, or nothing.
+ *
+ *  Refused permission, a browser without the API and a page that is not allowed
+ *  to ask all mean the same thing here: the visitor pastes it themselves into
+ *  the field that is already focused. */
+async function readClipboard() {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return '';
+  }
+}
+
 function wire() {
   el.langButton.addEventListener('click', () => {
     state.lang = state.lang === 'en' ? 'es' : 'en';
@@ -3693,15 +3911,16 @@ function wire() {
     }
   });
 
-  el.pasteButton.addEventListener('click', async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) el.input.value = text.trim();
-    } catch {
-      // Clipboard permission refused or unsupported. Focusing the field is the
-      // useful fallback: the visitor pastes it themselves.
-    }
+  el.pasteButton.addEventListener('click', () => {
+    // Focused first, synchronously, inside the task the tap started. iOS raises
+    // the keyboard only for a focus that happens there, and the clipboard is
+    // read behind an await: by the time the old code focused the field the tap
+    // was over, so on a phone the caret arrived with no keyboard under it and
+    // the fallback for a refused clipboard was a field nobody could type into.
     el.input.focus();
+    readClipboard().then((text) => {
+      if (text) el.input.value = text.trim();
+    });
   });
 
   el.exampleButton.addEventListener('click', () => {
@@ -3767,6 +3986,9 @@ function wire() {
       y,
     ).distanceM;
   });
+
+  wireChartKeys(el.profileFigure);
+  wireChartKeys(el.traceFigure);
 
   // One handler for all three trace figures. The choice is the page's, not the
   // figure's, so whichever button is pressed moves all of them.
@@ -3839,10 +4061,6 @@ function wireDialogs() {
     closeDialog();
     if (!subject) return;
     showReport(subject);
-    // The card this came from has just been hidden with the rest of the list,
-    // so focus is given a real place to land rather than falling to the top of
-    // the document.
-    el.downloadButton.focus();
   });
 
   el.rotateClose.addEventListener('click', () => closeDialog());
@@ -4006,22 +4224,37 @@ function runCardAction(action, row, card, mode) {
   const note = card.querySelector('[data-note]');
   if (note) note.hidden = true;
 
-  // Where focus goes when the dialog closes. Not the button itself: converting
-  // the route rewrites the whole list, so by then this exact element has been
-  // replaced by an identical one. The card is found again by its place in the
-  // list, which does not move.
-  const home = cardControl(card.closest('.finder-out')?.id, card.dataset.index, action);
+  // Which list and which place in it. Not the elements themselves: converting
+  // the route rewrites the whole list, so by then every one of them has been
+  // replaced by an identical one. The place in the list does not move.
+  const listId = card.closest('.finder-out')?.id;
+  const index = card.dataset.index;
+
+  // Where focus goes when the dialog closes.
+  const home = cardControl(listId, index, action);
 
   // A conversion started from a card disables every control in the list and
   // draws its progress in step one, which is off the top of the screen by the
   // fifth card. From down here that is a page that greyed out and said nothing.
   // So the card that was pressed says it, on its own status line, where the
   // press was. The stage list stays for the link field, where it is on screen.
+  //
+  // A failure was the half of this that never moved. It went on the error panel
+  // in step one, which sits below the tab panels and therefore below the whole
+  // grid: press GPX on the seventh of nine cards, the list greys out, nothing
+  // visibly happens, and the sentence saying why is off the bottom of the
+  // screen. So the failure is said on the card too, and the step-one panel,
+  // which is about the link field, is taken down.
   const working = (start) => {
-    finder.busyCard = { mode, index: Number(card.dataset.index) };
+    finder.busyCard = { mode, index: Number(index) };
     return start().finally(() => {
       finder.busyCard = null;
+      const failure = state.view === 'error' ? state.errorKey : null;
+      // Both of these redraw the list, so the note is found again afterwards:
+      // the element this function started with has been replaced by then.
+      if (failure) clearRouteError();
       renderFinder();
+      if (failure) noteOnCard(listId, index, t(`error.${failure}.title`));
     });
   };
 
@@ -4056,6 +4289,46 @@ function wireChartPointer(figure, toDistance) {
   canvas.addEventListener('pointermove', move);
   canvas.addEventListener('pointerdown', move);
   canvas.addEventListener('pointerleave', clearHover);
+}
+
+// How far one press moves the cursor, as a share of the whole route: an arrow
+// a fortieth, a page a tenth. A share rather than a fixed number of metres,
+// because the same forty presses have to cross a 4 km walk and a 40 km one.
+const CURSOR_STEPS = 40;
+const CURSOR_PAGE_STEPS = 10;
+
+/** The same cursor, moved by a keyboard. Both charts move together, exactly as
+ *  they do under a pointer: one cursor, two views of the same route. */
+function wireChartKeys(figure) {
+  const canvas = figure.querySelector('.chart-canvas');
+
+  canvas.addEventListener('keydown', (event) => {
+    if (!state.result || !chartData) return;
+    const total = state.result.measurements.distanceM;
+    const at = state.hover ?? 0;
+    const moved = {
+      ArrowRight: at + total / CURSOR_STEPS,
+      ArrowUp: at + total / CURSOR_STEPS,
+      ArrowLeft: at - total / CURSOR_STEPS,
+      ArrowDown: at - total / CURSOR_STEPS,
+      PageUp: at + total / CURSOR_PAGE_STEPS,
+      PageDown: at - total / CURSOR_PAGE_STEPS,
+      Home: 0,
+      End: total,
+    }[event.key];
+    if (moved === undefined) return;
+    // The arrows would otherwise scroll the page out from under the chart being
+    // read, which is the one thing a reader of this cursor cannot afford.
+    event.preventDefault();
+    showHover(Math.min(total, Math.max(0, moved)));
+  });
+
+  // Arriving with no cursor drawn would be a slider with nowhere to start, and
+  // leaving with one drawn would be a reading about a chart nobody is on.
+  canvas.addEventListener('focus', () => {
+    if (state.hover === null) showHover(0);
+  });
+  canvas.addEventListener('blur', clearHover);
 }
 
 collect();
