@@ -10,9 +10,41 @@ from typing import Iterable, Optional, Sequence
 Point = Sequence[float]  # (lat, lon, elevation or None)
 
 
-def escape(text: str) -> str:
+def _is_xml_character(code: int) -> bool:
+    """The XML 1.0 Char production, verbatim.
+
+    Anything outside it cannot appear in a document at all. There is no escape
+    for it either: a numeric reference to a forbidden character is itself
+    forbidden, so the only repair left is to drop the character.
+    """
     return (
-        str(text)
+        0x20 <= code <= 0xD7FF
+        or 0xE000 <= code <= 0xFFFD
+        or 0x10000 <= code <= 0x10FFFF
+    )
+
+
+def escape(text: str) -> str:
+    """Turns a remote site's text into character data that parses.
+
+    Titles reach us from Komoot and Wikiloc, so they carry whatever a stranger
+    typed. A single 0x08 in a title is enough to make the whole .gpx not
+    well-formed, and a strict reader — Garmin's among them — then rejects the
+    file rather than the character.
+
+    Tab, newline and carriage return are legal but are turned into spaces
+    here: every value this writes is a one-line label, and inside an attribute
+    a parser would replace them with spaces anyway.
+    """
+    kept = []
+    for character in str(text):
+        code = ord(character)
+        if code in (0x09, 0x0A, 0x0D):
+            kept.append(" ")
+        elif _is_xml_character(code):
+            kept.append(character)
+    return (
+        "".join(kept)
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
@@ -27,7 +59,9 @@ def build(
     source_label: Optional[str] = None,
 ) -> str:
     """Writes a single-track GPX 1.1 document."""
-    safe_name = escape(name or "Route")
+    # A title made only of characters XML forbids escapes to nothing, and a
+    # nameless file is the one thing this module exists to prevent.
+    safe_name = escape(name or "Route").strip() or "Route"
     link = ""
     if source_url:
         link = (
