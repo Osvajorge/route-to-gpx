@@ -26,7 +26,10 @@ const STRINGS = {
     'step1.sub.nearby':
       'Give a point and how far around it to look. Converting a row is what measures it.',
     'field.prefix': 'URL',
-    'field.label': 'Route link',
+    // Says the visible word first. The field is named for a screen reader by
+    // this string, and a name that did not carry the word printed beside the
+    // box would leave "click URL" landing on nothing.
+    'field.label': 'URL of the route',
     'field.placeholder': 'Paste the route link here',
     'action.paste': 'Paste',
     'action.convert': 'Convert',
@@ -187,8 +190,14 @@ const STRINGS = {
     // Said under the dropdown on a source whose own activity filter is refused
     // to us, so the control is honest about where the narrowing happens rather
     // than removed.
+    //
+    // One sentence under two surfaces, so it may only say what is true of both.
+    // Nearby reads up to four windows of results (`_scan` in
+    // `api/sources/wikiloc_discovery.py`) and Search reads exactly one
+    // (`_look`), so "several pages of its results" was true of the first tab
+    // and false of the second.
     'activity.notFiltered':
-      'Wikiloc will not filter by activity for a visitor who is not logged in, so our server reads several pages of its results and keeps the ones that match.',
+      'Wikiloc will not filter by activity for a visitor who is not logged in, so our server reads its results and keeps the ones that match.',
     // Said only when a word ON SCREEN is the source's own rather than ours,
     // counting the cards and not just the dropdown: on both sites at once the
     // dropdown is Komoot's six, all translated, while the cards below carry
@@ -472,7 +481,7 @@ const STRINGS = {
     'step1.sub.nearby':
       'Da un punto y cuánto mirar a su alrededor. Convertir una fila es lo que la mide.',
     'field.prefix': 'URL',
-    'field.label': 'Enlace de la ruta',
+    'field.label': 'URL de la ruta',
     'field.placeholder': 'Pega aquí el enlace de la ruta',
     'action.paste': 'Pegar',
     'action.convert': 'Convertir',
@@ -608,7 +617,7 @@ const STRINGS = {
 
     'sport.all': 'Cualquier actividad',
     'activity.notFiltered':
-      'Wikiloc no filtra por actividad para quien no ha iniciado sesión, así que nuestro servidor lee varias páginas de sus resultados y se queda con las que coinciden.',
+      'Wikiloc no filtra por actividad para quien no ha iniciado sesión, así que nuestro servidor lee sus resultados y se queda con las que coinciden.',
     // Solo se dice cuando una palabra EN PANTALLA es del origen y no nuestra,
     // contando las tarjetas y no solo el desplegable. Imprimir la palabra del
     // origen es honesto; inventar una traducción para ochenta términos que aquí
