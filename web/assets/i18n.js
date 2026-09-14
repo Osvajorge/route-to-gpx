@@ -323,6 +323,12 @@ const STRINGS = {
       'The activity list belongs to the source site and changes with it. Pick one from the list again.',
 
     'step2.download': 'Download GPX',
+    'step2.send': 'Send to an app',
+    // Measured, not guessed: a 551-point track published by Komoot at 13,728 m
+    // and 535 m of ascent came back from Garmin as 13,615 m and 598 m. The
+    // numbers on this page describe the file; the watch describes its own.
+    'step2.send.note':
+      'Hands the file to another app, such as Garmin Connect. An app that imports a route usually redraws its elevation from its own map, so your watch will not show the figures above. The file is unchanged.',
     'step2.reset': 'New link',
     'measure.distance': 'Distance',
     // How much of the distance above is a straight line over ground nobody
@@ -729,6 +735,9 @@ const STRINGS = {
       'La lista de actividades es del sitio de origen y cambia con él. Vuelve a elegir una de la lista.',
 
     'step2.download': 'Descargar GPX',
+    'step2.send': 'Enviar a una app',
+    'step2.send.note':
+      'Entrega el fichero a otra app, como Garmin Connect. Una app que importa una ruta suele recalcular el desnivel con su propio mapa, así que tu reloj no mostrará las cifras de arriba. El fichero no cambia.',
     'step2.reset': 'Otro enlace',
     'measure.distance': 'Distancia',
     'measure.distance.gaps': 'en saltos {gaps}',

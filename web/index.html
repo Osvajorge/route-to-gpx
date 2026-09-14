@@ -257,6 +257,11 @@
                  a tool nobody can find is a tool nobody has. -->
             <div class="report-actions">
               <button id="download" class="primary-button" type="button"></button>
+              <!-- Hidden unless the browser can actually hand a FILE to another
+                   app. Feature-detected in app.js, not assumed from the agent
+                   string, because Chromium answers canShare() with true for a
+                   .gpx and then rejects the share. -->
+              <button id="send-file" class="ghost-button" type="button" hidden></button>
               <button id="report-adjust" class="icon-button" type="button"></button>
               <button id="reset" class="link-button" type="button"></button>
             </div>

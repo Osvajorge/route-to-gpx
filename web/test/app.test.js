@@ -182,3 +182,43 @@ test('a full tile cache drops its oldest tile, not all of them', () => {
   assert.match(recall, /tileCache\.delete\(url\);[\s\S]*tileCache\.set\(url, pending\)/);
   assert.match(load, /const pending = recallTile\(url\)/);
 });
+
+test('the send button is shown only where the browser can really hand over a file', () => {
+  // Chromium answers canShare() with true for plenty of types and then rejects
+  // the share, and it keeps .gpx off the list it will pass on. So the question
+  // is asked with a real File of the real type, and the button exists only if
+  // the answer is yes. A button that opens nothing is worse than no button.
+  const probe = body('browserCanSendFiles');
+  assert.match(probe, /new File\(/, 'the capability is not probed with a real File');
+  assert.match(probe, /application\/gpx\+xml/, 'the probe does not use the type that gets refused');
+  assert.match(probe, /navigator\.canShare/);
+  assert.match(
+    js,
+    /el\.sendButton\.hidden = !browserCanSendFiles\(\)/,
+    'the button is not gated on the probe',
+  );
+});
+
+test('the send happens inside the click, because iOS spends the gesture on an await', () => {
+  // iOS grants one share per user gesture. An `await` before navigator.share
+  // spends it and the call throws NotAllowedError, which is why this button is
+  // on the report -- where the conversion has already happened -- and not on a
+  // card, where pressing it starts one.
+  const send = body('sendResult');
+  assert.doesNotMatch(send, /\bawait\b/, 'sendResult awaits, so iOS will refuse the share');
+  assert.doesNotMatch(send, /fetch\(/, 'sendResult fetches, so the gesture is gone by the time it shares');
+  assert.match(send, /state\.result\.gpxText/, 'it does not use the GPX the page already holds');
+  assert.match(send, /navigator\.share\(/);
+  assert.match(send, /\.catch\(/, 'a dismissed share must not raise');
+
+  // And it is wired to the click rather than to something that defers.
+  assert.match(js, /el\.sendButton\.addEventListener\('click', sendResult\)/);
+});
+
+test('the send button says what the receiving app will do to the numbers', () => {
+  // Garmin redraws elevation from its own map: a 551-point track published at
+  // 535 m of ascent came back from a real upload as 598 m. A page whose whole
+  // argument is measured fidelity has to say so where the handover happens.
+  assert.match(js, /el\.sendButton\.title = t\('step2\.send\.note'\)/);
+  assert.match(js, /aria-description', t\('step2\.send\.note'\)/);
+});

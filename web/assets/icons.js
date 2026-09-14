@@ -10,6 +10,10 @@ const PATHS = {
   pending: '<circle cx="12" cy="12" r="3.2"/>',
   back: '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
   download: '<path d="M12 3.5v12"/><path d="m7.5 11 4.5 4.5 4.5-4.5"/><path d="M4.5 19.5h15"/>',
+  // The arrow points OUT of the tray, where download's points into it: the two
+  // sit next to each other on the report and the difference has to read at a
+  // glance on a phone.
+  share: '<path d="M12 15.5v-12"/><path d="m7.5 8 4.5-4.5 4.5 4.5"/><path d="M4.5 12.5v7h15v-7"/>',
   warning:
     '<path d="M12 4.5 21 19.5H3Z"/><path d="M12 10.5v4"/><path d="M12 17.4h.01"/>',
   clipboard:

@@ -318,6 +318,46 @@ function downloadResult() {
   handOverFile(state.result.gpxText, state.result.fileName);
 }
 
+/** Whether this browser can hand a .gpx to ANOTHER APP rather than to the
+ *  filesystem. On a phone that is the difference between a file in Downloads
+ *  that the walker then has to find, and Garmin Connect opening with the route
+ *  already in it.
+ *
+ *  Asked with a real File of the real type, because the answer depends on the
+ *  type: Chromium keeps an allowlist of extensions it will share and .gpx is
+ *  not on it. Asked once, because building a probe File per render is waste. */
+let canSendFile = null;
+function browserCanSendFiles() {
+  if (canSendFile !== null) return canSendFile;
+  try {
+    const probe = new File(['<gpx/>'], 'probe.gpx', { type: 'application/gpx+xml' });
+    canSendFile = typeof navigator.canShare === 'function' && navigator.canShare({ files: [probe] });
+  } catch {
+    canSendFile = false;
+  }
+  return canSendFile;
+}
+
+/** Hands the file to whatever the visitor picks from the system share sheet.
+ *
+ *  THIS MUST BE CALLED FROM THE CLICK ITSELF. iOS grants a share exactly one
+ *  user gesture, and an `await` before `navigator.share` spends it: the call
+ *  then throws NotAllowedError. So the file is built from the GPX text this
+ *  page is ALREADY holding, and nothing is fetched here. That is also why the
+ *  button only exists on the report, where the conversion has already
+ *  happened, and not on a card, where pressing it starts one. */
+function sendResult() {
+  if (!state.result) return;
+  const file = new File([state.result.gpxText], state.result.fileName, {
+    type: 'application/gpx+xml',
+  });
+  navigator.share({ files: [file] }).catch(() => {
+    // A share the visitor dismissed and a share the system refused look the
+    // same from here, and neither is worth an error panel: the file is still
+    // one press away on the button beside this one.
+  });
+}
+
 /** What a card's GPX button does: the same conversion the link field runs, and
  *  then the file.
  *
@@ -546,6 +586,12 @@ function renderReport() {
     when: t('when.today'),
   });
   el.downloadButton.innerHTML = `${icon('download')}<span>${t('step2.download')}</span>`;
+  el.sendButton.hidden = !browserCanSendFiles();
+  el.sendButton.innerHTML = `${icon('share')}<span>${t('step2.send')}</span>`;
+  // What the receiving app does to the numbers belongs on the button that
+  // hands it over, not in a note somebody scrolls past.
+  el.sendButton.title = t('step2.send.note');
+  el.sendButton.setAttribute('aria-description', t('step2.send.note'));
   el.reportAdjust.innerHTML = icon('sliders');
   el.reportAdjust.title = t('card.adjust');
   el.reportAdjust.setAttribute('aria-label', t('card.adjust'));
@@ -3821,6 +3867,7 @@ function collect() {
   el.reportTitle = document.getElementById('report-title');
   el.reportSource = document.getElementById('report-source');
   el.downloadButton = document.getElementById('download');
+  el.sendButton = document.getElementById('send-file');
   el.reportAdjust = document.getElementById('report-adjust');
   el.resetButton = document.getElementById('reset');
   el.tiles = document.getElementById('tiles');
@@ -3931,6 +3978,7 @@ function wire() {
   });
 
   el.downloadButton.addEventListener('click', downloadResult);
+  el.sendButton.addEventListener('click', sendResult);
 
   el.resetButton.addEventListener('click', () => {
     el.input.value = '';
