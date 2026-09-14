@@ -35,7 +35,7 @@ import math
 import re
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from curl_cffi import requests
 
@@ -48,9 +48,26 @@ IMPERSONATE = "chrome"
 TIMEOUT_SECONDS = 20
 MAX_BYTES = 8 * 1024 * 1024
 
+# The TLDs are written out one at a time, and that is the point of this
+# pattern rather than an accident of it. It used to end each branch with
+# `komoot\.[a-z.]+$`, and `[a-z.]+` matches dots, so the tail was unbounded:
+# `wikiloc.com.attacker.example` matched, and /api/convert fetched whatever
+# that name resolved to, from this deployment's address. An allowlist whose
+# last label is a wildcard is not an allowlist.
+#
+# `discovery.py`'s THUMBNAIL_HOST had this right the whole time. This is now
+# the same shape, and a test table holds both halves in place.
 ALLOWED_HOST = re.compile(
-    r"^(?:[a-z0-9-]+\.)*(?:komoot\.[a-z.]+|wikiloc\.[a-z.]+|alltrails\.[a-z.]+)$", re.I
+    r"^(?:[a-z0-9-]+\.)*"
+    r"(?:komoot\.(?:com|de|es|fr|it|nl|pl|io|net)"
+    r"|wikiloc\.(?:com|es)"
+    r"|alltrails\.com)$",
+    re.I,
 )
+
+# Only the default port. A name on the allowlist pointed at :9999 is a
+# different service, and reaching one is the probe an open proxy is used for.
+ALLOWED_PORT = 443
 
 # The place search for Wikiloc, and the third host this service reads. It is
 # already inside the pattern above -- subdomain "photon", domain "komoot.io" --
@@ -62,7 +79,12 @@ GEOCODER_HOST = "photon.komoot.io"
 # Which budget a host spends from. Keyed on the site, not the hostname: komoot
 # answers on www.komoot.com, www.komoot.de and api.komoot.de, and giving each
 # its own bucket would multiply the budget for free.
-SITE = re.compile(r"(komoot|wikiloc|alltrails)\.[a-z.]+$", re.I)
+# This must never be looser than ALLOWED_HOST. It was: it had the same
+# unbounded `[a-z.]+` tail and no left boundary, so `notkomoot.com` and
+# `wikiloc.com.attacker.example` both named Wikiloc's bucket. A host that is
+# refused upstream would then still have been charged to a real site, which
+# is how one attacker empties the allowance every visitor shares.
+SITE = re.compile(r"(?:^|\.)(komoot|wikiloc|alltrails)\.[a-z]{2,}$", re.I)
 
 # One hostname that is its own site. Photon runs on a komoot domain but it is
 # not the Komoot the route pages come from: it is a free geocoder whose
@@ -223,10 +245,38 @@ CLOSED_PATHS = {
 }
 
 
+def _normalised(path: str) -> str:
+    """The path a server will act on, not the one the URL happens to spell.
+
+    Compared raw, `/wikiloc/%6Dap.do` and `/x/../wikiloc/map.do` both walk
+    past a prefix check and both arrive at a page robots.txt closes. So the
+    escapes come off and the dot segments are resolved first, and only then
+    is the result matched. Unquoting runs to a fixed point because a doubly
+    encoded `%256D` decodes to `%6D`, which is still not a literal `m`.
+    """
+    for _ in range(3):
+        unquoted = unquote(path)
+        if unquoted == path:
+            break
+        path = unquoted
+
+    path = path.replace("\\", "/")
+
+    resolved: List[str] = []
+    for segment in path.split("/"):
+        if segment == "..":
+            if resolved:
+                resolved.pop()
+        elif segment != "." and segment != "":
+            resolved.append(segment)
+
+    return "/" + "/".join(resolved)
+
+
 def _closed(host: str, path: str) -> bool:
     for site, paths in CLOSED_PATHS.items():
         if host == site or host.endswith("." + site):
-            lowered = path.lower()
+            lowered = _normalised(path).lower()
             return any(lowered.startswith(closed) for closed in paths)
     return False
 
@@ -237,6 +287,8 @@ def _check(url: str) -> None:
         raise BlockedHost("only https links are fetched")
     if not parsed.hostname or not ALLOWED_HOST.match(parsed.hostname):
         raise BlockedHost(f"{parsed.hostname} is not a site this service reads")
+    if parsed.port is not None and parsed.port != ALLOWED_PORT:
+        raise BlockedHost(f"port {parsed.port} is not a port this service reads")
     if _closed(parsed.hostname.lower(), parsed.path):
         raise BlockedHost(f"{parsed.path} is closed by that site's robots.txt")
 

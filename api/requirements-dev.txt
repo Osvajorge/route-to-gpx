@@ -1,0 +1,16 @@
+# What the TESTS need on top of what the service needs.
+#
+# These were never written down, and the consequence was not a slow suite but
+# no suite: CI ran `pip install -r requirements.txt pytest`, which installs
+# FastAPI without any HTTP client, and `starlette.testclient` needs one. Every
+# file that builds a TestClient died during collection, pytest exited non-zero
+# with zero tests run, and the failure looked like an infrastructure flake
+# rather than what it was. The suite was green on the author's machine, where
+# httpx had been installed by hand years earlier.
+#
+# httpx is what starlette asks for below 1.6, and httpx2 above it. Nothing
+# here pins a ceiling on FastAPI, so the day starlette crosses that line this
+# file goes red and says so. That is the correct failure: loud, and about the
+# thing that actually changed.
+pytest>=8.0
+httpx>=0.27
