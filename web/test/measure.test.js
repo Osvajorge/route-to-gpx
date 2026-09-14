@@ -187,6 +187,52 @@ test('the ascent figure hands back the three parameters it was made from', () =>
   }
 });
 
+test('a hole in the recording may not coarsen the grid the rest of it is sampled on', () => {
+  // The mean spacing is the one statistic a single hole can move, and the grid
+  // it set was the grid for the whole route, not just for the ground under the
+  // hole. So a stretch the watch lost erased climbing recorded densely
+  // somewhere else entirely: 5 km of ground rolling every 200 m, recorded every
+  // 5 m, with one flat hole tacked on the end that carries no climb at all.
+  //
+  //     no hole   mean spacing  5.0 m   step 10.0 m   ascent 475.5 m
+  //     10 km     mean spacing 15.0 m   step 15.0 m   ascent 414.7 m
+  //     20 km     mean spacing 25.0 m   step 25.0 m   ascent 324.6 m
+  //     40 km     mean spacing 45.0 m   step 45.0 m   ascent  19.8 m
+  //
+  // The hole is added, never substituted, so the ground carrying the climb is
+  // the same track in every row and the right answer cannot have changed.
+  const rolling = (holeM) => {
+    const points = [];
+    for (let d = 0; d <= 5000; d += 5) {
+      points.push({
+        lat: 42 + d / M_PER_DEGREE,
+        lon: 0.7,
+        ele: 1000 + 10 * (1 - Math.cos((2 * Math.PI * d) / 200)),
+      });
+    }
+    if (holeM) points.push({ lat: 42 + (5000 + holeM) / M_PER_DEGREE, lon: 0.7, ele: 1000 });
+    return measure({ points });
+  };
+
+  const intact = rolling(0);
+  assert.ok(intact.ascentM > 450, intact.ascentM);
+
+  for (const holeM of [10000, 20000, 40000]) {
+    const holed = rolling(holeM);
+    // The hole has to carry the mean clear of the 10 m floor, or the mean would
+    // have picked the same grid anyway and the rows below prove nothing.
+    assert.ok(
+      holed.meanSpacingM > intact.sampleStepM,
+      `a ${holeM} m hole left the mean spacing at ${holed.meanSpacingM}, under the floor`,
+    );
+    assert.equal(holed.sampleStepM, intact.sampleStepM, `a ${holeM} m hole moved the sample step`);
+    assert.ok(
+      Math.abs(holed.ascentM - intact.ascentM) < 0.5,
+      `a ${holeM} m hole with no climb in it changed the ascent from ${intact.ascentM} to ${holed.ascentM}`,
+    );
+  }
+});
+
 test('a noisy recording says the larger noise floor it was measured with', () => {
   // The figure on the page has to be the one the arithmetic used. A file whose
   // readings scatter by a metre is not measured with the same threshold as one
@@ -254,10 +300,32 @@ test('jitter on flat ground is not accumulated into a climb', () => {
   assert.ok(result.ascentM < 25, `flat ground climbed ${result.ascentM} m`);
 });
 
-test('raw ascent is reported next to the smoothed one', () => {
-  const track = ramp({ spacingM: 10, totalM: 1000, climbM: 100 });
-  const result = measure(track);
-  assert.ok(result.rawAscentM >= result.ascentM);
+test('raw ascent is reported next to the smoothed one, and both are the climb', () => {
+  // THE ORDERING ON ITS OWN IS NOT AN ASSERTION. This test asked only that raw
+  // ascent be at least the smoothed one, which a pair of zeros satisfies
+  // perfectly, and a pair of zeros is exactly what shipped: an 800 m col
+  // reported 0 m of ascent with this test green. So the track is built with a
+  // climb this file knows the size of, and both figures are pinned to it.
+  const climbM = 100;
+  const clean = measure(ramp({ spacingM: 10, totalM: 1000, climbM }));
+  assert.ok(Math.abs(clean.rawAscentM - climbM) < 0.5, clean.rawAscentM);
+  assert.ok(Math.abs(clean.ascentM - climbM) < 2, clean.ascentM);
+
+  // And the two have to be able to differ, or printing both of them says
+  // nothing. Jitter is what separates them: the raw sum counts every wobble as
+  // climbing, and the smoothed figure is the one that does not.
+  const clear = ramp({ spacingM: 10, totalM: 1000, climbM });
+  const noisy = measure({
+    ...clear,
+    points: clear.points.map((point, index) => ({
+      ...point,
+      // Deterministic, and the same shape the noise tests above use.
+      ele: point.ele + Math.sin(index * 2.399963) + Math.sin(index * 5.113),
+    })),
+  });
+  assert.ok(noisy.rawAscentM > climbM + 20, `jitter never reached the raw sum: ${noisy.rawAscentM}`);
+  assert.ok(Math.abs(noisy.ascentM - climbM) < 5, noisy.ascentM);
+  assert.ok(noisy.rawAscentM > noisy.ascentM);
 });
 
 // ----------------------------------------------- the profile and its two ends
@@ -636,6 +704,38 @@ test('a track with no elevation reports none rather than zero', () => {
   // the only figure that can tell a reader which one they are looking at.
   assert.equal(result.elevationCoverage, 0);
   assert.equal(result.elevationCoverageLow, true);
+});
+
+test('a track too long to spread into an argument list is still measured', () => {
+  // THE CEILING WAS 124 000 POINTS AND NOTHING ON THE PAGE SAID SO. The
+  // elevation range was read with Math.min(...profile), a spread passes one
+  // argument per element, and past the engine's argument stack the whole
+  // measurement threw RangeError before a single figure reached the reader.
+  // Measured on node v25.8.0: 124 000 points measured and 124 500 threw.
+  //
+  // A 1 Hz recording of a long day is 30 000 to 50 000 points, so an ultra or a
+  // multi-day trace sat on the far side of that. 130 000 points at 2 m is a
+  // 260 km trace, just past the old line; the one pass replacing the spread
+  // carried 20 million points in 30 s, so this is a cheap witness rather than
+  // the new limit.
+  const count = 130000;
+  const points = [];
+  for (let i = 0; i < count; i++) {
+    points.push({
+      lat: 42 + (i * 2) / M_PER_DEGREE,
+      lon: 0.7,
+      ele: i === 7 ? 600 : i === 99999 ? 1600 : 1000,
+    });
+  }
+
+  const result = measure({ points });
+  assert.equal(result.pointCount, count);
+  // Not merely a number that did not throw: the extremes are the file's own,
+  // and they sit at the two ends of an array too long to have been spread.
+  assert.equal(result.rawElevationMinM, 600);
+  assert.equal(result.rawElevationMaxM, 1600);
+  assert.ok(result.elevationMinM >= result.rawElevationMinM);
+  assert.ok(result.elevationMaxM <= result.rawElevationMaxM);
 });
 
 test('nothing in this module is called with an argument it does not take', () => {
