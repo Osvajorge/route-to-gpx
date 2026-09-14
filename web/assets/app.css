@@ -2500,24 +2500,24 @@ html.dialog-open body {
    * route titles are what paid for it. */
   .shell {
     --shell-pad: 12px;
+
+    /* What the fixed download bar takes off the bottom of the viewport: its
+     * 1px top border, 12px of padding, the 50px button, 12px more, and the
+     * home indicator under all of it. Measured at 375x812: 75px with no inset.
+     * Published here because the bar is out of flow, so whatever has to keep
+     * clear of it cannot read its height for itself. */
+    --action-bar: calc(75px + env(safe-area-inset-bottom));
+
     padding-top: 14px;
   }
 
   .card {
+    gap: 16px;
     padding: 16px 14px;
-  }
-
-  .shell {
-    padding: 18px 16px 16px;
   }
 
   h1 {
     font-size: 30px;
-  }
-
-  .card {
-    gap: 16px;
-    padding: 18px 16px;
   }
 
   /* The field becomes a stacked block: label, input, paste, then a full-width
@@ -2683,8 +2683,19 @@ html.dialog-open body {
     flex: none;
   }
 
-  #report {
-    padding-bottom: 96px;
+  /* The bar is fixed, so the page has to hold a gap the height of it or the
+   * last block on the page never comes out from under it. Reserved on the
+   * colophon because that block is last: a reservation on #report alone left
+   * the footer below it, and measured at 375x812 the bottom 59px of the
+   * colophon — the privacy statement and the source link, the two things here
+   * for honesty rather than use — sat behind the bar at the end of the scroll,
+   * with nowhere further to scroll them out.
+   *
+   * Only while step two is up, because that is when the bar exists. The
+   * sibling combinator is what makes that readable from here: #app carries the
+   * view and the colophon follows it inside the shell. */
+  #app[data-view='report'] ~ .colophon {
+    padding-bottom: var(--action-bar);
   }
 
   .tiles {

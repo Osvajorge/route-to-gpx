@@ -38,6 +38,94 @@ function declarations(selector) {
   return block(selector).replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
+/** The narrow media query, from its brace to the one that closes it. */
+function narrowBlock() {
+  const open = css.indexOf('{', css.indexOf('@media (max-width: 640px)'));
+  let depth = 0;
+  for (let i = open; i < css.length; i++) {
+    if (css[i] === '{') depth += 1;
+    else if (css[i] === '}' && --depth === 0) return css.slice(open, i);
+  }
+  throw new Error('the narrow media query is never closed');
+}
+
+/** The declarations of one rule inside the narrow media query.
+ *
+ *  `block` reads the first rule with a given selector anywhere in the file,
+ *  which for a selector that also exists outside the media query is the wrong
+ *  one. Two spaces of indent is what tells them apart.
+ *
+ *  And it refuses to read a selector written twice, because then "the first
+ *  one" is a choice this helper has no business making quietly: `.shell` and
+ *  `.card` were each declared twice here, the second copy won, and every test
+ *  that read them was reading the copy the browser threw away. */
+function narrowRule(selector) {
+  const narrow = narrowBlock();
+  const at = narrow.indexOf(`\n  ${selector} {`);
+  assert.notEqual(at, -1, `${selector} is gone from the narrow block`);
+  assert.equal(
+    narrow.indexOf(`\n  ${selector} {`, at + 1),
+    -1,
+    `${selector} is declared twice in the narrow block, so one of the two never applies`,
+  );
+  return narrow.slice(at, narrow.indexOf('}', at));
+}
+
+/** Every declaration the cascade throws away before anyone can read it.
+ *
+ *  One selector written twice in the same block, setting the same property
+ *  both times: the later copy wins and the earlier one is dead, however long
+ *  the paragraph above it is. Reported as "selector :: property", one line per
+ *  declaration that never runs. */
+function deadDeclarations(source, label = 'top level', found = []) {
+  // Braces and colons inside a comment are not declarations, and this file is
+  // more comment than declaration.
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const bySelector = new Map();
+  let depth = 0;
+  let start = 0;
+  let head = '';
+  let bodyStart = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) {
+        head = text.slice(start, i).trim();
+        bodyStart = i + 1;
+      }
+      depth += 1;
+    } else if (text[i] === '}') {
+      depth -= 1;
+      if (depth > 0) continue;
+      const body = text.slice(bodyStart, i);
+      if (head.startsWith('@')) deadDeclarations(body, `${label} ${head}`, found);
+      else {
+        const selector = head.replace(/\s+/g, ' ');
+        const properties = [...body.matchAll(/(?:^|;)\s*([a-z-]+)\s*:/g)].map((m) => m[1]);
+        const earlier = bySelector.get(selector);
+        if (!earlier) bySelector.set(selector, properties);
+        else {
+          for (const property of properties) {
+            // A shorthand kills the longhands under it, so `padding` after
+            // `padding-top` is the same defect as `padding` after `padding`.
+            for (const was of earlier) {
+              const clash =
+                property === was ||
+                property.startsWith(`${was}-`) ||
+                was.startsWith(`${property}-`);
+              if (clash) found.push(`${label} :: ${selector} :: ${was} then ${property}`);
+            }
+          }
+          earlier.push(...properties);
+        }
+      }
+      start = i + 1;
+    }
+  }
+
+  return found;
+}
+
 // How loud a text colour is. The ladder ranks by this, not by hex.
 const LOUDNESS = { '--muted': 1, '--text-2': 2, '--text': 3 };
 
@@ -206,6 +294,63 @@ test('a phone is one column whatever the page works out', () => {
   const narrow = css.slice(css.indexOf('@media (max-width: 640px)'));
   const rule = narrow.slice(narrow.indexOf('\n  .results {'));
   assert.match(rule.slice(0, rule.indexOf('}')), /grid-template-columns:\s*1fr/);
+});
+
+test('no rule is written twice over, with the first copy dead on arrival', () => {
+  // THE DUPLICATE RULE, and the reason the one below it could sit broken for
+  // as long as it did. `.shell` and `.card` were each written twice inside the
+  // media query. The second copy of each won, so the first — the one with a
+  // paragraph above it explaining what a phone was paying for the margin —
+  // never applied at all. Nothing here could see it: `block` reads the first
+  // rule with a given selector and stops, which is exactly the copy that was
+  // being thrown away.
+  //
+  // Two rules sharing a selector are fine and the file has a few on purpose,
+  // splitting a concern in two. What is never fine is the same property in
+  // both, which is a declaration that cannot run and a comment that describes
+  // a page nobody has ever seen.
+  assert.deepEqual(deadDeclarations(css), []);
+});
+
+test('a phone gets the side margin the paragraph above it argues for', () => {
+  // 32px of card padding inside 18px of shell padding is 100px of a 375px
+  // screen, and the rule cutting that to 52 was written and then overridden by
+  // the duplicate above. Measured in a browser at 375 before the duplicate was
+  // removed: the shell reported 16px of side padding and the card 16px, which
+  // is neither what the comment argues for nor what it argues against.
+  assert.match(narrowRule('.shell'), /--shell-pad:\s*12px/);
+  assert.match(narrowRule('.card'), /padding:\s*16px 14px/);
+  // --shell-pad and not a literal, because `.card.is-wide` subtracts it: a
+  // side padding written straight into `.shell` leaves the wide card aligned
+  // to a margin the shell no longer has.
+  assert.doesNotMatch(narrowRule('.shell'), /padding:\s/);
+});
+
+test('the page keeps a gap the exact height of the fixed download bar', () => {
+  // The bar is out of flow, so nothing under it reserves its space. Measured
+  // at 375x812 before this: the bottom 59px of the colophon sat behind the bar
+  // with the page scrolled as far as it went — the privacy statement and the
+  // source link, which are the two things on this page that are there for
+  // honesty rather than use. Afterwards the link clears the bar by 16px.
+  const bar = narrowRule('.report-actions');
+  assert.match(bar, /position:\s*fixed/);
+  const border = Number(/border-top:\s*(\d+)px/.exec(bar)[1]);
+  const above = Number(/padding:\s*(\d+)px/.exec(bar)[1]);
+  const below = Number(/calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/.exec(bar)[1]);
+  const button = Number(/min-height:\s*(\d+)px/.exec(narrowRule('#download'))[1]);
+
+  const published = /--action-bar:\s*calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/.exec(
+    narrowRule('.shell'),
+  );
+  assert.ok(published, 'the shell no longer publishes what the bar takes');
+  assert.equal(Number(published[1]), border + above + button + below);
+
+  // And the last block on the page is the one that keeps clear of it, only
+  // while step two is up, because that is when the bar exists.
+  assert.match(
+    narrowRule("#app[data-view='report'] ~ .colophon"),
+    /padding-bottom:\s*var\(--action-bar\)/,
+  );
 });
 
 test('the figures this page measured itself are headings in the document too', () => {
