@@ -13,11 +13,16 @@ It does not measure anything. Measuring happens in the visitor's browser, from
 the file itself, so the numbers on screen can always be checked against the file
 that was downloaded.
 
-Nothing is written to disk and nothing is kept between requests. There is no
-cache of any kind: every answer is worked out inside the request that asked for
-it and then forgotten.
+Nothing is written to disk. One thing is kept between requests and it is worth
+naming rather than glossing: a card's outline, once fetched, is held in memory
+so the same card is not fetched twice (see `_shapes` below). It is a shape and
+a URL, it is bounded, it never leaves this process, and dropping it would cost
+a source site a second call for an answer it already gave. Everything else --
+every route, every search, every place -- is worked out inside the request that
+asked for it and then forgotten.
 """
 
+import logging
 import math
 import os
 import re
@@ -266,6 +271,9 @@ def busy_response(waiting: float) -> JSONResponse:
     )
 
 
+logger = logging.getLogger(__name__)
+
+
 def source_failure(error: Exception) -> Optional[JSONResponse]:
     """Turns everything a source adapter can raise into the shared envelope."""
     if isinstance(error, http.BudgetExhausted):
@@ -280,7 +288,21 @@ def source_failure(error: Exception) -> Optional[JSONResponse]:
         return error_response(error.code, hint=error.hint, detail=error.detail)
     if isinstance(error, BlockedHost):
         return error_response("domain", detail=str(error))
-    return None
+
+    # Everything else. This used to return None, and the four callers then
+    # re-raised, which FastAPI answers as a 500 in text/plain -- the one shape
+    # `malformed_request` below says this service must never return, and one
+    # the page cannot read, so a visitor met the last-resort message instead of
+    # a true one.
+    #
+    # An adapter raising something unforeseen means the page it reads has
+    # stopped parsing, which for the visitor is exactly "the track is not where
+    # we expected", and that message already tells them to export the GPX and
+    # drop it here. For the operator it is a bug, so it is logged with its
+    # traceback rather than swallowed. Those are different audiences and they
+    # get different things.
+    logger.exception("an adapter raised %s", type(error).__name__)
+    return error_response("track", detail=f"the source page could not be read ({type(error).__name__})")
 
 
 @app.exception_handler(RequestValidationError)

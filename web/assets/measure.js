@@ -627,12 +627,41 @@ export function measure(track, gapThreshold = null) {
  *  estimated duration to the second, and the first instant is the day the route
  *  was drawn. We rebuild geometry, so we write geometry. */
 export function buildGpx(track, source, notes = null) {
-  const escape = (text) =>
-    String(text)
+  // The four markup characters were the whole of this, and they are not the
+  // whole of what makes a document parse. XML 1.0 forbids most of the C0
+  // control range OUTRIGHT: there is no escape for a 0x08, because a numeric
+  // reference to a forbidden character is itself forbidden, so the only
+  // repair left is to drop it. A title reaches this function from Komoot or
+  // Wikiloc and carries whatever a stranger typed, and `notes` carries the
+  // re-arranger's own text, so neither is ours to trust. One stray control
+  // character made the whole file not well-formed, and a strict reader --
+  // Garmin's among them -- rejects the file rather than the character.
+  //
+  // The same rule, and the same reasoning, as `escape` in api/core/gpx.py.
+  // Two writers hand out .gpx files and they have to agree about what a .gpx
+  // file is.
+  const escape = (text) => {
+    let kept = '';
+    for (const character of String(text)) {
+      const code = character.codePointAt(0);
+      // Tab, newline and return are legal, but every value written here is a
+      // one-line label and inside an attribute a parser would turn them into
+      // spaces anyway.
+      if (code === 0x09 || code === 0x0a || code === 0x0d) kept += ' ';
+      else if (
+        (code >= 0x20 && code <= 0xd7ff) ||
+        (code >= 0xe000 && code <= 0xfffd) ||
+        (code >= 0x10000 && code <= 0x10ffff)
+      ) {
+        kept += character;
+      }
+    }
+    return kept
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  };
 
   const name = escape(track.name || source.title || 'Route');
   const link = source.url

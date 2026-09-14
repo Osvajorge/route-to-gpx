@@ -793,3 +793,76 @@ test('the rebuilt file carries the link it came from', () => {
   assert.match(document, /<link href="https:\/\/example\.org\/trail-1">/);
   assert.match(document, /<ele>1456\.5<\/ele>/);
 });
+
+
+test('a title carrying a control character still writes a .gpx that parses', () => {
+  // The escape helper handled the four markup characters and passed the C0
+  // control range through. XML 1.0 forbids most of that range outright -- there
+  // is no escape for a 0x08, because a numeric reference to a forbidden
+  // character is itself forbidden -- so one stray byte in a title, and a title
+  // is whatever a stranger typed on the source site, made the whole file not
+  // well-formed. api/core/gpx.py had the identical defect and the same fix.
+  //
+  // Built with fromCharCode rather than written literally, because a source
+  // file carrying a raw 0x08 is exactly as unreadable as the bug.
+  const BACKSPACE = String.fromCharCode(0x08);
+  const VERTICAL_TAB = String.fromCharCode(0x0b);
+  const NUL = String.fromCharCode(0x00);
+  const hostile = `Aneto${BACKSPACE} desde${NUL} la ${VERTICAL_TAB}Besurta`;
+
+  const gpx = buildGpx(
+    {
+      name: hostile,
+      points: [
+        { lat: 42.6, lon: 0.65, ele: 2000 },
+        { lat: 42.61, lon: 0.66, ele: 2100 },
+      ],
+    },
+    { url: 'https://example.org/ab', label: 'Ex', title: hostile },
+    `a note${BACKSPACE} of our own`,
+  );
+
+  // The property itself: every code point in the output is one XML 1.0 allows.
+  for (const character of gpx) {
+    const code = character.codePointAt(0);
+    const legal =
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0d ||
+      (code >= 0x20 && code <= 0xd7ff) ||
+      (code >= 0xe000 && code <= 0xfffd) ||
+      (code >= 0x10000 && code <= 0x10ffff);
+    assert.ok(legal, `output carries code point ${code}, which XML 1.0 forbids`);
+  }
+
+  // And the legible half of the name survived the repair.
+  assert.match(gpx, /Aneto/);
+  assert.match(gpx, /Besurta/);
+});
+
+test('the markup characters are still escaped, and legal text is left alone', () => {
+  const gpx = buildGpx(
+    {
+      name: 'Ruta "Sant Jeroni" & Montserrat <2026>',
+      points: [
+        { lat: 41.6, lon: 1.8, ele: 700 },
+        { lat: 41.61, lon: 1.81, ele: 750 },
+      ],
+    },
+    { url: 'https://example.org/a', label: 'Ex' },
+  );
+  assert.match(gpx, /Ruta &quot;Sant Jeroni&quot; &amp; Montserrat &lt;2026&gt;/);
+
+  // An accented character is not a control character and must survive intact.
+  const accented = buildGpx(
+    {
+      name: 'Cami de les Aranyes a Montserrat',
+      points: [
+        { lat: 41.6, lon: 1.8, ele: 700 },
+        { lat: 41.61, lon: 1.81, ele: 750 },
+      ],
+    },
+    { url: 'https://example.org/a', label: 'Ex' },
+  );
+  assert.match(accented, /Aranyes a Montserrat/);
+});

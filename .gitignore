@@ -7,3 +7,6 @@ node_modules/
 .DS_Store
 *.gpx
 !web/test/fixtures/*.gpx
+
+# Worktrees this tool creates for isolated agent runs.
+.claude/worktrees/

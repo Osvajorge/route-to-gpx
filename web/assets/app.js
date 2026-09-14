@@ -249,11 +249,13 @@ async function convertRoute(url) {
       signal: givesUpAfter(CONVERT_TIMEOUT_MS),
     });
     payload = await response.json();
-  } catch {
-    // A request that was never answered and one that failed on the way are the
-    // same sentence to the reader: we did not reach the site, try again. The
-    // abort lands here because aborting the fetch errors the body read too.
-    fail('network');
+  } catch (error) {
+    // Giving up and never arriving are different things, and telling a visitor
+    // we could not reach a site we did reach is a small lie they can act on
+    // wrongly. An abort raises TimeoutError where AbortSignal.timeout exists,
+    // and AbortError elsewhere; anything else really is the network.
+    const gaveUp = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    fail(gaveUp ? 'timeout' : 'network');
     return null;
   }
 

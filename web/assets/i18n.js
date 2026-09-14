@@ -306,6 +306,9 @@ const STRINGS = {
     'error.busy.title': 'Too many at once. Give it a moment.',
     'error.busy.body':
       'Wait a few seconds and try the same link again. We read the source sites slowly on purpose, so nothing is broken.',
+    'error.timeout.title': 'The conversion took too long, so we stopped waiting.',
+    'error.timeout.body':
+      'The source site accepted the request and never finished answering. Try again in a moment. If it keeps happening, export the GPX from the site, then drop it here or choose it.',
     'error.network.title': 'We could not reach the source site.',
     'error.network.body':
       'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site, then drop it here or choose it.',
@@ -709,6 +712,9 @@ const STRINGS = {
     'error.busy.title': 'Demasiadas a la vez. Dale un momento.',
     'error.busy.body':
       'Espera unos segundos y prueba otra vez con el mismo enlace. Leemos los sitios de origen despacio a propósito, así que no se ha roto nada.',
+    'error.timeout.title': 'La conversión tardó demasiado y dejamos de esperar.',
+    'error.timeout.body':
+      'El sitio de origen aceptó la petición y nunca terminó de responder. Prueba otra vez en un momento. Si sigue pasando, exporta el GPX en el sitio y suéltalo aquí, o elígelo.',
     'error.network.title': 'No pudimos llegar al sitio de origen.',
     'error.network.body':
       'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suéltalo aquí, o elígelo.',

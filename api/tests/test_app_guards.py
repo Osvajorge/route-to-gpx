@@ -133,3 +133,44 @@ def test_a_second_look_at_one_outline_asks_the_source_site_once(monkeypatch):
 
     assert first["trace"] == second["trace"]
     assert asked == [url]
+
+
+def test_an_adapter_raising_something_unforeseen_is_still_answered_in_our_own_shape(
+    monkeypatch, caplog
+):
+    """A 500 in text/plain is the one shape this service promises not to return.
+
+    `source_failure` recognised four exception types and returned None for
+    everything else, and all four callers then re-raised. So any adapter bug --
+    an IndexError out of a malformed TWKB blob, an AttributeError when a source
+    page changes shape -- left FastAPI answering 500 text/plain. The page reads
+    JSON, finds no `error` key, and shows its last-resort message, so the
+    visitor is told something that is not what happened.
+
+    Both audiences are served here, and differently: the caller gets the shared
+    envelope with advice it can act on, and the operator gets the traceback.
+    """
+
+    def explode(url: str):
+        raise IndexError("the blob ran out halfway")
+
+    monkeypatch.setitem(
+        service.ADAPTERS, r"(^|\.)wikiloc\.[a-z.]+$", explode
+    )
+
+    with caplog.at_level("ERROR"):
+        answer = client.post(
+            "/api/convert",
+            json={"url": "https://www.wikiloc.com/wikiloc/rutas/a-1"},
+        )
+
+    assert answer.status_code != 500, "still answering 500"
+    assert answer.headers["content-type"].startswith("application/json")
+
+    body = answer.json()
+    assert body["ok"] is False
+    assert body["error"] == "track"
+    assert "IndexError" in body["detail"]
+
+    # Loud for the operator, with the traceback, because it is a bug in here.
+    assert any(record.exc_info for record in caplog.records), "no traceback logged"
