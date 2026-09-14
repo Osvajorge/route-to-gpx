@@ -39,6 +39,7 @@ from .sources import (
     shape as shapes,
     Route,
     SourceError,
+    alltrails,
     komoot,
     komoot_discovery,
     merged,
@@ -61,6 +62,7 @@ app.add_middleware(
 ADAPTERS = {
     r"(^|\.)komoot\.[a-z.]+$": komoot.fetch,
     r"(^|\.)wikiloc\.[a-z.]+$": wikiloc.fetch,
+    r"(^|\.)alltrails\.[a-z.]+$": alltrails.fetch,
 }
 
 # Which site answers a list. Komoot when nobody says, so every request written

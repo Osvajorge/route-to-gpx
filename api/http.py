@@ -49,7 +49,7 @@ TIMEOUT_SECONDS = 20
 MAX_BYTES = 8 * 1024 * 1024
 
 ALLOWED_HOST = re.compile(
-    r"^(?:[a-z0-9-]+\.)*(?:komoot\.[a-z.]+|wikiloc\.[a-z.]+)$", re.I
+    r"^(?:[a-z0-9-]+\.)*(?:komoot\.[a-z.]+|wikiloc\.[a-z.]+|alltrails\.[a-z.]+)$", re.I
 )
 
 # The place search for Wikiloc, and the third host this service reads. It is
@@ -62,7 +62,7 @@ GEOCODER_HOST = "photon.komoot.io"
 # Which budget a host spends from. Keyed on the site, not the hostname: komoot
 # answers on www.komoot.com, www.komoot.de and api.komoot.de, and giving each
 # its own bucket would multiply the budget for free.
-SITE = re.compile(r"(komoot|wikiloc)\.[a-z.]+$", re.I)
+SITE = re.compile(r"(komoot|wikiloc|alltrails)\.[a-z.]+$", re.I)
 
 # One hostname that is its own site. Photon runs on a komoot domain but it is
 # not the Komoot the route pages come from: it is a free geocoder whose
@@ -200,6 +200,17 @@ def request_budget(client: str, calls: int = FAN_OUT_CEILING) -> Iterator[Reques
 # path that redirects onto a closed one is the same request with an extra step.
 # So this runs at every hop, beside the host allowlist.
 CLOSED_PATHS = {
+    "alltrails.com": (
+        "/api/",
+        "/api-v4/",
+        "/api-v5/",
+        "/static2/",
+        "/stob-dab/",
+        "/register/",
+        "/users/auth/",
+        "/members/",
+        "/explore/map/",
+    ),
     "wikiloc.com": (
         "/wikiloc/map.do",
         "/wikiloc/geocode.do",
