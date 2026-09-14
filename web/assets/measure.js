@@ -375,6 +375,25 @@ function filterEffectM(profile, window, ring) {
   return Math.max(ordinary, ends);
 }
 
+/** The smallest and the largest of a list, read in one pass.
+ *
+ *  Not `Math.min(...values)`, and the difference is the size of file the page
+ *  accepts at all. A spread passes one argument per element, and the engine
+ *  runs out of argument stack long before a track runs out of points: measured
+ *  on node v25.8.0, a track of 124 000 points was measured and one of 124 500
+ *  threw RangeError before a single figure reached the reader. A 1 Hz recording
+ *  of a long day is 30 000 to 50 000 points, so an ultra or a multi-day trace
+ *  sits on the far side of that line. */
+function extent(values) {
+  let low = Infinity;
+  let high = -Infinity;
+  for (const value of values) {
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+  return { low, high };
+}
+
 /** The step size a file of this cadence has to beat to be called a gap. See
  *  GAP_FLOOR_M for the sweep behind both numbers. */
 export function gapThresholdFor(steps) {
@@ -423,7 +442,11 @@ export function measure(track, gapThreshold = null) {
   }
   const distance = cumulative[cumulative.length - 1];
 
-  const threshold = gapThreshold === null ? gapThresholdFor(steps) : gapThreshold;
+  // The track's own gap threshold is kept even when the caller supplies one of
+  // its own: an override is a question about the disclosure, not a licence to
+  // resample the profile at whatever spacing the caller nominated.
+  const nativeThreshold = gapThresholdFor(steps);
+  const threshold = gapThreshold === null ? nativeThreshold : gapThreshold;
 
   let largestGap = 0;
   let largestGapAt = 0;
@@ -449,10 +472,46 @@ export function measure(track, gapThreshold = null) {
 
   const elevations = points.map((p) => p.ele).filter((e) => e !== null);
   const nativeSpacing = steps.length ? distance / steps.length : 0;
+  // THE SPACING THE DEVICE ACTUALLY RECORDED AT, WITH THE HOLES LEFT OUT OF IT.
+  //
+  // A hole is not spacing, it is the absence of spacing, and a plain mean lets
+  // one hole set the grid for the whole route. That does not merely blur the
+  // ground under the hole, which nobody recorded anyway: it blurs every metre
+  // of the track, so a stretch the watch lost erases climbing that was recorded
+  // densely somewhere else entirely. Measured on 5 km of ground rolling every
+  // 200 m, recorded every 5 m, with one flat hole added at the end that carries
+  // no climb at all. The rolling part holds 500 m of ascent in every row:
+  //     no hole      mean spacing  5.0 m   step 10.0 m   ascent 475.5 m
+  //     hole 10 km   mean spacing 15.0 m   step 15.0 m   ascent 414.7 m
+  //     hole 20 km   mean spacing 25.0 m   step 25.0 m   ascent 324.6 m
+  //     hole 40 km   mean spacing 45.0 m   step 45.0 m   ascent  19.8 m
+  //
+  // THE GAP RULE ABOVE ANSWERS THE SAME OBJECTION WITH THE MIDDLE STEP, AND THE
+  // MIDDLE STEP IS NOT USED HERE. It is not needed: that rule has to defend a
+  // threshold against the very holes it defines, which is circular, while this
+  // line runs after the threshold is known and can simply drop them. Every step
+  // left in this average is under a threshold that is itself two times the
+  // median, so no minority of holes can run away with it either. And the middle
+  // step costs something the average does not. It lands the grid exactly on the
+  // spacing of a uniformly exported route, and a grid in step with the points
+  // it samples is a resonance: on a ring recorded every 23 m, ascent drift over
+  // six start points, by sample step,
+  //     22.8 m  0.234%     23.0 m  0.736%
+  //     22.9 m  0.170%     23.1 m  0.239%
+  // and a drawn route is uniformly spaced by construction.
+  let recordedSum = 0;
+  let recordedCount = 0;
+  for (const step of steps) {
+    if (step <= nativeThreshold) {
+      recordedSum += step;
+      recordedCount += 1;
+    }
+  }
+  const recordedSpacing = recordedCount ? recordedSum / recordedCount : nativeSpacing;
   // Returned, not just used. Ascent is the output of three parameters and the
   // page showed none of them, next to a gap figure that showed its one. This
   // is the parameter that moves the number, so it is the one the tile prints.
-  const sampleStep = Math.max(10, nativeSpacing);
+  const sampleStep = Math.max(10, recordedSpacing);
 
   // A ring only for the purpose of the seam: two ends that fall inside a
   // single sample are one sample, so the filter's window reaches across them
@@ -505,6 +564,9 @@ export function measure(track, gapThreshold = null) {
     : { gain: 0, loss: 0 };
   const raw = elevations.length ? accumulate(elevations, 0) : { gain: 0, loss: 0 };
 
+  const profileRange = extent(profile);
+  const fileRange = extent(elevations);
+
   return {
     distanceM: distance,
     ascentM: smoothed.gain,
@@ -527,10 +589,10 @@ export function measure(track, gapThreshold = null) {
     // is literally in the file, so a reading this filter removed can still be
     // seen rather than quietly disappearing, and the report says when the two
     // disagree by more than this estimator's own end effect.
-    elevationMinM: profile.length ? Math.min(...profile) : elevations.length ? Math.min(...elevations) : null,
-    elevationMaxM: profile.length ? Math.max(...profile) : elevations.length ? Math.max(...elevations) : null,
-    rawElevationMinM: elevations.length ? Math.min(...elevations) : null,
-    rawElevationMaxM: elevations.length ? Math.max(...elevations) : null,
+    elevationMinM: profile.length ? profileRange.low : elevations.length ? fileRange.low : null,
+    elevationMaxM: profile.length ? profileRange.high : elevations.length ? fileRange.high : null,
+    rawElevationMinM: elevations.length ? fileRange.low : null,
+    rawElevationMaxM: elevations.length ? fileRange.high : null,
     elevationFilterEffectM: filterEffectM(profile, MEDIAN_WINDOW, ring),
     pointCount: points.length,
     pointsWithElevation: elevations.length,
