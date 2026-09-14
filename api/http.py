@@ -31,15 +31,28 @@ site budget is multiplied by N, and has to be divided here by hand.
 
 import contextvars
 import json
+import logging
 import math
 import re
 from contextlib import contextmanager
-from typing import Any, Iterator, Optional, Tuple
+from typing import Any, Iterator, List, Optional, Tuple
 from urllib.parse import unquote, urljoin, urlparse
 
 from curl_cffi import requests
 
 from . import limits
+
+# The operator's only window into the one module that leaves this process.
+# Level and handlers stay the deployment's business: `getLogger` configures
+# nothing, so importing this file cannot change how anybody else logs.
+#
+# WHAT MAY BE WRITTEN DOWN. The page tells visitors their links are fetched,
+# parsed and discarded, and that nothing is written down. A log line is
+# written down, so the link never goes in one, and neither do the words they
+# searched for or the coordinates they stood on. What goes in is the service's
+# own state -- which site, which status, which refusal, how much budget was
+# left -- which is the operator's, not the visitor's.
+logger = logging.getLogger(__name__)
 
 # A browser handshake, not a browser. Wikiloc answers a default client with 403
 # and a browser with 200, and the difference is the TLS fingerprint.
@@ -281,16 +294,40 @@ def _closed(host: str, path: str) -> bool:
     return False
 
 
+def _refused(url: str, reason: str, told: str) -> BlockedHost:
+    """Writes down why a call was refused, and never what was refused.
+
+    The reason is one of a fixed handful, so a refusal is greppable and a
+    burst of them is countable. The caller's own message keeps the hostname
+    and the path, because that goes back to the person who typed the link and
+    not into a file.
+    """
+    logger.warning("refused a call to %s: %s", _site(url), reason)
+    return BlockedHost(told)
+
+
 def _check(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        raise BlockedHost("only https links are fetched")
+        raise _refused(url, "the scheme is not https", "only https links are fetched")
     if not parsed.hostname or not ALLOWED_HOST.match(parsed.hostname):
-        raise BlockedHost(f"{parsed.hostname} is not a site this service reads")
+        raise _refused(
+            url,
+            "the host is not on the allowlist",
+            f"{parsed.hostname} is not a site this service reads",
+        )
     if parsed.port is not None and parsed.port != ALLOWED_PORT:
-        raise BlockedHost(f"port {parsed.port} is not a port this service reads")
+        raise _refused(
+            url,
+            "the port is not 443",
+            f"port {parsed.port} is not a port this service reads",
+        )
     if _closed(parsed.hostname.lower(), parsed.path):
-        raise BlockedHost(f"{parsed.path} is closed by that site's robots.txt")
+        raise _refused(
+            url,
+            "the path is closed by that site's robots.txt",
+            f"{parsed.path} is closed by that site's robots.txt",
+        )
 
 
 def _site(url: str) -> str:
@@ -313,13 +350,15 @@ def _spend(url: str) -> None:
     spent token is never given back. Refunding on error is how an outage turns
     into a hammering loop, and it is the same reason nothing here retries.
     """
+    site = _site(url)
     budget = _BUDGET.get()
     if budget is None:
+        logger.error("nothing is paying for a call to %s, so it did not happen", site)
         raise OutsideRequest("no inbound request is paying for this call")
     if budget.remaining <= 0:
+        logger.error("the fan-out ceiling stopped a call to %s", site)
         raise OutsideRequest("fan-out ceiling reached")
 
-    site = _site(url)
     buckets = _buckets(site)
     now = limits.now()
     with limits.LOCK:
@@ -328,11 +367,19 @@ def _spend(url: str) -> None:
         # and must not lose a token of their own share for it.
         client_wait = _clients.wait(budget.client, now)
         if client_wait > 0:
+            # Which visitor is not written down; that one visitor was refused
+            # is, because a service where that is constant is misconfigured.
+            logger.info("a visitor's own budget is empty before a call to %s", site)
             raise BudgetExhausted(
                 "self", "client budget exhausted", max(1, min(6, math.ceil(client_wait)))
             )
         site_wait = buckets.wait(site, now)
         if site_wait > 0:
+            # The shared bucket running dry is the number that decides whether
+            # SITE_CAPACITY is still the right number, so it is loud.
+            logger.warning(
+                "the shared %s budget is empty, %.0fs from a refill", site, site_wait
+            )
             # A floor under the wait, so a queue of callers does not come back
             # once a second and spend the refill the moment it lands.
             raise BudgetExhausted(
@@ -353,17 +400,84 @@ def fetch_text(url: str, timeout: int = TIMEOUT_SECONDS) -> Tuple[int, str]:
     """
     _check(url)
     _spend(url)
+    site = _site(url)
     try:
         response = _follow(url, timeout)
     except BlockedHost:
         # A source site sending us somewhere we do not read is not a network
         # failure, and must not be reported as one.
         raise
-    except Exception:
+    except Exception as failure:
+        # The class, not the message: curl puts the URL it was given into the
+        # text of most of its errors, and that URL is the visitor's.
+        logger.warning("%s did not answer: %s", site, type(failure).__name__)
         return 0, ""
 
-    body = response.content[:MAX_BYTES]
+    try:
+        body = _read(response, site)
+    except Exception as failure:
+        # Reading the body is now part of the call rather than something that
+        # already happened, so a connection that dies halfway lands here. A
+        # half page is not a page, and the contract above says status 0.
+        logger.warning("%s stopped answering partway: %s", site, type(failure).__name__)
+        return 0, ""
+    finally:
+        _release(response)
+
+    logger.log(
+        logging.WARNING if response.status_code >= 400 else logging.INFO,
+        "%s answered %s, %s bytes read",
+        site,
+        response.status_code,
+        len(body),
+    )
     return response.status_code, body.decode(response.encoding or "utf-8", "replace")
+
+
+def _read(response, site: str) -> bytes:
+    """Everything this service is willing to take from one answer.
+
+    This was `response.content[:MAX_BYTES]`, and `content` is the whole body
+    the server chose to send, already in this process. The slice capped what
+    got PARSED and nothing else, so the promise at the top of this file -- a
+    page that never ends must not become this service never answering -- was
+    not kept by the code under it.
+
+    Measured against a local server that sends chunked blocks and never stops.
+    The old shape raised Timeout after the full wait and returned nothing
+    usable, having accepted whatever arrived meanwhile: 1451.8 MB in a five
+    second window over loopback. Reading with the cap inside the loop stopped
+    at 8.00 MB in 0.02 s. Chunks came back around 13 KiB, so the overshoot is
+    one chunk, not one page.
+
+    A response that is not streaming has no chunks to hand over and is already
+    whole, so it is trimmed the old way. Both paths end at MAX_BYTES.
+    """
+    chunks = getattr(response, "iter_content", None)
+    if chunks is None:
+        return response.content[:MAX_BYTES]
+
+    read: List[bytes] = []
+    total = 0
+    for chunk in chunks():
+        read.append(chunk)
+        total += len(chunk)
+        if total >= MAX_BYTES:
+            logger.warning("%s sent more than %s bytes, so the rest was left", site, MAX_BYTES)
+            break
+    return b"".join(read)[:MAX_BYTES]
+
+
+def _release(response) -> None:
+    """Ends the transfer.
+
+    A streamed answer holds its connection open until this runs, and a
+    redirect hop whose body nobody reads is exactly that: an open connection
+    for a page we were never interested in.
+    """
+    closing = getattr(response, "close", None)
+    if closing is not None:
+        closing()
 
 
 MAX_REDIRECTS = 5
@@ -385,16 +499,23 @@ def _follow(url: str, timeout: int):
     target = url
     for _ in range(MAX_REDIRECTS + 1):
         response = requests.get(
-            target, impersonate=IMPERSONATE, timeout=timeout, allow_redirects=False
+            target,
+            impersonate=IMPERSONATE,
+            timeout=timeout,
+            allow_redirects=False,
+            stream=True,
         )
         if response.status_code not in REDIRECT_CODES:
             return response
         location = response.headers.get("location")
         if not location:
             return response
+        _release(response)
         target = urljoin(target, location)
         _check(target)
-    raise BlockedHost("that link redirects around in a loop")
+    raise _refused(
+        target, "it redirects around in a loop", "that link redirects around in a loop"
+    )
 
 
 def fetch_json(url: str, timeout: int = TIMEOUT_SECONDS) -> Tuple[int, Optional[Any]]:
