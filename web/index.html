@@ -44,6 +44,32 @@
         <button id="lang-toggle" class="ghost-button" type="button"></button>
       </header>
 
+      <!-- Every string on this page is written by i18n.js, so without
+           JavaScript the first paint is blank buttons and unlabelled fields.
+           Both languages are printed, one after the other, because the language
+           toggle is JavaScript too and guessing at the reader's language from
+           markup alone is not something this page can honestly do. -->
+      <noscript>
+        <div class="card">
+          <p class="lede" lang="en">
+            This page needs JavaScript. It writes every word and every figure you see here in
+            your browser, so with JavaScript off there is nothing to read and nothing to measure
+            with. Turn it on for this site and reload. If you would rather not, the code is open
+            (the link is at the foot of this page) and the same conversion answers a POST to
+            /api/convert. Measuring happens in the browser, so that answer carries the GPX and
+            not the figures.
+          </p>
+          <p class="lede" lang="es">
+            Esta página necesita JavaScript. Escribe en tu navegador cada palabra y cada cifra
+            que ves aquí, así que con JavaScript desactivado no hay nada que leer ni con qué
+            medir. Actívalo para este sitio y recarga. Si prefieres no hacerlo, el código es
+            abierto (el enlace está al pie de esta página) y la misma conversión responde a un
+            POST a /api/convert. Medir ocurre en el navegador, así que esa respuesta lleva el
+            GPX y no las cifras.
+          </p>
+        </div>
+      </noscript>
+
       <main id="app" data-view="idle">
         <section class="step" id="step-one" aria-labelledby="step1-heading">
           <!-- Three ways of arriving at one URL, not three products. Whichever
@@ -192,7 +218,10 @@
               <p class="lede" id="sub-link"></p>
 
               <div class="field">
-                <span class="field-prefix"></span>
+                <!-- A real label, not a decorative span: the word beside the
+                     box is what a speech-input user says to reach it, and the
+                     name it is given has to start with that word. -->
+                <label class="field-prefix" for="route-url"></label>
                 <input id="route-url" type="url" spellcheck="false" autocomplete="off" />
                 <button id="paste" class="ghost-button" type="button"></button>
                 <button id="convert" class="primary-button" type="button"></button>

@@ -8,8 +8,17 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { LANGUAGES, keysOf, translate } from '../assets/i18n.js';
+
+const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
+
+/** The {placeholders} a string asks to be given, as a sorted set. */
+function placeholders(text) {
+  return [...new Set([...text.matchAll(/\{([^{}\s]+)\}/g)].map((found) => found[1]))].sort();
+}
 
 test('both languages hold exactly the same keys', () => {
   const [first, ...rest] = LANGUAGES.map((lang) => ({ lang, keys: new Set(keysOf(lang)) }));
@@ -43,6 +52,29 @@ test('a sentence naming sites leaves no placeholder unfilled', () => {
       const said = translate(lang, key, { place: 'Montserrat', applied: 'Wikiloc', ignored: 'Komoot' });
       assert.ok(!said.includes('{'), `${lang} ${key}: ${said}`);
       assert.ok(said.includes('Komoot'), `${lang} ${key} does not name the site: ${said}`);
+    }
+  }
+});
+
+test('every key asks both languages for the same values, not just the dozen we thought of', () => {
+  // The test above pins two keys, and the ones further down pin ten more. That
+  // left 238 of the 250 keys free to lose a placeholder in translation, and a
+  // Spanish sentence that dropped {source} prints "{source}" to a reader while
+  // the whole suite stays green: `translate` fills what it is given and leaves
+  // the rest of the text alone.
+  //
+  // The set is compared rather than the count, so a rename on one side is
+  // caught too: a Spanish string asking for {origen} is exactly as broken as
+  // one asking for nothing.
+  const [first, ...rest] = LANGUAGES;
+  for (const key of keysOf(first)) {
+    const wanted = placeholders(translate(first, key));
+    for (const lang of rest) {
+      assert.deepEqual(
+        placeholders(translate(lang, key)),
+        wanted,
+        `${lang} ${key} does not ask for the same values as ${first}`,
+      );
     }
   }
 });
@@ -219,5 +251,53 @@ test('the three notes stay notes and never grow into sentences', () => {
       const said = translate(lang, key, { gaps: '2.7 km', coverage: '77' });
       assert.ok(said.length <= budget, `${lang} ${key} is ${said.length} against ${budget}: ${said}`);
     }
+  }
+});
+
+test('a visitor with no JavaScript is told so, in both languages', () => {
+  // Every string on the page is written by i18n.js, so with JavaScript off the
+  // first paint is empty buttons and unlabelled fields and nothing saying why.
+  // The language toggle is JavaScript too, so both sentences are printed, one
+  // after the other, and each is marked with the language it is in.
+  const at = html.indexOf('<noscript>');
+  assert.notEqual(at, -1, 'index.html has no noscript');
+  const said = html.slice(at, html.indexOf('</noscript>', at));
+  assert.match(said, /lang="en"/);
+  assert.match(said, /lang="es"/);
+  assert.match(said, /needs JavaScript/i);
+  assert.match(said, /necesita JavaScript/i);
+});
+
+test('the word printed beside the link field is the name the field answers to', () => {
+  // WCAG 2.2 SC 2.5.3 Label in Name. The visible word is `field.prefix`, and
+  // `app.js` names the field with `field.label`. A name that did not start with
+  // the visible word would leave a speech-input user saying "click URL" with
+  // nothing to click, and the field was also the one input on the page with no
+  // label element at all.
+  assert.match(html, /<label class="field-prefix" for="route-url">/);
+  for (const lang of LANGUAGES) {
+    const visible = translate(lang, 'field.prefix');
+    const named = translate(lang, 'field.label');
+    assert.ok(
+      named.toLowerCase().startsWith(visible.toLowerCase()),
+      `${lang}: "${named}" does not start with the visible "${visible}"`,
+    );
+  }
+});
+
+test('the activity note says who narrows the list and never counts pages for the reader', () => {
+  // One sentence sits under two surfaces, so it may only say what is true of
+  // both. Nearby reads up to four windows of Wikiloc results (`_scan` in
+  // `api/sources/wikiloc_discovery.py`) and Search reads exactly one (`_look`),
+  // so "several pages" was a true sentence on one tab and a false one on the
+  // other. What both paths do share is the fact a reader can act on: the
+  // narrowing is ours, not Wikiloc's, which is why a filtered list can come
+  // back short.
+  const counted = /several pages|pages of (its|their) results|varias páginas/i;
+  for (const lang of LANGUAGES) {
+    const said = translate(lang, 'activity.notFiltered');
+    assert.ok(!counted.test(said), `${lang} counts pages the search path never reads: ${said}`);
+    assert.match(said, /Wikiloc/);
+    assert.match(said, /our server|nuestro servidor/i);
   }
 });
