@@ -165,7 +165,17 @@ test('the token comment counts the uses it actually has', () => {
   const uses = css.match(/var\(--field-border\)/g) || [];
   const claimed = /(\w+) uses/.exec(block(':root').replace(/\n/g, ' '));
   assert.ok(claimed, 'the --field-border comment no longer says how many uses it has');
-  const words = { thirteen: 13, fourteen: 14, fifteen: 15, twelve: 12, eleven: 11, ten: 10 };
+  const words = {
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+  };
   assert.equal(words[claimed[1].toLowerCase()], uses.length, `the comment says ${claimed[1]}`);
 });
 
@@ -347,8 +357,13 @@ test('the page keeps a gap the height of the download bar at its tallest', () =>
   const below = Number(/calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/.exec(bar)[1]);
   const between = Number(/row-gap:\s*(\d+)px/.exec(bar)[1]);
   const button = Number(/min-height:\s*(\d+)px/.exec(narrowRule('#download'))[1]);
-  const secondRow = Number(
-    /min-height:\s*(\d+)px/.exec(narrowRule('#report-adjust,\n  #reset'))[1],
+  // The tallest control that can land on the second row, not one of them. Four
+  // controls can share it once a build carries a Garmin session and the
+  // browser can hand over a file, and the reservation answers the worst case.
+  const secondRow = Math.max(
+    ...['#report-adjust', '#reset', '#send-file,\n  #send-garmin'].map((selector) =>
+      Number(/min-height:\s*(\d+)px/.exec(narrowRule(selector))[1]),
+    ),
   );
 
   const published = /--action-bar:\s*calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/.exec(
@@ -394,12 +409,14 @@ test('every control on the action bar is as tall as a thumb', () => {
   // enough. It is a link, and a link is as tall as its own text, so it was the
   // one control on the bar that never got the floor the rest of this block
   // gives the page. 44px is Apple's minimum; the block already uses 44 and 46.
-  const secondary = narrowRule('#report-adjust,\n  #reset');
-  const floor = Number(/min-height:\s*(\d+)px/.exec(secondary)[1]);
-  assert.ok(floor >= 44, `${floor}px is under the 44px thumb floor`);
-  // And centred, because `.link-button` aligns itself to the top of whatever
-  // holds it, which on a 50px row leaves the link hanging above its own box.
-  assert.match(secondary, /align-self:\s*center/);
+  for (const selector of ['#report-adjust', '#reset']) {
+    const secondary = narrowRule(selector);
+    const floor = Number(/min-height:\s*(\d+)px/.exec(secondary)[1]);
+    assert.ok(floor >= 44, `${selector} sits at ${floor}px, under the 44px thumb floor`);
+    // And centred, because `.link-button` aligns itself to the top of whatever
+    // holds it, which on a 50px row leaves the link hanging above its own box.
+    assert.match(secondary, /align-self:\s*center/, `${selector} is not centred on its row`);
+  }
 
   const button = Number(/min-height:\s*(\d+)px/.exec(narrowRule('#download'))[1]);
   assert.ok(button >= 44, `the primary is ${button}px tall`);
@@ -487,4 +504,158 @@ test('a sweep drains the queue it did not add to', () => {
   const sweep = js.slice(js.indexOf('function sweepVisibleSlots('));
   const body = sweep.slice(0, sweep.indexOf('\n}\n'));
   assert.match(body, /drainShapes\(\);/, 'sweepVisibleSlots no longer drains the queue');
+});
+
+test('the thumb floor covers every kind of control on the phone, not most of them', () => {
+  // THE FLOOR THAT KEPT BEING RAISED ONE CONTROL AT A TIME. The tab got it, the
+  // ghost button got it, the icon button got it, and the bar's own link got it
+  // after it was measured at 72.5 x 29.6. What was left were the two kinds
+  // nobody had measured: the links under the URL field, which are how a walker
+  // with a file already on the phone gets into the product at all, at 29.6px
+  // tall; and the chart's switches, which at 390 stood 24.6 x 22.1 for the zoom
+  // pair and 37.8 x 22.1 for Fit. WCAG 2.2 asks 24 x 24 of a target, so the
+  // zoom pair failed on height and cleared on width by six tenths of a pixel.
+  //
+  // Enumerated rather than asserted one at a time, so the next control kind
+  // added to this block is a failure here rather than a defect found on a hill.
+  const floors = {
+    '.tab': 44,
+    '.ghost-button': 44,
+    '.method-summary': 44,
+    '.link-button': 44,
+    '.chart-toggle': 44,
+    '.card-primary,\n  .icon-button': 46,
+  };
+  for (const [selector, want] of Object.entries(floors)) {
+    const found = /min-height:\s*(\d+)px/.exec(narrowRule(selector));
+    assert.ok(found, `${selector} no longer declares a height floor on the phone`);
+    assert.ok(Number(found[1]) >= want, `${selector} sits at ${found[1]}px, under ${want}px`);
+  }
+
+  // The zoom pair carries one glyph each, so a height floor alone leaves it a
+  // sliver. It is the width that makes it a target.
+  const zoom = /min-width:\s*(\d+)px/.exec(narrowRule('.chart-toggle'));
+  assert.ok(zoom, 'the chart switch no longer declares a width floor');
+  assert.ok(Number(zoom[1]) >= 44, `a ${zoom[1]}px-wide switch is not a thumb target`);
+});
+
+test('the chart switch is drawn with a control edge, not a card edge', () => {
+  // These were the only controls on the page painted with --surface-line, which
+  // is the card token: 1.23:1 against the --surface they sit on, where
+  // --field-border gives 3.01:1 and every other control on the page is drawn.
+  // A box nobody can see is not a box, and on this surface it is Hide map, the
+  // control the colophon points at when it says how to stop OpenStreetMap
+  // seeing where your routes are.
+  const narrow = narrowRule('.chart-toggle');
+  assert.match(narrow, /border-color:\s*var\(--field-border\)/);
+  assert.doesNotMatch(narrow, /--surface-line/, 'the switch is back on the card token');
+
+  // A 44px box has no baseline worth aligning a 12px title to, so the head that
+  // holds it stops aligning on baselines. Without this the title floats.
+  assert.match(narrowRule('.chart-head,\n  .chart-head-end'), /align-items:\s*center/);
+});
+
+test('one thing in the action bar is loud, and it is the file', () => {
+  // FOUR CONTROLS AT ONE VOLUME. Measured at 390 in English they were 205.5,
+  // 140.5, 194.6 and 46 wide with a 72.5 link after them, and three of the five
+  // were drawn the same way. The eye had to read all four labels to find the
+  // one the page is for.
+  //
+  // The accent is what ranks them. It fills the primary, and on this page it
+  // means interactive or in order, so anything else in the bar wearing it is
+  // claiming a rank it does not have. "New link" wore it as text, beside an
+  // accent-filled button: the loudest ink the page has, spent on leaving.
+  const exit = narrowRule('#reset');
+  assert.match(exit, /color:\s*var\(--muted\)/, 'the way out is painted in the accent again');
+  assert.match(
+    exit,
+    /text-decoration-color:\s*var\(--field-border\)/,
+    'the rule under the way out is louder than the edge of a control',
+  );
+
+  // And it comes back where a visitor asks the question, which is under a
+  // pointer or a focus ring. A control that never answers is not quiet, it is
+  // dead.
+  assert.match(
+    narrowBlock(),
+    /#reset:hover,\n\s+#reset:focus-visible \{[^}]*color:\s*var\(--accent\)/,
+    'the way out no longer lights up on hover or focus',
+  );
+});
+
+test('a Garmin send that has landed reads as a status, not as a fourth button', () => {
+  // "On its way to your watch" is a report of something that has already
+  // happened. It was drawn as an outlined button 194.6px wide against a primary
+  // of 205.5: a hand-off that is over, at 95% of the width of the one thing the
+  // page exists to hand over, and beside "Send to an app", which is a live verb
+  // of the same size. The sentence above the bar says it again, in prose.
+  const sent =
+    /#report:has\(#garmin-note:not\(\[hidden\]\)\) #send-garmin:not\(:hover\):not\(:focus-visible\) \{([^}]*)\}/.exec(
+      narrowBlock(),
+    );
+  assert.ok(sent, 'the sent state is no longer read off the note the page un-hides');
+  assert.match(sent[1], /color:\s*var\(--muted\)/);
+
+  // Transparent, never removed. A border that goes away takes 2px of width and
+  // 2px of height with it, and this control sits in a bar that wraps: the row
+  // it is on would reflow the moment a send landed.
+  assert.match(sent[1], /border-color:\s*transparent/);
+  assert.doesNotMatch(sent[1], /border:\s*(0|none)/, 'the border is taken away rather than hidden');
+
+  // It is still a button, and pressing it sends the course again. The two
+  // :not() clauses are what hand it back to .ghost-button:hover, so the edge
+  // and the colour return under a pointer or a focus ring.
+  assert.match(block('.ghost-button:hover:not(:disabled)'), /border-color:\s*var\(--accent\)/);
+
+  // And the whole row agrees on a height, so the bar reads as two rows rather
+  // than as five controls that happen to be near each other.
+  const row = ['#send-file,\n  #send-garmin', '#report-adjust', '#reset'].map((selector) =>
+    Number(/min-height:\s*(\d+)px/.exec(narrowRule(selector))[1]),
+  );
+  assert.equal(new Set(row).size, 1, `the second row holds ${row.join('px, ')}px controls`);
+});
+
+test('the route name is not drawn as a fourth figure', () => {
+  // The action bar leaves this box on a phone, so what is left in it is a title
+  // and one line of provenance, and it was still drawn as a card: the same
+  // fill, the same 1px edge and the same 8px radius as the three measured tiles
+  // under it. Four identical boxes down the top of the screen, of which one
+  // holds no measurement at all.
+  const head = narrowRule('.report-head');
+  assert.match(head, /background:\s*none/, 'the name is back in a card');
+  assert.match(head, /border:\s*0/);
+  assert.match(head, /border-radius:\s*0/);
+
+  // The tiles keep theirs, because a figure is what the box is for. If this
+  // ever stops being true the rule above has nothing left to say.
+  assert.match(block('.tile'), /background:\s*var\(--surface\)/);
+  assert.match(block('.tile'), /border:\s*1px solid var\(--surface-line\)/);
+});
+
+test('the first screen has more than one interval down it', () => {
+  // SIX BLOCKS AT ONE INTERVAL IS A LIST, NOT AN ARGUMENT. Measured at 390, the
+  // whole of step one ran 16, 14, 14, 14, 14 from the heading down: the
+  // heading, the sentence under it, the field, the line saying what the field
+  // takes, and the two other ways in were all the same distance apart. Nothing
+  // in that column said which of the six belong together.
+  //
+  // Two boundaries now, and both are read off the content. The hint is a
+  // caption on the field above it and closes; the pair of links is a way in
+  // that is not this field, and opens. A reader who can see one wide gap in a
+  // column knows where the column divides.
+  const panelGap = Number(/gap:\s*(\d+)px/.exec(declarations('.panel'))[1]);
+  const close = Number(/margin-top:\s*(-?\d+)px/.exec(narrowRule('#step1-hint'))[1]);
+  const open = Number(/margin-top:\s*(-?\d+)px/.exec(narrowRule('#example'))[1]);
+
+  assert.ok(close < 0, 'the hint no longer closes on the field it captions');
+  assert.ok(open > 0, 'the links no longer open away from the field');
+  assert.ok(
+    panelGap + open >= 2 * (panelGap + close),
+    `a ${panelGap + open}px boundary against a ${panelGap + close}px one is not a boundary`,
+  );
+
+  // The two links are a pair and read as one. The 44px floor above grew each
+  // box by 14.4px, which pushed the labels from 22px apart to 36px; this is
+  // what pays that back, and it is only worth having while the floor is.
+  assert.match(narrowRule('#choose-file'), /margin-top:\s*-\d+px/);
 });
