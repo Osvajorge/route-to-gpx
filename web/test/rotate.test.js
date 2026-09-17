@@ -20,6 +20,7 @@ import {
   loopToleranceM,
   pathLengthM,
   ringLength,
+  sourceIndexOf,
 } from '../assets/rotate.js';
 
 const M_PER_DEGREE = 111195;
@@ -382,4 +383,69 @@ test('the wrap that survives is the filter, not the accumulator', () => {
     Math.abs(result.ascentM - result.descentM) < 1e-6,
     `${result.ascentM} up against ${result.descentM} down`,
   );
+});
+
+// ------------------------------------------------- pointing at the drawing
+//
+// The re-arranger's map can be moved and zoomed now, so a point on it can be
+// picked out. What is picked is a point in the arrangement on the screen, and
+// everything else here counts points in the order the recording was made.
+
+test('every point of an arrangement says which recorded point it is', () => {
+  // The whole inverse, checked point by point rather than at the ends: an
+  // off-by-one here would move somebody's start to the wrong side of a summit
+  // and nothing on the page would look wrong.
+  const closed = [];
+  for (let i = 0; i < 12; i++) closed.push(at(i * 40, (i % 5) * 30));
+  closed.push({ ...closed[0] });
+  const open = closed.slice(0, -1).concat(at(3, 4));
+
+  for (const original of [closed, open]) {
+    for (const reverse of [false, true]) {
+      for (const startIndex of [0, 1, 5, 11]) {
+        const arrangement = arrange(original, { reverse, startIndex });
+        arrangement.points.forEach((point, index) => {
+          const source = original[sourceIndexOf(arrangement, index)];
+          assert.deepEqual(
+            { lat: point.lat, lon: point.lon },
+            { lat: source.lat, lon: source.lon },
+            `start ${startIndex}, reverse ${reverse}, index ${index}`,
+          );
+        });
+      }
+    }
+  }
+});
+
+test('pointing at a place on the map is the same act as moving the slider', () => {
+  // What the pick is for. The number that comes back is the number the slider
+  // carries, so the two controls cannot disagree about where the route starts.
+  const ring = [];
+  for (let i = 0; i < 10; i++) ring.push(at(i * 50, i * 20));
+  ring.push({ ...ring[0] });
+
+  const showing = arrange(ring, { reverse: false, startIndex: 4 });
+  for (const picked of [0, 3, 7, 9]) {
+    const chosen = arrange(ring, { startIndex: sourceIndexOf(showing, picked) });
+    assert.deepEqual(
+      { lat: chosen.points[0].lat, lon: chosen.points[0].lon },
+      { lat: showing.points[picked].lat, lon: showing.points[picked].lon },
+      `picked ${picked}`,
+    );
+  }
+});
+
+test('an index off the end of the drawing is brought back onto it', () => {
+  // A tap lands where it lands, and the nearest point to it is found by
+  // searching a list; nothing in that chain promises a number inside the range.
+  const ring = [at(0, 0), at(100, 0), at(100, 100), at(0, 100)];
+  ring.push({ ...ring[0] });
+  const arrangement = arrange(ring, { startIndex: 2 });
+
+  assert.equal(sourceIndexOf(arrangement, -5), sourceIndexOf(arrangement, 0));
+  assert.equal(sourceIndexOf(arrangement, 99), sourceIndexOf(arrangement, arrangement.points.length - 1));
+  assert.equal(sourceIndexOf(arrangement, 1.7), sourceIndexOf(arrangement, 1));
+  // A recording that never moved is one point, which is a ring of nothing: it
+  // has no other start to offer and the arithmetic must not divide by that.
+  assert.equal(sourceIndexOf(arrange([at(0, 0)]), 0), 0);
 });
