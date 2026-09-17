@@ -326,30 +326,107 @@ test('a phone gets the side margin the paragraph above it argues for', () => {
   assert.doesNotMatch(narrowRule('.shell'), /padding:\s/);
 });
 
-test('the page keeps a gap the exact height of the fixed download bar', () => {
+test('the page keeps a gap the height of the download bar at its tallest', () => {
   // The bar is out of flow, so nothing under it reserves its space. Measured
   // at 375x812 before this: the bottom 59px of the colophon sat behind the bar
   // with the page scrolled as far as it went — the privacy statement and the
   // source link, which are the two things on this page that are there for
   // honesty rather than use. Afterwards the link clears the bar by 16px.
+  //
+  // THE SUM IS NOW TWO ROWS, BECAUSE THE BAR HAS TWO WHENEVER ONE WILL NOT DO.
+  // Which of the two it has depends on how wide the labels are in the language
+  // being read, and no media query can ask that: measured at 360x844, the bar
+  // is one row in English and two in Spanish. So the reservation answers the
+  // worse case. It was the one-row sum while the bar could already be two, and
+  // that was measured at 360x844 in Spanish as a 95.8px bar against a 75px
+  // reservation, with the bottom 20.8px of the colophon behind it again.
   const bar = narrowRule('.report-actions');
   assert.match(bar, /position:\s*fixed/);
   const border = Number(/border-top:\s*(\d+)px/.exec(bar)[1]);
   const above = Number(/padding:\s*(\d+)px/.exec(bar)[1]);
   const below = Number(/calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/.exec(bar)[1]);
+  const between = Number(/row-gap:\s*(\d+)px/.exec(bar)[1]);
   const button = Number(/min-height:\s*(\d+)px/.exec(narrowRule('#download'))[1]);
+  const secondRow = Number(
+    /min-height:\s*(\d+)px/.exec(narrowRule('#report-adjust,\n  #reset'))[1],
+  );
 
   const published = /--action-bar:\s*calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/.exec(
     narrowRule('.shell'),
   );
   assert.ok(published, 'the shell no longer publishes what the bar takes');
-  assert.equal(Number(published[1]), border + above + button + below);
+  assert.equal(Number(published[1]), border + above + button + between + secondRow + below);
 
   // And the last block on the page is the one that keeps clear of it, only
   // while step two is up, because that is when the bar exists.
   assert.match(
     narrowRule("#app[data-view='report'] ~ .colophon"),
     /padding-bottom:\s*var\(--action-bar\)/,
+  );
+});
+
+test('the action bar drops a control to a second row rather than crushing the row it has', () => {
+  // THE BAR HAD NO SLACK. Measured at 390x844 in Spanish: 196.7px of button,
+  // 46px of icon, 91.3px of link, two 12px gaps and two 16px margins come to
+  // 390.0px, to the pixel — a line that fits only because nothing on it is a
+  // character longer. At 360 it stopped fitting: "Descargar GPX" broke onto a
+  // second line inside its own button and the bar grew to 95.8px.
+  //
+  // Wrapping is what makes that a reflow instead of a squeeze. Without it the
+  // controls share one line however little of it there is, and the words go
+  // first.
+  const bar = narrowRule('.report-actions');
+  assert.match(bar, /flex-wrap:\s*wrap/, 'the bar packs into one line at any width again');
+
+  // The primary keeps a floor, so it is never the control that gets thin: it
+  // either holds the row it is on or takes a row of its own. Measured in
+  // Spanish, the label is one line at 181.7px of button and two at 166.7px.
+  const primary = /flex:\s*1 1 (\d+)px/.exec(narrowRule('#download'));
+  assert.ok(primary, 'the primary no longer declares the width it needs');
+  assert.ok(
+    Number(primary[1]) >= 175,
+    `a ${primary[1]}px floor is under the width the label needs`,
+  );
+});
+
+test('every control on the action bar is as tall as a thumb', () => {
+  // "New link" measured 72.5 x 29.6 at 390: wide enough to hit and not tall
+  // enough. It is a link, and a link is as tall as its own text, so it was the
+  // one control on the bar that never got the floor the rest of this block
+  // gives the page. 44px is Apple's minimum; the block already uses 44 and 46.
+  const secondary = narrowRule('#report-adjust,\n  #reset');
+  const floor = Number(/min-height:\s*(\d+)px/.exec(secondary)[1]);
+  assert.ok(floor >= 44, `${floor}px is under the 44px thumb floor`);
+  // And centred, because `.link-button` aligns itself to the top of whatever
+  // holds it, which on a 50px row leaves the link hanging above its own box.
+  assert.match(secondary, /align-self:\s*center/);
+
+  const button = Number(/min-height:\s*(\d+)px/.exec(narrowRule('#download'))[1]);
+  assert.ok(button >= 44, `the primary is ${button}px tall`);
+});
+
+test('a chart readout cannot paint over the bar fixed across the bottom', () => {
+  // THE READING THAT COVERED THE DOWNLOAD BUTTON. The overlays inside a chart
+  // climb to z-index 4 and the bar sits at 4 as well, and the charts come
+  // after the bar in the markup, so the tie went to the readout: a box saying
+  // something like "km 0.95 · 1,114 m" drawn across the one control the report
+  // exists to offer. Reproduced at 360x844 by taking the clip off the chart
+  // box, which is all that was holding the readout in.
+  //
+  // The fix is a stacking context rather than a new number, because a number
+  // only moves the argument: the chart is entitled to rank its own overlays
+  // and has no business ranking itself against the page furniture.
+  const canvas = block('.chart-canvas');
+  assert.match(canvas, /isolation:\s*isolate/, 'the chart box no longer contains its overlays');
+
+  // And the tie it contains is real, so this stays worth having.
+  const barZ = Number(/z-index:\s*(\d+)/.exec(narrowRule('.report-actions'))[1]);
+  const overlays = ['.gap-label', '.chart-tooltip', '.chart-attribution'].map((selector) =>
+    Number(/z-index:\s*(\d+)/.exec(block(selector))[1]),
+  );
+  assert.ok(
+    Math.max(...overlays) >= barZ,
+    'no chart overlay outranks the bar any more, so say so here rather than leaving this note',
   );
 });
 
