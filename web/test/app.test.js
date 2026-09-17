@@ -406,3 +406,32 @@ test('the paste button puts a link in the field, not a sentence', () => {
   // fixed, so the visitor saw something that did not look like a link.
   assert.match(js, /el\.input\.value = linkWithin\(text\)/, 'paste keeps the prose');
 });
+
+test('the page finishes the sentence: it says when the route is actually on the watch', () => {
+  // "una vez que esta en el reloj no avisa que ya llego en la app." The page
+  // said "on its way" and then never came back, so the only way to know was to
+  // pick up the watch. The queue answers by emptying and the page can watch
+  // that without asking the watch anything.
+  const watching = body('watchForArrival');
+  assert.match(watching, /\/garmin\/course\/\$\{courseId\}\/arrived/, 'it never asks');
+  assert.match(watching, /said\.arrived === true/);
+  assert.match(watching, /state\.garminArrived = true/);
+
+  // Unknown is not arrived. Telling somebody their route is on their watch
+  // when it might not be is the one answer that could send them up a hill
+  // without it.
+  assert.match(watching, /said\.known !== true\) continue/, 'unknown is treated as arrived');
+
+  // A slow widening rhythm, not a tight loop: this is somebody's own account
+  // and a queue that changes every few minutes at best.
+  assert.match(js, /ARRIVAL_CHECKS = \[/);
+  assert.match(watching, /state\.garminCourse\.courseId !== courseId\) return/, 'it watches a route nobody is looking at');
+});
+
+test('the sentence names the watch in all three states', () => {
+  // Saved, on its way, and arrived are three different things to know, and the
+  // one that matters most is the one that used to be missing.
+  assert.match(js, /t\('garmin\.note\.arrived', \{ device \}\)/);
+  assert.match(js, /t\('garmin\.note\.queued', \{ device \}\)/);
+  assert.match(js, /t\('garmin\.note\.saved'\)/);
+});

@@ -599,6 +599,25 @@ def nearby(body: NearbyRequest, request: Request):
 
 if garmin.enabled():
 
+    @api.get("/garmin/course/{course_id}/arrived")
+    def garmin_arrived(request: Request, course_id: int):
+        """Has the watch collected it yet.
+
+        The page asks this a few times after a send, because a course reaching
+        the account and a course reaching the WATCH are different events and
+        only the second one is what somebody wanted. The queue answers by
+        emptying, so this reads a list rather than asking a device anything.
+        """
+        client = client_key(request)
+        waiting = inbound_wait(client)
+        if waiting:
+            return busy_response(waiting)
+
+        try:
+            return {"ok": True, **garmin.course_arrived(course_id)}
+        except garmin.GarminUnavailable as unavailable:
+            return error_response("garmin", hint=unavailable.hint, detail=unavailable.detail)
+
     @api.post("/garmin/course")
     def garmin_course(request: Request, body: GarminCourseRequest):
         """Uploads the measured route to the visitor's own Garmin, as a course.

@@ -243,3 +243,90 @@ def test_an_account_with_no_device_is_not_an_error():
 
     assert garmin._last_used_device(Empty()) is None
     assert garmin._last_used_device(Broken()) is None
+
+
+def _queue(*course_ids):
+    """A device queue holding a courses message for each id given."""
+    return {
+        "numOfMessages": len(course_ids),
+        "messages": [
+            {
+                "messageId": 100 + n,
+                "messageType": "courses",
+                "metaData": {"metaDataId": cid, "messageName": f"route {cid}"},
+            }
+            for n, cid in enumerate(course_ids)
+        ],
+    }
+
+
+class _Queue:
+    def __init__(self, answer):
+        self.answer = answer
+
+    def connectapi(self, path, method="GET", **kwargs):
+        assert path == "/device-service/devicemessage/messages"
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def test_a_course_still_in_the_queue_has_not_reached_the_watch(monkeypatch, tmp_path):
+    """The queue answers by emptying.
+
+    A message sits there until the device syncs, downloads the FIT and
+    acknowledges it. So "still queued" and "arrived" are the same question
+    asked of the same list, and neither needs the watch to be asked anything.
+    """
+    monkeypatch.setenv(garmin.TOKENS_ENV, str(tmp_path))
+    monkeypatch.setattr(garmin, "_client", lambda: _Queue(_queue(515580837)))
+
+    said = garmin.course_arrived(515580837)
+    assert said == {"known": True, "queued": True, "arrived": False}
+
+
+def test_a_course_gone_from_the_queue_is_on_the_watch(monkeypatch, tmp_path):
+    monkeypatch.setenv(garmin.TOKENS_ENV, str(tmp_path))
+    monkeypatch.setattr(garmin, "_client", lambda: _Queue(_queue(111, 222)))
+
+    said = garmin.course_arrived(515580837)
+    assert said == {"known": True, "queued": False, "arrived": True}
+
+
+def test_another_kind_of_message_is_not_mistaken_for_this_course(monkeypatch, tmp_path):
+    """A settings message for a speed sensor shares the queue and must not
+    count as a route waiting."""
+    monkeypatch.setenv(garmin.TOKENS_ENV, str(tmp_path))
+    other = {
+        "numOfMessages": 1,
+        "messages": [
+            {
+                "messageId": 1,
+                "messageType": "device-settings",
+                "metaData": {"metaDataId": 515580837},
+            }
+        ],
+    }
+    monkeypatch.setattr(garmin, "_client", lambda: _Queue(other))
+
+    said = garmin.course_arrived(515580837)
+    assert said["arrived"] is True, "a settings message was read as a course"
+
+
+def test_a_queue_that_cannot_be_read_is_unknown_and_never_arrived(monkeypatch, tmp_path):
+    """The one answer here that could send somebody up a hill without their
+    route is 'it is on your watch' when it might not be. So a queue this cannot
+    read is reported as unknown rather than guessed at."""
+    monkeypatch.setenv(garmin.TOKENS_ENV, str(tmp_path))
+    monkeypatch.setattr(garmin, "_client", lambda: _Queue(RuntimeError("no")))
+
+    said = garmin.course_arrived(515580837)
+    assert said["known"] is False
+    assert said["arrived"] is not True
+
+
+def test_an_empty_queue_means_arrived(monkeypatch, tmp_path):
+    monkeypatch.setenv(garmin.TOKENS_ENV, str(tmp_path))
+    for empty in ({"numOfMessages": 0, "messages": []}, {}, None):
+        monkeypatch.setattr(garmin, "_client", lambda answer=empty: _Queue(answer))
+        assert garmin.course_arrived(515580837)["arrived"] is True

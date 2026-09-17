@@ -84,6 +84,7 @@ const state = {
   canSendToGarmin: false,
   garminSending: false,
   garminCourse: null,
+  garminArrived: false,
 };
 
 const el = {};
@@ -325,6 +326,7 @@ async function sendToGarmin() {
 
   state.garminSending = true;
   state.garminCourse = null;
+  state.garminArrived = false;
   render();
 
   try {
@@ -346,6 +348,10 @@ async function sendToGarmin() {
       return;
     }
     state.garminCourse = payload.course;
+    state.garminArrived = false;
+    if (payload.course?.queuedForDevice && payload.course.courseId) {
+      watchForArrival(payload.course.courseId);
+    }
   } catch {
     state.garminSending = false;
     fail('garmin');
@@ -354,6 +360,46 @@ async function sendToGarmin() {
 
   state.garminSending = false;
   render();
+}
+
+// A watch syncs when it syncs. Asked at a slow, widening rhythm rather than a
+// tight loop: this is somebody's own account and a queue that changes every
+// few minutes at best, so hammering it would tell nobody anything sooner.
+const ARRIVAL_CHECKS = [8000, 15000, 30000, 60000, 120000, 240000];
+
+/** Watches the queue until the watch has taken the course, then says so.
+ *
+ *  "una vez que esta en el reloj no avisa que ya llego en la app." Right: the
+ *  page said "on its way" and then never finished the sentence, so the only
+ *  way to know was to pick up the watch. The queue answers by emptying, and
+ *  that is a thing this page can watch without asking the watch anything.
+ *
+ *  It gives up quietly after the last check. A route that has not arrived in
+ *  eight minutes has not arrived because nothing synced, and saying so forever
+ *  would be nagging about something the visitor cannot fix from here. */
+async function watchForArrival(courseId) {
+  for (const wait of ARRIVAL_CHECKS) {
+    await new Promise((resolve) => setTimeout(resolve, wait));
+
+    // The visitor moved on, or sent something else. Whatever we were waiting
+    // for is not what is on screen.
+    if (!state.garminCourse || state.garminCourse.courseId !== courseId) return;
+
+    let said;
+    try {
+      const answer = await fetch(`${API_BASE}/garmin/course/${courseId}/arrived`);
+      said = await answer.json();
+    } catch {
+      continue;
+    }
+
+    if (said?.ok !== true || said.known !== true) continue;
+    if (said.arrived === true) {
+      state.garminArrived = true;
+      render();
+      return;
+    }
+  }
 }
 
 function downloadResult() {
@@ -724,9 +770,12 @@ function renderReport() {
   const sent = state.garminCourse;
   el.garminNote.hidden = !sent;
   if (sent) {
-    el.garminNote.textContent = sent.queuedForDevice
-      ? t('garmin.note.queued', { device: sent.deviceName || t('garmin.yourWatch') })
-      : t('garmin.note.saved');
+    const device = sent.deviceName || t('garmin.yourWatch');
+    el.garminNote.textContent = state.garminArrived
+      ? t('garmin.note.arrived', { device })
+      : sent.queuedForDevice
+        ? t('garmin.note.queued', { device })
+        : t('garmin.note.saved');
   }
   el.sendButton.innerHTML = `${icon('share')}<span>${t('step2.send')}</span>`;
   // What the receiving app does to the numbers belongs on the button that

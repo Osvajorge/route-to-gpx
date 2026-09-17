@@ -335,6 +335,8 @@ const STRINGS = {
     'garmin.yourWatch': 'your watch',
     'garmin.note.queued':
       'Saved to Garmin Connect and queued for {device}. It arrives on the next sync, under Navigate then Courses.',
+    'garmin.note.arrived':
+      'On {device} now. Look under Navigate, then Courses.',
     'garmin.note.saved':
       'Saved to Garmin Connect. No watch was queued, so open Garmin Connect and use Send to Device.',
     'map.open': 'Open the map',
@@ -782,6 +784,8 @@ const STRINGS = {
     'garmin.yourWatch': 'tu reloj',
     'garmin.note.queued':
       'Guardado en Garmin Connect y en cola para {device}. Llega en la siguiente sincronización, en Navegar y luego Recorridos.',
+    'garmin.note.arrived':
+      'Ya está en {device}. Búscalo en Navegar y luego Recorridos.',
     'garmin.note.saved':
       'Guardado en Garmin Connect. No se encoló ningún reloj: abre Garmin Connect y usa Enviar al dispositivo.',
     'map.open': 'Abrir el mapa',

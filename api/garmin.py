@@ -258,6 +258,36 @@ def _queue_on_device(client, course_id: int, device: Dict[str, Any], name: str) 
     return True
 
 
+def course_arrived(course_id: int) -> Dict[str, Any]:
+    """Whether the watch has collected this course yet.
+
+    The queue is the answer and it answers by emptying. A message sits there
+    with `messageStatus: new` until the device syncs, downloads the FIT and
+    acknowledges it; then it is gone. So "still queued" and "arrived" are the
+    same question asked of the same list, and neither needs the watch to be
+    asked anything.
+
+    A queue this cannot read is reported as unknown rather than as arrived.
+    Telling somebody their route is on their watch when it might not be is the
+    one answer here that could send them up a hill without it.
+    """
+    client = _client()
+    try:
+        queue = client.connectapi("/device-service/devicemessage/messages")
+    except Exception as refused:
+        logger.info("garmin queue unreadable: %s", type(refused).__name__)
+        return {"known": False, "queued": None, "arrived": None}
+
+    for message in (queue or {}).get("messages") or []:
+        meta = message.get("metaData") or {}
+        if message.get("messageType") != "courses":
+            continue
+        if meta.get("metaDataId") == course_id:
+            return {"known": True, "queued": True, "arrived": False}
+
+    return {"known": True, "queued": False, "arrived": True}
+
+
 def send_course(
     gpx: str, file_name: str, name: str, activity: str = DEFAULT_ACTIVITY
 ) -> Dict[str, Any]:
