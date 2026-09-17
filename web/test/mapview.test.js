@@ -6,6 +6,8 @@
 // asserted rather than described.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { homeView, traceBox } from '../assets/charts.js';
@@ -140,4 +142,23 @@ test('the buttons a phone needs do what the wheel and the keyboard do', () => {
   assert.ok(closer.scale > fit.scale);
   assert.deepEqual(steppedView(closer, null), fit, 'reset did not return to the fit');
   assert.ok(DOUBLE_PRESS_STEP > ZOOM_STEP, 'a double press should move further than a button');
+});
+
+test('the map refuses the browser its own pinch, and only inside the map', () => {
+  // Safari does not honour touch-action for ITS pinch: on iOS the browser
+  // zooms the page through gesturestart/gesturechange whatever touch-action
+  // says. So a pinch meant for the map zoomed the document, the vector line
+  // stayed crisp and the raster ground went soft -- which is what "the line is
+  // on top, not the real map" looks like from the outside.
+  const source = readFileSync(fileURLToPath(new URL('../assets/mapview.js', import.meta.url)), 'utf8');
+  for (const gesture of ['gesturestart', 'gesturechange', 'gestureend']) {
+    assert.match(source, new RegExp(`addEventListener\\('${gesture}'`), `${gesture} not refused`);
+    assert.match(source, new RegExp(`removeEventListener\\('${gesture}'`), `${gesture} survives teardown`);
+  }
+
+  // And nowhere else. Page zoom is how somebody with poor sight reads this;
+  // user-scalable=no would trade one person's map for another person's text.
+  const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
+  assert.doesNotMatch(html, /user-scalable\s*=\s*no/, 'page zoom was taken off the document');
+  assert.doesNotMatch(html, /maximum-scale\s*=\s*1/, 'page zoom was capped');
 });

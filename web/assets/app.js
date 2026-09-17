@@ -1137,6 +1137,30 @@ function pickStartAt(surface, at) {
   el.rotateStart.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// How long a hand has to be still before the ground is asked for again. Short
+// enough to feel like part of the gesture, long enough that a pinch is one
+// request rather than thirty.
+const BASEMAP_SETTLE_MS = 180;
+
+/** The ground, once the hand stops.
+ *
+ *  A pan or a pinch redraws the line on every pointermove, and each redraw
+ *  moved the frame, which changed the tile key, which sent this to the tile
+ *  server again. Thirty requests for a gesture nobody had finished making: the
+ *  map lagged the line, the page stuttered, and OpenStreetMap was asked for
+ *  tiles that were obsolete before they arrived.
+ *
+ *  Waiting is also the polite half. The colophon tells a visitor their address
+ *  reaches OSM's servers; asking thirty times for one pinch is a promise kept
+ *  badly. */
+function paintBasemapWhenStill(surface) {
+  if (surface.settle) clearTimeout(surface.settle);
+  surface.settle = setTimeout(() => {
+    surface.settle = null;
+    paintBasemap(surface);
+  }, BASEMAP_SETTLE_MS);
+}
+
 function drawTrace(surface, points, measurements) {
   // A surface with no view of its own is the whole route, which is every
   // drawing on this page except the re-arranger's.
@@ -1153,7 +1177,7 @@ function drawTrace(surface, points, measurements) {
   if (surface.toggle) surface.toggle.textContent = basemapOn ? t('map.hide') : t('map.show');
   surface.credit.innerHTML = t('map.attribution');
   positionGapLabel(surface);
-  paintBasemap(surface);
+  paintBasemapWhenStill(surface);
   return drawn;
 }
 

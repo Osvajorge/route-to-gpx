@@ -118,6 +118,21 @@ export function makeMovable(canvas, { getView, setView, redraw, onPress = null, 
     apply(next);
   };
 
+  // SAFARI DOES NOT HONOUR touch-action FOR ITS OWN PINCH. On iOS the browser
+  // zooms the PAGE through gesturestart/gesturechange, which no amount of
+  // touch-action prevents, so a pinch meant for the map zoomed the document
+  // instead: the drawn line stayed crisp because it is vector and the ground
+  // went soft because it is a raster being stretched, which is exactly what
+  // "the line is on top, not the real map" looks like.
+  //
+  // Refused HERE and nowhere else. Page zoom is how somebody with poor sight
+  // reads this, and taking it off the document -- user-scalable=no -- would
+  // trade one person's map for another person's text.
+  const refuseBrowserZoom = (event) => event.preventDefault();
+  canvas.addEventListener('gesturestart', refuseBrowserZoom);
+  canvas.addEventListener('gesturechange', refuseBrowserZoom);
+  canvas.addEventListener('gestureend', refuseBrowserZoom);
+
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onRelease);
@@ -127,6 +142,9 @@ export function makeMovable(canvas, { getView, setView, redraw, onPress = null, 
   canvas.addEventListener('keydown', onKey);
 
   return () => {
+    canvas.removeEventListener('gesturestart', refuseBrowserZoom);
+    canvas.removeEventListener('gesturechange', refuseBrowserZoom);
+    canvas.removeEventListener('gestureend', refuseBrowserZoom);
     canvas.removeEventListener('pointerdown', onDown);
     canvas.removeEventListener('pointermove', onMove);
     canvas.removeEventListener('pointerup', onRelease);
