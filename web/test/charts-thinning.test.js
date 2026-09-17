@@ -10,7 +10,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { renderProfile, renderTrace, thinForDrawing } from '../assets/charts.js';
+import {
+  homeView,
+  projectInFrame,
+  renderProfile,
+  renderTrace,
+  thinForDrawing,
+} from '../assets/charts.js';
 
 const t = (key) => key;
 
@@ -113,6 +119,107 @@ test('the two ends of the hole are drawn exactly where the recording stopped', (
   const firstRun = /<path d="([^"]*)" class="trace-line"\/>/.exec(trace.svg)[1];
   const lastVertex = firstRun.split('L').pop();
   assert.equal(lastVertex, `${trace.coords[cut - 1].x.toFixed(1)} ${trace.coords[cut - 1].y.toFixed(1)}`);
+});
+
+/** Every vertex of every drawn run, as numbers. */
+function drawnPoints(svg) {
+  const all = [];
+  for (const path of svg.matchAll(/<path d="([^"]*)" class="trace-line"/g)) {
+    for (const v of path[1].matchAll(/[ML]([\d.-]+) ([\d.-]+)/g)) all.push([+v[1], +v[2]]);
+  }
+  return all;
+}
+
+test("a map under the fingers is drawn at a moving map's resolution", () => {
+  // "Trae un poco de delay el pinch". The resting budget sits above the length
+  // of most recordings, so a pinch redrew every recorded point -- three paths
+  // over them, two of those through a blur -- on every pointermove, and the
+  // gesture went at the length of the recording rather than at the size of the
+  // screen. Measured in Chromium against a 390 px wide drawing, one move of a
+  // pinch, from renderTrace through innerHTML to style and layout: a 20 000
+  // point track went from 2.9 ms to 0.7 ms and from 142 318 bytes of markup
+  // written per move to 36 667; a 1 444 point route from 0.7 ms to 0.6 ms and
+  // 52 930 bytes to 36 298; a 200 point route was 0.3 ms and is 0.3 ms.
+  const { points, measurements } = longRoute(20000);
+  const still = renderTrace(points, measurements, t, { view: homeView() });
+  const moving = renderTrace(points, measurements, t, { view: { ...homeView(), moving: true } });
+
+  assert.equal(vertices(still.svg, 'trace-line'), 4000, 'the resting budget, over two runs');
+  assert.equal(vertices(moving.svg, 'trace-line'), 1000, 'the moving budget, over two runs');
+  assert.ok(moving.svg.length * 3 < still.svg.length, `${moving.svg.length} bytes`);
+
+  // Still two runs with a hole between them. The gap is the one measurement
+  // that changes what you do on the mountain, and a gesture does not hide it.
+  assert.equal(moving.svg.match(/class="trace-line"/g).length, 2);
+  assert.match(moving.svg, /class="trace-gap"/);
+});
+
+test('the moving drawing follows the zoom, so the line never leaves the ground', () => {
+  // The thinning error is in the picture's own units, so standing closer
+  // magnifies it with everything else. Doubling the budget with the scale
+  // halves it back; four times the fit is the resting drawing again.
+  const { points, measurements } = longRoute(20000);
+  const at = (scale) =>
+    vertices(
+      renderTrace(points, measurements, t, {
+        view: { scale, centerX: 500, centerY: 300, roam: true, moving: true },
+      }).svg,
+      'trace-line',
+    );
+
+  assert.equal(at(0.25), 1000, 'pulled out past the route');
+  assert.equal(at(1), 1000);
+  assert.equal(at(2), 1000);
+  assert.equal(at(4), 2000);
+  assert.equal(at(16), at(1) * 4, 'at the ceiling a moving map is the resting map');
+  assert.equal(at(16), vertices(renderTrace(points, measurements, t).svg, 'trace-line'));
+});
+
+test('the line keeps its shape wherever you stand', () => {
+  // The points are chosen in world units, which a view only scales and shifts,
+  // so the same ones win their buckets at every zoom and from every corner.
+  // That is what lets the choosing be done once instead of on every
+  // pointermove, and it is also what stops the line reshuffling its own
+  // vertices under the fingers while the hand moves.
+  const { points, measurements } = longRoute(20000);
+  const home = renderTrace(points, measurements, t, { view: homeView() });
+  const closer = renderTrace(points, measurements, t, {
+    view: { scale: 4, centerX: 420, centerY: 260 },
+  });
+
+  const here = drawnPoints(home.svg);
+  const there = drawnPoints(closer.svg);
+  assert.equal(there.length, here.length, 'a different number of points was chosen');
+
+  // Read back through the frames rather than compared as drawn: the same world
+  // point lands somewhere else on the screen, which is the whole idea.
+  there.forEach(([x, y], i) => {
+    const world = {
+      x: x / closer.frame.unitsPerWorld + closer.frame.worldX0,
+      y: y / closer.frame.unitsPerWorld + closer.frame.worldY0,
+    };
+    const expected = [
+      (world.x - home.frame.worldX0) * home.frame.unitsPerWorld,
+      (world.y - home.frame.worldY0) * home.frame.unitsPerWorld,
+    ];
+    assert.ok(Math.abs(expected[0] - here[i][0]) < 0.2, `x at ${i}: ${expected[0]} vs ${here[i][0]}`);
+    assert.ok(Math.abs(expected[1] - here[i][1]) < 0.2, `y at ${i}: ${expected[1]} vs ${here[i][1]}`);
+  });
+});
+
+test('every recorded point is still there to be searched, worked out when asked for', () => {
+  // The cursor and the press search all of them, and they ask once. A pinch
+  // asks sixty times a second and never asks for this, so building it on every
+  // redraw was tens of thousands of objects a second for a question nobody put.
+  const { points, measurements } = longRoute(5000);
+  const drawn = renderTrace(points, measurements, t, {
+    view: { scale: 3, centerX: 400, centerY: 200 },
+  });
+
+  assert.equal(drawn.coords.length, points.length);
+  assert.deepEqual(drawn.coords, projectInFrame(points, drawn.frame));
+  // And worked out once, not once per question.
+  assert.equal(drawn.coords, drawn.coords);
 });
 
 test('a summit survives the thinning that an every-Nth stride would have flattened', () => {

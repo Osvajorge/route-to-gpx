@@ -10,8 +10,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { homeView, traceBox } from '../assets/charts.js';
-import { makeMovable, steppedView, ZOOM_STEP, DOUBLE_PRESS_STEP } from '../assets/mapview.js';
+import { MAP_ROAM_MIN_SCALE, homeView, traceBox } from '../assets/charts.js';
+import {
+  makeMovable,
+  roamingBox,
+  steppedView,
+  ZOOM_STEP,
+  DOUBLE_PRESS_STEP,
+} from '../assets/mapview.js';
 
 /** The smallest thing that behaves like the canvas this code talks to. */
 function fakeCanvas() {
@@ -63,6 +69,66 @@ test('a drag moves the map', () => {
   canvas.fire('pointermove', { pointerId: 1, clientX: 560, clientY: 340 });
   canvas.fire('pointerup', { pointerId: 1, clientX: 560, clientY: 340 });
   assert.notDeepEqual(state.view, afterZoom, 'the drag moved nothing');
+});
+
+test('a map can be looked around from the fit, which is the whole point of a map', () => {
+  // "el mapa es estatico, si quiero ver que hay al rededor deberia de poder".
+  // Before this, a drag at the fit moved nothing: the window was pinned inside
+  // the route's own box, so the road to the trailhead and the village below the
+  // ridge were never on the screen at all.
+  const { canvas, state } = movable();
+  assert.deepEqual(state.view, homeView(), 'the map did not open at the fit');
+
+  canvas.fire('pointerdown', { pointerId: 1, clientX: 500, clientY: 300 });
+  canvas.fire('pointermove', { pointerId: 1, clientX: 300, clientY: 200 });
+  canvas.fire('pointerup', { pointerId: 1, clientX: 300, clientY: 200 });
+  assert.notDeepEqual(state.view, homeView(), 'a drag at the fit moved nothing');
+
+  // And the route is never lost: the whole route is one key away, exactly.
+  canvas.fire('keydown', { key: '0' });
+  assert.deepEqual(state.view, homeView());
+
+  // The freedom is granted here and nowhere else. A drawing charts.js is asked
+  // about on its own -- the chart on a report, the shape on a card -- stays
+  // pinned, which is the right rule for a picture of one route.
+  assert.equal(roamingBox().roam, true);
+  assert.equal(traceBox().roam, undefined);
+});
+
+test('a map is pulled out past the route, and the buttons go where the fingers go', () => {
+  const far = steppedView(homeView(), 1 / ZOOM_STEP);
+  assert.ok(far.scale < 1, 'the button stopped at the fit');
+
+  let out = homeView();
+  for (let i = 0; i < 6; i++) out = steppedView(out, 1 / ZOOM_STEP);
+  assert.equal(out.scale, MAP_ROAM_MIN_SCALE, 'the way out has no floor of its own');
+
+  // A view that has been looked around does not lose that to a button, which
+  // would snap the map back inside the route between one press and the next.
+  assert.equal(steppedView(far, ZOOM_STEP).roam, true);
+});
+
+test('a hand on the glass is marked on the view, and letting go clears it', () => {
+  // What the mark buys is in renderTrace: a moving map is drawn at a moving
+  // map's resolution. It rides on the view because a redraw is handed a view
+  // and nothing else.
+  const { canvas, state } = movable();
+  canvas.fire('pointerdown', { pointerId: 1, clientX: 500, clientY: 300 });
+  canvas.fire('pointermove', { pointerId: 1, clientX: 400, clientY: 240 });
+  assert.equal(state.view.moving, true, 'the drawing was not told it is moving');
+
+  const duringDrag = state.redraws;
+  canvas.fire('pointerup', { pointerId: 1, clientX: 400, clientY: 240 });
+  assert.ok(!state.view.moving, 'the map was left in its moving drawing at rest');
+  assert.equal(state.redraws, duringDrag + 1, 'nothing redrew at full detail when the hand came off');
+  // The settled view is the view the hand left, not a view of its own.
+  assert.equal(state.view.scale, 1);
+
+  // A press that never travelled asks for no redraw at all.
+  const still = movable();
+  still.canvas.fire('pointerdown', { pointerId: 1, clientX: 500, clientY: 300 });
+  still.canvas.fire('pointerup', { pointerId: 1, clientX: 502, clientY: 301 });
+  assert.equal(still.state.redraws, 0);
 });
 
 test('a press that did not travel is a press, and one that did is not', () => {
