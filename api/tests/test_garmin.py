@@ -156,3 +156,88 @@ def test_haversine_agrees_with_the_measurement_the_rest_of_the_service_uses():
     b = {"latitude": 42.0, "longitude": 1.8}
     assert garmin._haversine(a, b) == pytest.approx(111195, rel=0.001)
     assert garmin._haversine(a, a) == 0.0
+
+
+def test_the_queued_message_is_a_list_because_a_bare_object_is_a_500(monkeypatch):
+    """Garmin answers a bare object with a 500, and that cost an afternoon.
+
+    Saving a course does not deliver it. Delivery is a queue: a message
+    carrying the URL of the course's FIT goes into the account's device queue
+    and the watch collects it on its next sync. Measured on a real Forerunner
+    965 -- created, queued, synced, and the course was under Navigate >
+    Courses -- which is why this shape is pinned rather than trusted.
+    """
+    sent = {}
+
+    class Recording:
+        def connectapi(self, path, method="GET", **kwargs):
+            sent["path"] = path
+            sent["method"] = method
+            sent["json"] = kwargs.get("json")
+            return {}
+
+    device = {"id": 3460964122, "name": "Forerunner 965"}
+    assert garmin._queue_on_device(Recording(), 515580837, device, "Sant Pere") is True
+
+    assert sent["path"] == "/device-service/devicemessage/messages"
+    assert sent["method"] == "POST"
+    assert isinstance(sent["json"], list), "a bare object is answered with a 500"
+    assert len(sent["json"]) == 1
+
+    message = sent["json"][0]
+    assert message["deviceId"] == 3460964122
+    assert message["messageType"] == "courses"
+    assert message["fileType"] == "FIT"
+    assert message["metaDataId"] == 515580837
+    # Relative, and no leading slash. The watch fetches this itself at sync
+    # time, so this service never downloads the FIT.
+    assert message["messageUrl"] == (
+        "course-service/course/fit/515580837/3460964122?elevation=true"
+    )
+    assert not message["messageUrl"].startswith("/")
+
+
+def test_a_queue_that_refuses_leaves_the_course_saved_rather_than_failing_everything():
+    """Two outcomes, and they are different instructions to the person waiting.
+
+    The course reaching the account and the course reaching the watch are not
+    the same event. If only the first happened, the page must say so, because
+    the repair is one tap in Garmin's own app rather than trying again here.
+    """
+
+    class Refusing:
+        def connectapi(self, path, method="GET", **kwargs):
+            raise RuntimeError("no")
+
+    device = {"id": 1, "name": "Forerunner 965"}
+    assert garmin._queue_on_device(Refusing(), 1, device, "x") is False
+
+
+def test_the_watch_is_asked_for_rather_than_written_down():
+    """A device id in a settings file goes stale the day somebody buys a watch."""
+
+    class Answering:
+        def connectapi(self, path, method="GET", **kwargs):
+            assert path == "/device-service/deviceservice/mylastused"
+            return {"userDeviceId": 3460964122, "lastUsedDeviceName": "Forerunner 965"}
+
+    assert garmin._last_used_device(Answering()) == {
+        "id": 3460964122,
+        "name": "Forerunner 965",
+    }
+
+
+def test_an_account_with_no_device_is_not_an_error():
+    """Somebody may have a Garmin account and no watch paired to this session.
+    Their course still saves; there is simply nowhere to send it."""
+
+    class Empty:
+        def connectapi(self, path, method="GET", **kwargs):
+            return {}
+
+    class Broken:
+        def connectapi(self, path, method="GET", **kwargs):
+            raise RuntimeError("no")
+
+    assert garmin._last_used_device(Empty()) is None
+    assert garmin._last_used_device(Broken()) is None

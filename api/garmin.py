@@ -13,6 +13,13 @@ activity picker and a Send to Device. Uploading the course directly is one
 press. The route still has to reach the watch by Garmin's own sync, which this
 cannot change.
 
+CREATING THE COURSE IS NOT ENOUGH, and that cost two days to learn. A course
+saved to the account sits there; the watch never hears about it. Delivery is a
+QUEUE: a message carrying the URL of the course's FIT is put in the account's
+device queue, and the watch downloads it on its next ordinary sync. Nobody
+presses anything. Measured on a real Forerunner 965: course created, message
+queued, watch synced, course under Navigate > Courses.
+
 WHAT IT DOES NOT DO. It never reads, asks for or stores a password. It points
 the library at a session directory that already exists, created by something
 else, and if that session has expired the answer says so and the repair is to
@@ -195,6 +202,62 @@ def _course_payload(
     }
 
 
+def _last_used_device(client) -> Optional[Dict[str, Any]]:
+    """The watch this account used last, which for one person is the watch.
+
+    Asked rather than configured: a device id in a settings file goes stale the
+    day somebody buys a watch, and this answer never does.
+    """
+    try:
+        said = client.connectapi("/device-service/deviceservice/mylastused")
+    except Exception as refused:
+        logger.info("garmin would not name a device: %s", type(refused).__name__)
+        return None
+    device_id = (said or {}).get("userDeviceId")
+    if not device_id:
+        return None
+    return {"id": device_id, "name": said.get("lastUsedDeviceName") or "your watch"}
+
+
+def _queue_on_device(client, course_id: int, device: Dict[str, Any], name: str) -> bool:
+    """Puts the course in the watch's collection queue. True if it landed.
+
+    The body is a LIST. A bare object is answered with a 500, which is the kind
+    of detail that costs an afternoon, so it is written down here rather than
+    discovered twice.
+
+    `messageUrl` is relative and has no leading slash. It names the FIT the
+    device will fetch for itself at sync time -- this service never downloads
+    it, and the watch is the one that spends the bandwidth.
+    """
+    body = [
+        {
+            "deviceId": device["id"],
+            "messageUrl": (
+                f"course-service/course/fit/{course_id}/{device['id']}?elevation=true"
+            ),
+            "messageType": "courses",
+            "messageName": name[:60],
+            "groupName": None,
+            # A hint only: the server rewrites this.
+            "priority": 0,
+            "fileType": "FIT",
+            "metaDataId": course_id,
+        }
+    ]
+    try:
+        client.connectapi(
+            "/device-service/devicemessage/messages", method="POST", json=body
+        )
+    except Exception as refused:
+        # Not fatal, and the difference matters to the person waiting: the
+        # course IS in their account and can still be sent by hand.
+        logger.warning("garmin would not queue the course: %s", type(refused).__name__)
+        return False
+    logger.info("garmin course %s queued for device %s", course_id, device["id"])
+    return True
+
+
 def send_course(
     gpx: str, file_name: str, name: str, activity: str = DEFAULT_ACTIVITY
 ) -> Dict[str, Any]:
@@ -249,8 +312,17 @@ def send_course(
 
     course_id = saved.get("courseId")
     logger.info("garmin course %s saved, %s points", course_id, len(payload["geoPoints"]))
+
+    # Saved is not delivered. Queue it, and report the two outcomes apart,
+    # because "it is on your watch" and "it is in your account, send it
+    # yourself" are different instructions to the person reading.
+    device = _last_used_device(client)
+    queued = bool(device) and _queue_on_device(client, course_id, device, name or file_name)
+
     return {
         "courseId": course_id,
+        "queuedForDevice": queued,
+        "deviceName": device["name"] if device else None,
         "name": saved.get("courseName"),
         "distanceM": saved.get("distanceMeter"),
         # Garmin's own figures, kept apart from ours on purpose: the page shows

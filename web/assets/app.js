@@ -692,10 +692,22 @@ function renderReport() {
   el.sendButton.hidden = !browserCanSendFiles();
   el.garminButton.hidden = !state.canSendToGarmin;
   el.garminButton.disabled = state.garminSending;
+  // Three states, and the last two are different instructions rather than
+  // different wordings: a course on its way to the watch needs nothing from
+  // the walker, and one that only reached the account needs a tap in Garmin's
+  // own app. Saying both with one sentence would be a small lie either way.
+  const garminKey = state.garminCourse
+    ? state.garminCourse.queuedForDevice
+      ? 'step2.garmin.sent'
+      : 'step2.garmin.saved'
+    : 'step2.garmin';
   el.garminButton.innerHTML = state.garminSending
     ? `${icon('pending')}<span>${t('step2.garmin.sending')}</span>`
-    : `${icon('ascent')}<span>${t(state.garminCourse ? 'step2.garmin.sent' : 'step2.garmin')}</span>`;
-  el.garminButton.title = t('step2.garmin.note');
+    : `${icon('ascent')}<span>${t(garminKey)}</span>`;
+  el.garminButton.title =
+    state.garminCourse && !state.garminCourse.queuedForDevice
+      ? t('step2.garmin.savednote')
+      : t('step2.garmin.note');
   el.sendButton.innerHTML = `${icon('share')}<span>${t('step2.send')}</span>`;
   // What the receiving app does to the numbers belongs on the button that
   // hands it over, not in a note somebody scrolls past.

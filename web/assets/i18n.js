@@ -325,11 +325,16 @@ const STRINGS = {
     'step2.download': 'Download GPX',
     'step2.garmin': 'Send to my Garmin',
     'step2.garmin.sending': 'Sending',
-    'step2.garmin.sent': 'In your Garmin',
+    'step2.garmin.sent': 'On its way to your watch',
+    // The course reached the account but not the queue. Different instruction,
+    // so a different sentence: it is there, and it needs one tap to travel.
+    'step2.garmin.saved': 'Saved to Garmin Connect',
     // Measured against a real account: a track published at 535 m of ascent and
     // measured here at 533 m came back from Garmin reading 598 m.
     'step2.garmin.note':
-      'Saves the route as a private course in your own Garmin Connect. Garmin redraws elevation from its own map, so its figures will not match the ones above.',
+      'Saves the route as a private course in your Garmin Connect and queues it for your watch, which collects it on its next sync. Garmin redraws elevation from its own map, so its figures will not match the ones above.',
+    'step2.garmin.savednote':
+      'The course is in your Garmin Connect but could not be queued for a watch. Open Garmin Connect and use Send to Device.',
     'error.garmin.title': 'Garmin would not take the route.',
     'error.garmin.body':
       'Your saved Garmin session may have expired, in which case sign in again with the tool that created it. The file itself is fine: download it and import it by hand.',
@@ -747,9 +752,12 @@ const STRINGS = {
     'step2.download': 'Descargar GPX',
     'step2.garmin': 'Enviar a mi Garmin',
     'step2.garmin.sending': 'Enviando',
-    'step2.garmin.sent': 'En tu Garmin',
+    'step2.garmin.sent': 'De camino a tu reloj',
+    'step2.garmin.saved': 'Guardado en Garmin Connect',
     'step2.garmin.note':
-      'Guarda la ruta como recorrido privado en tu propio Garmin Connect. Garmin recalcula el desnivel con su mapa, así que sus cifras no coincidirán con las de arriba.',
+      'Guarda la ruta en tu Garmin Connect y la encola para tu reloj, que la recoge al sincronizar. Garmin recalcula el desnivel con su mapa, así que sus cifras no coincidirán con las de arriba.',
+    'step2.garmin.savednote':
+      'El recorrido está en tu Garmin Connect pero no se pudo poner en cola para un reloj. Abre Garmin Connect y usa Enviar al dispositivo.',
     'error.garmin.title': 'Garmin no aceptó la ruta.',
     'error.garmin.body':
       'Puede que tu sesión de Garmin haya caducado; en ese caso vuelve a entrar con la herramienta que la creó. El fichero está bien: descárgalo e impórtalo a mano.',
