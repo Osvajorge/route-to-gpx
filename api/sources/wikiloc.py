@@ -83,6 +83,14 @@ def fetch(url: str) -> Route:
     status, page = fetch_text(url)
     if status == 404:
         raise SourceError("notfound")
+    if status == 403:
+        # Cloudflare scores every caller and refuses the ones it does not like,
+        # and `fetch_text` has already asked a second time. "We could not reach
+        # the site" would be false -- we reached it and it said no -- and it
+        # would send the visitor looking for a network problem they do not
+        # have. What they can actually do is try again, and measured against
+        # the real site that works about four times in five.
+        raise SourceError("challenged", "Wikiloc answered 403 twice")
     if status != 200:
         raise SourceError("network", f"Wikiloc answered {status}")
 

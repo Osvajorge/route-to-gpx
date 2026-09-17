@@ -236,3 +236,129 @@ def test_a_host_that_never_answers_is_written_down_without_curls_message(monkeyp
     written = _wrote(caplog)
     assert "ConnectionError" in written
     assert "secret-cabin" not in written
+
+
+class _Challenging:
+    """A site that answers with a Cloudflare challenge the first N times."""
+
+    def __init__(self, challenges: int, body: bytes = b"<html>the page</html>"):
+        self.left = challenges
+        self.body = body
+        self.asked = 0
+
+    def __call__(self, *args, **kwargs):
+        self.asked += 1
+        if self.left > 0:
+            self.left -= 1
+            return _Answer(403, {"cf-mitigated": "challenge"}, b"")
+        return _Answer(200, {}, self.body)
+
+
+class _Answer:
+    def __init__(self, status, headers, content):
+        self.status_code = status
+        self.headers = headers
+        self.content = content
+        self.encoding = "utf-8"
+
+    def iter_content(self, chunk_size=None):
+        yield self.content
+
+    def close(self):
+        pass
+
+
+def _no_waiting(monkeypatch):
+    monkeypatch.setattr(http.time, "sleep", lambda seconds: None)
+
+
+def test_a_cloudflare_challenge_is_answered_by_asking_once_more(monkeypatch):
+    """Measured against the real site: one ask in five was challenged and the
+    next, two seconds later, was served in full. So one conversion in five
+    failed for a reason the visitor could fix by pressing the button again.
+
+    Nothing is solved here. The request goes out identical and whatever comes
+    back is accepted; this is a person pressing twice, done once.
+    """
+    _no_waiting(monkeypatch)
+    site = _Challenging(challenges=1)
+    monkeypatch.setattr(http.requests, "get", site)
+
+    with http.request_budget("someone"):
+        status, body = http.fetch_text("https://www.wikiloc.com/wikiloc/rutas/a-1")
+
+    assert status == 200
+    assert "the page" in body
+    assert site.asked == 2, "it did not ask again"
+
+
+def test_the_retry_stops_at_one(monkeypatch):
+    """A site challenging everything must not become a loop. The second
+    challenge is returned, not asked about again."""
+    _no_waiting(monkeypatch)
+    site = _Challenging(challenges=5)
+    monkeypatch.setattr(http.requests, "get", site)
+
+    with http.request_budget("someone"):
+        status, _ = http.fetch_text("https://www.wikiloc.com/wikiloc/rutas/a-1")
+
+    assert status == 403
+    assert site.asked == 2, f"asked {site.asked} times"
+
+
+def test_the_second_ask_spends_a_token_like_every_other_call(monkeypatch):
+    """The budget is what protects the source site, so the exception must not
+    touch it. Two asks cost two tokens."""
+    _no_waiting(monkeypatch)
+    site = _Challenging(challenges=1)
+    monkeypatch.setattr(http.requests, "get", site)
+
+    with http.request_budget("someone") as budget:
+        started = budget.remaining
+        http.fetch_text("https://www.wikiloc.com/wikiloc/rutas/a-1")
+        assert started - budget.remaining == 2, "the retry was free"
+
+
+def test_a_challenge_with_no_budget_left_is_returned_rather_than_forced(monkeypatch):
+    """The fan-out ceiling stops the second ask the same way it stops every
+    other second call, and that is an answer rather than a crash."""
+    _no_waiting(monkeypatch)
+    site = _Challenging(challenges=2)
+    monkeypatch.setattr(http.requests, "get", site)
+
+    with http.request_budget("someone", calls=1):
+        status, _ = http.fetch_text("https://www.wikiloc.com/wikiloc/rutas/a-1")
+
+    assert status == 403
+    assert site.asked == 1, "it asked without paying"
+
+
+def test_an_ordinary_403_is_not_retried(monkeypatch):
+    """Only the challenge header. A site that means "go away" is not asked
+    twice, which is the whole reason this is narrow."""
+    _no_waiting(monkeypatch)
+
+    asked = {"n": 0}
+
+    def forbidden(*args, **kwargs):
+        asked["n"] += 1
+        return _Answer(403, {}, b"")
+
+    monkeypatch.setattr(http.requests, "get", forbidden)
+
+    with http.request_budget("someone"):
+        status, _ = http.fetch_text("https://www.wikiloc.com/wikiloc/rutas/a-1")
+
+    assert status == 403
+    assert asked["n"] == 1, "a plain refusal was retried"
+
+
+def test_a_challenge_header_on_a_page_that_worked_changes_nothing(monkeypatch):
+    """The header alone is not the signal; 403 AND the header is."""
+    _no_waiting(monkeypatch)
+
+    def served(*args, **kwargs):
+        return _Answer(200, {"cf-mitigated": "challenge"}, b"<html>fine</html>")
+
+    monkeypatch.setattr(http.requests, "get", served)
+    assert http._was_challenged(served()) is False

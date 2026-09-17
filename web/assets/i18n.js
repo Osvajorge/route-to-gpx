@@ -321,6 +321,9 @@ const STRINGS = {
     'error.timeout.title': 'The conversion took too long, so we stopped waiting.',
     'error.timeout.body':
       'The source site accepted the request and never finished answering. Try again in a moment. If it keeps happening, export the GPX from the site, then drop it here or choose it.',
+    'error.challenged.title': 'Wikiloc asked us to prove we are not a robot.',
+    'error.challenged.body':
+      'We reached the site and its bot protection stopped us, twice. Press convert again: it usually works on the next try.',
     'error.network.title': 'We could not reach the source site.',
     'error.network.body':
       'The request failed before we read anything. Try again in a moment. If it keeps failing, export the GPX from the site, then drop it here or choose it.',
@@ -776,6 +779,9 @@ const STRINGS = {
     'error.timeout.title': 'La conversión tardó demasiado y dejamos de esperar.',
     'error.timeout.body':
       'El sitio de origen aceptó la petición y nunca terminó de responder. Prueba otra vez en un momento. Si sigue pasando, exporta el GPX en el sitio y suéltalo aquí, o elígelo.',
+    'error.challenged.title': 'Wikiloc nos pidió demostrar que no somos un robot.',
+    'error.challenged.body':
+      'Llegamos al sitio y su protección antibots nos paró, dos veces. Pulsa convertir otra vez: suele funcionar al siguiente intento.',
     'error.network.title': 'No pudimos llegar al sitio de origen.',
     'error.network.body':
       'La petición falló antes de leer nada. Prueba otra vez en un momento. Si sigue fallando, exporta el GPX en el sitio y suéltalo aquí, o elígelo.',

@@ -30,6 +30,7 @@ site budget is multiplied by N, and has to be divided here by hand.
 """
 
 import contextvars
+import time
 import json
 import logging
 import math
@@ -355,7 +356,16 @@ def _spend(url: str) -> None:
 
     A failed call costs a source site exactly what a successful one costs, so a
     spent token is never given back. Refunding on error is how an outage turns
-    into a hammering loop, and it is the same reason nothing here retries.
+    into a hammering loop, and it is the same reason almost nothing here
+    retries.
+
+    ONE THING DOES, and it is written here rather than only where it happens,
+    because this is the paragraph somebody reads before adding a second. See
+    CHALLENGE_RETRY in `fetch_text`: a Cloudflare challenge is answered by
+    asking once more, and that second ask SPENDS ANOTHER TOKEN through this
+    function like any other call. The budget is what protects the source site,
+    so the exception does not touch it: the ceiling on how often Wikiloc hears
+    from this service is exactly what it was.
     """
     site = _site(url)
     budget = _BUDGET.get()
@@ -398,12 +408,43 @@ def _spend(url: str) -> None:
     budget.remaining -= 1
 
 
-def fetch_text(url: str, timeout: int = TIMEOUT_SECONDS) -> Tuple[int, str]:
+# Cloudflare sits in front of Wikiloc and scores every caller. A score it does
+# not like is answered with 403 and the header `cf-mitigated: challenge`, which
+# means "prove you are not a robot" rather than "go away": measured five times
+# in a row on one trail page, the first was challenged and the next four, two
+# to ten seconds apart, were served in full.
+#
+# So one in five conversions failed for a reason the visitor could fix by
+# pressing the button again, which is a bad way to spend somebody's attention.
+# This asks once more on their behalf.
+#
+# IT DOES NOT SOLVE THE CHALLENGE, and that distinction is the whole of why
+# this is here at all. Nothing is computed, forged or replayed; the request
+# goes out identical and whatever comes back is accepted. It is the same thing
+# a person does when they press a button twice, done once and then given up on.
+CHALLENGE_HEADER = "cf-mitigated"
+CHALLENGE_VALUE = "challenge"
+CHALLENGE_RETRY_AFTER_SECONDS = 2.0
+
+
+def _was_challenged(response) -> bool:
+    if response.status_code != 403:
+        return False
+    return (response.headers.get(CHALLENGE_HEADER) or "").lower() == CHALLENGE_VALUE
+
+
+def fetch_text(
+    url: str, timeout: int = TIMEOUT_SECONDS, challenged_ok: bool = True
+) -> Tuple[int, str]:
     """Returns `(status, body)`. An unreachable host comes back as status 0.
 
     `timeout` is short for a list of results: a search that takes more than a
     few seconds has already failed the visitor, and a shorter wait bounds how
     long a spent token stays in flight.
+
+    `challenged_ok` is how the one retry stops at one. The call this function
+    makes of itself passes False, so a second challenge is returned rather than
+    asked about again.
     """
     _check(url)
     _spend(url)
@@ -438,6 +479,19 @@ def fetch_text(url: str, timeout: int = TIMEOUT_SECONDS) -> Tuple[int, str]:
         response.status_code,
         len(body),
     )
+
+    # The one retry this service does. Once, only for a challenge, and only
+    # when this request can still pay for it: `_spend` raises OutsideRequest
+    # when the fan-out ceiling is reached, which is the same ceiling that stops
+    # every other kind of second call.
+    if challenged_ok and _was_challenged(response):
+        logger.info("%s challenged the first ask, asking once more", site)
+        time.sleep(CHALLENGE_RETRY_AFTER_SECONDS)
+        try:
+            return fetch_text(url, timeout=timeout, challenged_ok=False)
+        except OutsideRequest:
+            logger.info("%s was challenged and there was no budget to ask again", site)
+
     return response.status_code, body.decode(response.encoding or "utf-8", "replace")
 
 

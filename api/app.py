@@ -123,6 +123,9 @@ ERROR_STATUS = {
     "private": 404,
     "track": 422,
     "network": 422,
+    # Reached, and refused by the bot protection in front of it. Not a network
+    # failure, and a different thing for the visitor to do about it.
+    "challenged": 422,
     # Not "network": the source sites are fine and the visitor's own Garmin is
     # what refused, which is a different sentence and a different repair.
     "garmin": 422,
