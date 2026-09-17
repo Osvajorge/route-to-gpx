@@ -70,6 +70,11 @@ const state = {
   errorKey: null,
   result: null,
   hover: null,
+  // What this SERVER can do, asked once at boot. The page ships identically to
+  // the public deployment and the owner's own machine; only the answer differs.
+  canSendToGarmin: false,
+  garminSending: false,
+  garminCourse: null,
 };
 
 const el = {};
@@ -296,6 +301,50 @@ function handOverFile(text, fileName) {
   anchor.download = fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+/** Uploads the measured route to the visitor's own Garmin, as a course.
+ *
+ *  The file goes rather than the link: the page is holding the GPX already, so
+ *  this costs one upload instead of asking a source site for the same route a
+ *  second time, and it guarantees the course is the file on screen.
+ *
+ *  Unlike the share button beside it, this one MAY await -- it is an ordinary
+ *  request and no user gesture is being spent. */
+async function sendToGarmin() {
+  if (!state.result || state.garminSending) return;
+
+  state.garminSending = true;
+  state.garminCourse = null;
+  render();
+
+  try {
+    const response = await fetch(`${API_BASE}/garmin/course`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        gpx: state.result.gpxText,
+        fileName: state.result.fileName,
+        name: state.result.track.name || state.result.source?.title || 'Route',
+        activity: 'hiking',
+      }),
+      signal: givesUpAfter(CONVERT_TIMEOUT_MS),
+    });
+    const payload = await response.json();
+    if (!payload || payload.ok !== true) {
+      state.garminSending = false;
+      fail(payload?.error === 'busy' ? 'busy' : 'garmin');
+      return;
+    }
+    state.garminCourse = payload.course;
+  } catch {
+    state.garminSending = false;
+    fail('garmin');
+    return;
+  }
+
+  state.garminSending = false;
+  render();
 }
 
 function downloadResult() {
@@ -641,6 +690,12 @@ function renderReport() {
   });
   el.downloadButton.innerHTML = `${icon('download')}<span>${t('step2.download')}</span>`;
   el.sendButton.hidden = !browserCanSendFiles();
+  el.garminButton.hidden = !state.canSendToGarmin;
+  el.garminButton.disabled = state.garminSending;
+  el.garminButton.innerHTML = state.garminSending
+    ? `${icon('pending')}<span>${t('step2.garmin.sending')}</span>`
+    : `${icon('ascent')}<span>${t(state.garminCourse ? 'step2.garmin.sent' : 'step2.garmin')}</span>`;
+  el.garminButton.title = t('step2.garmin.note');
   el.sendButton.innerHTML = `${icon('share')}<span>${t('step2.send')}</span>`;
   // What the receiving app does to the numbers belongs on the button that
   // hands it over, not in a note somebody scrolls past.
@@ -3956,6 +4011,7 @@ function collect() {
   el.reportSource = document.getElementById('report-source');
   el.downloadButton = document.getElementById('download');
   el.sendButton = document.getElementById('send-file');
+  el.garminButton = document.getElementById('send-garmin');
   el.reportAdjust = document.getElementById('report-adjust');
   el.resetButton = document.getElementById('reset');
   el.tiles = document.getElementById('tiles');
@@ -4067,6 +4123,7 @@ function wire() {
 
   el.downloadButton.addEventListener('click', downloadResult);
   el.sendButton.addEventListener('click', sendResult);
+  el.garminButton.addEventListener('click', sendToGarmin);
 
   el.resetButton.addEventListener('click', goHome);
 
@@ -4492,6 +4549,17 @@ function wireChartKeys(figure) {
 
 collect();
 wire();
+
+// What this build can do. A failure here is not worth a message: the answer
+// only ever ADDS a button, so not knowing is the same as the public case.
+fetch(`${API_BASE}/health`)
+  .then((answer) => answer.json())
+  .then((said) => {
+    state.canSendToGarmin = said?.canSendToGarmin === true;
+    render();
+  })
+  .catch(() => {});
+
 wireFinder();
 render();
 focusActiveField();

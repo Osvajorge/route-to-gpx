@@ -262,6 +262,10 @@
                    string, because Chromium answers canShare() with true for a
                    .gpx and then rejects the share. -->
               <button id="send-file" class="ghost-button" type="button" hidden></button>
+              <!-- Only on a build whose server was given a Garmin session.
+                   The page asks /api/health rather than assuming, so one set
+                   of files serves the public deployment and the personal one. -->
+              <button id="send-garmin" class="ghost-button" type="button" hidden></button>
               <button id="report-adjust" class="icon-button" type="button"></button>
               <button id="reset" class="link-button" type="button"></button>
             </div>

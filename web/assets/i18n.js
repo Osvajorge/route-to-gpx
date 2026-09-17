@@ -323,6 +323,16 @@ const STRINGS = {
       'The activity list belongs to the source site and changes with it. Pick one from the list again.',
 
     'step2.download': 'Download GPX',
+    'step2.garmin': 'Send to my Garmin',
+    'step2.garmin.sending': 'Sending',
+    'step2.garmin.sent': 'In your Garmin',
+    // Measured against a real account: a track published at 535 m of ascent and
+    // measured here at 533 m came back from Garmin reading 598 m.
+    'step2.garmin.note':
+      'Saves the route as a private course in your own Garmin Connect. Garmin redraws elevation from its own map, so its figures will not match the ones above.',
+    'error.garmin.title': 'Garmin would not take the route.',
+    'error.garmin.body':
+      'Your saved Garmin session may have expired, in which case sign in again with the tool that created it. The file itself is fine: download it and import it by hand.',
     'step2.send': 'Send to an app',
     // Measured, not guessed: a 551-point track published by Komoot at 13,728 m
     // and 535 m of ascent came back from Garmin as 13,615 m and 598 m. The
@@ -735,6 +745,14 @@ const STRINGS = {
       'La lista de actividades es del sitio de origen y cambia con él. Vuelve a elegir una de la lista.',
 
     'step2.download': 'Descargar GPX',
+    'step2.garmin': 'Enviar a mi Garmin',
+    'step2.garmin.sending': 'Enviando',
+    'step2.garmin.sent': 'En tu Garmin',
+    'step2.garmin.note':
+      'Guarda la ruta como recorrido privado en tu propio Garmin Connect. Garmin recalcula el desnivel con su mapa, así que sus cifras no coincidirán con las de arriba.',
+    'error.garmin.title': 'Garmin no aceptó la ruta.',
+    'error.garmin.body':
+      'Puede que tu sesión de Garmin haya caducado; en ese caso vuelve a entrar con la herramienta que la creó. El fichero está bien: descárgalo e impórtalo a mano.',
     'step2.send': 'Enviar a una app',
     'step2.send.note':
       'Entrega el fichero a otra app, como Garmin Connect. Una app que importa una ruta suele recalcular el desnivel con su propio mapa, así que tu reloj no mostrará las cifras de arriba. El fichero no cambia.',
