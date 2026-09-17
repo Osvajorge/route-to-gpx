@@ -13,12 +13,17 @@
   --surface-line: #222b34;
   --line-soft: #1b2129;
   --grid: #1b2530;
-  /* Every boundary and rule the page draws, and nothing else. Fourteen uses,
-   * of which eight are a component edge, so the whole token is held to the 3:1
+  /* Every boundary and rule the page draws, and nothing else. Sixteen uses,
+   * of which nine are a component edge, so the whole token is held to the 3:1
    * WCAG 2.2 asks of one: 3.26:1 on --bg and 3.01:1 on --surface, where the
    * phone's own field fill matches the card behind it and this line is the
-   * only thing drawing the box. The other five are a static box edge or a
+   * only thing drawing the box. The other six are a static box edge or a
    * hairline rule, and want that same visible line.
+   *
+   * The ninth edge is the chart's own switches on a phone, which were drawn in
+   * --surface-line: the card token, 1.23:1 against the --surface they sit on.
+   * The sixth rule is the underline under the report bar's way out, which lost
+   * the accent when the bar was ranked.
    *
    * What it must never paint is a figure. It painted the empty star track,
    * where the ask is the opposite one: far from the fill drawn over it, not
@@ -2579,6 +2584,27 @@ html.dialog-open body {
     border-radius: 0 0 var(--radius-card) var(--radius-card);
   }
 
+  /* SIX BLOCKS AT ONE INTERVAL IS A LIST, NOT AN ARGUMENT.
+   *
+   * Measured at 390, the whole of the first screen ran 16, 14, 14, 14, 14 from
+   * the heading down: the heading, the sentence under it, the field, the line
+   * saying what the field takes, and the two other ways in were all the same
+   * distance apart. Nothing in that column said which of the six belong
+   * together, so a reader has to read all six to find out.
+   *
+   * Two intervals instead of one, and they are the two the content already
+   * has. The hint is a caption on the field above it and closes to 9px. The
+   * pair of links is a different kind of thing — a way in that is not this
+   * field — and opens to 24px. That one wide gap is the only boundary in the
+   * column, which is what makes it legible as a boundary. */
+  #step1-hint {
+    margin-top: -5px;
+  }
+
+  #example {
+    margin-top: 10px;
+  }
+
   .tabs {
     gap: 16px;
   }
@@ -2658,6 +2684,28 @@ html.dialog-open body {
     min-height: 44px;
   }
 
+  /* The last control kind that skipped it, and the one it costs most to skip:
+   * the two links under the URL field are how a walker with a file already on
+   * the phone gets into the product at all. Measured at 390, Load an example
+   * and Choose a .gpx file were 29.6px tall, the same shortfall the action
+   * bar's own link was fixed for. A link is as tall as its text, and text is
+   * not a target.
+   *
+   * The whole class, not those two, so the dialogs' links are held to it as
+   * well. #reset keeps its own 46px: it stands in a row with the icon button
+   * and matches that instead. */
+  .link-button {
+    min-height: 44px;
+  }
+
+  /* The two links are a pair and read as one, so the 14px the panel sets
+   * between them has to pay back what the floor above just took: each box grew
+   * 14.4px, which pushed the two labels from 22px apart to 36px and broke them
+   * into separate items. 8px of box gap puts the labels back where they were. */
+  #choose-file {
+    margin-top: -6px;
+  }
+
   .icon-button {
     width: 46px;
     height: 46px;
@@ -2683,9 +2731,24 @@ html.dialog-open body {
     padding: 14px 16px;
   }
 
+  /* THE ROUTE'S NAME IS NOT A FOURTH FIGURE.
+   *
+   * The action bar leaves this box on a phone, so what is left inside it is a
+   * title and one line of provenance — and it was still drawn as a card, with
+   * the same fill, the same 1px edge and the same 8px radius as the three
+   * measured tiles directly under it. Four identical boxes down the top of the
+   * screen, of which one holds no measurement at all.
+   *
+   * The name goes on the page ground instead, so the first box a reader meets
+   * is a figure. The 2px of top padding is what the card's own padding was
+   * holding off the masthead. */
   .report-head {
     flex-direction: column;
     align-items: stretch;
+    padding: 2px 0 0;
+    background: none;
+    border: 0;
+    border-radius: 0;
   }
 
   /* THE BAR REFLOWS RATHER THAN COLLIDES.
@@ -2731,12 +2794,94 @@ html.dialog-open body {
    * already holds the page to. The link needed it: a link is as tall as its
    * own text, and "New link" measured 72.5 x 29.6 at 390 — wide enough to hit
    * and not tall enough. Centred, because `.link-button` aligns itself to the
-   * top of whatever holds it, which on a 50px row leaves it hanging. */
-  #report-adjust,
+   * top of whatever holds it, which on a 50px row leaves it hanging.
+   *
+   * Written twice rather than as one group. They held the same geometry and
+   * the same ink when they were the same thing; the ranking below makes one a
+   * control and the other a way out, and a shared block would have to be
+   * overridden by a second #reset rule further down. One selector declared
+   * twice in one block is how a declaration ends up dead. */
+  #report-adjust {
+    flex: none;
+    align-self: center;
+    min-height: 46px;
+  }
+
+  /* THE BAR SAYS WHICH ONE TO PRESS.
+   *
+   * Four controls on two rows, and measured at 390 in English they were 205.5,
+   * 140.5, 194.6 and 46 wide with a 72.5 link after them. Three of the five
+   * were drawn the same way, so the bar offered four things at one volume and
+   * the eye had to read all four labels to find the one the page is for.
+   *
+   * Three ranks now, and they are ranks of kind rather than of size.
+   *
+   *   Filled accent is the file itself. One control, and it already was one.
+   *   One outline, at the --field-border every other control on the page is
+   *     drawn with, is anything you can do with the file: hand it to an app,
+   *     hand it to the watch, re-arrange it.
+   *   No box is the two that are not offers: a report of what has already
+   *     happened, and the way out. Both of them lose the accent.
+   *
+   * Nothing changes size. The two rows already stood at 50px and 46px, so the
+   * demotions are ink only and the 129px this block reserves still holds. */
+
+  /* Held to the icon button beside them rather than to the 44px floor, so the
+   * second row is one height instead of three. */
+  #send-file,
+  #send-garmin {
+    min-height: 46px;
+  }
+
+  /* THE WAY OUT, AT THE WEIGHT OF A WAY OUT.
+   *
+   * "New link" was the only accent-coloured text in the bar, sitting beside an
+   * accent-filled button, which made the loudest ink this page has the second
+   * loudest thing in a bar whose whole job is the file. --muted reads 8.13:1
+   * on --bg, and the rule underneath is drawn in --field-border, which is what
+   * #footer-source already does with a link that is not the point of the block
+   * it ends. The accent comes back when a pointer or a focus ring arrives.
+   *
+   * Carries the geometry the icon button above carries, rather than sharing a
+   * rule with it. Same floor, same centring, different ink. */
   #reset {
     flex: none;
     align-self: center;
     min-height: 46px;
+    color: var(--muted);
+    text-decoration-color: var(--field-border);
+  }
+
+  #reset:hover,
+  #reset:focus-visible {
+    color: var(--accent);
+    text-decoration-color: currentColor;
+  }
+
+  /* A STATUS, NOT A FOURTH BUTTON.
+   *
+   * "On its way to your watch" is a report of something that has already
+   * happened, and it was drawn as an outlined button 194.6px wide against a
+   * primary of 205.5: a hand-off that is over, at 95% of the width of the one
+   * thing the page exists to hand over, and beside "Send to an app", which is
+   * a live verb of the same size. The sentence above the bar says it again, at
+   * length and in prose, which is where it belongs.
+   *
+   * So once that sentence is up, this drops its edge and goes to --muted,
+   * 8.13:1 on --bg. Nothing moves: the border turns transparent rather than
+   * going away, and the padding and height are the ones it already had.
+   *
+   * It is still a button, and pressing it sends the course again, so the edge
+   * and the colour come back under a pointer or a focus ring — which is the
+   * moment a visitor is asking whether it is one.
+   *
+   * Read off #garmin-note rather than off the button, because the note is what
+   * the page un-hides when a send lands and the button's own state lives only
+   * in its label. Behind :has(), so a browser without it keeps today's
+   * button. */
+  #report:has(#garmin-note:not([hidden])) #send-garmin:not(:hover):not(:focus-visible) {
+    border-color: transparent;
+    color: var(--muted);
   }
 
   /* The bar is fixed, so the page has to hold a gap the height of it or the
@@ -2764,6 +2909,38 @@ html.dialog-open body {
 
   .tile-value {
     font-size: 26px;
+  }
+
+  /* THE CHART'S OWN SWITCHES, HELD TO THE FLOOR THE REST OF THIS BLOCK HOLDS.
+   *
+   * Measured at 390 inside the re-arranger, where four of them share one head:
+   * the zoom pair stood 24.6 x 22.1, Fit 37.8 x 22.1 and Hide map 70.8 x 22.1.
+   * WCAG 2.2 asks 24 x 24 of a target, so the height failed outright and the
+   * zoom pair cleared the width by six tenths of a pixel. These are not chrome
+   * on this surface: Hide map is the control the colophon points at when it
+   * says how to stop OpenStreetMap seeing where your routes are, and the zoom
+   * pair is what a thumb pokes repeatedly while moving a loop's start.
+   *
+   * The edge goes with the size. These were the only controls on the page
+   * drawn in --surface-line, which is the card token: 1.23:1 against the
+   * --surface they sit on, where --field-border gives 3.01:1 and every other
+   * control on the page is drawn. A box nobody can see is not a box.
+   *
+   * The head stops aligning on baselines when it holds them, because a 44px
+   * box has no baseline worth aligning a 12px title to. */
+  .chart-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 1px 10px;
+    border-color: var(--field-border);
+  }
+
+  .chart-head,
+  .chart-head-end {
+    align-items: center;
   }
 
   [data-chart='trace'] .chart-canvas {
