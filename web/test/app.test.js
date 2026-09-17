@@ -435,3 +435,20 @@ test('the sentence names the watch in all three states', () => {
   assert.match(js, /t\('garmin\.note\.queued', \{ device \}\)/);
   assert.match(js, /t\('garmin\.note\.saved'\)/);
 });
+
+test('the re-arranger zooms the same distance with a button as with two fingers', () => {
+  // Called with a bare box these stopped at the fit while a PINCH on the same
+  // drawing did not, so one picture had two zooms that disagreed about how far
+  // out it could go. steppedView is where the roaming permission is granted,
+  // and going through it is what keeps them agreeing.
+  const wired = js.slice(js.indexOf('const zoomRotate'));
+  const block = wired.slice(0, 600);
+  assert.match(block, /steppedView\(surface\.view, step\)/, 'the buttons went round steppedView');
+  assert.doesNotMatch(block, /zoomViewAt\(/, 'it still zooms with a bare box');
+  assert.doesNotMatch(block, /homeView\(\)/, 'reset still uses the pinned home');
+
+  // One step, named once, so the buttons and the double press cannot drift.
+  assert.match(block, /zoomRotate\(ZOOM_STEP\)/);
+  assert.match(block, /zoomRotate\(1 \/ ZOOM_STEP\)/);
+  assert.match(block, /zoomRotate\(null\)/);
+});

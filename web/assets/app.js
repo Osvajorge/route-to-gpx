@@ -4357,14 +4357,18 @@ function wire() {
 
   // The same three moves the wheel and the keyboard make, for the phone that
   // has neither.
-  const zoomRotate = (factor) => {
+  // Through steppedView, the same way the opened map's buttons go. Called with
+  // a bare box these stopped at the fit while a PINCH on the same drawing did
+  // not, so the two ways of zooming one picture disagreed about how far out it
+  // could go. steppedView is where the roaming permission is granted, and
+  // granting it in one place is what keeps them agreeing.
+  const zoomRotate = (step) => {
     const surface = surfaces.rotate;
-    const box = { x: 500, y: 300 };
-    surface.view = factor === null ? homeView() : zoomViewAt(surface.view, factor, box);
+    surface.view = steppedView(surface.view, step);
     if (rotateDraft) drawTrace(surface, rotateDraft.arranged.points, rotateDraft.after);
   };
-  el.rotateZoomIn.addEventListener('click', () => zoomRotate(1.6));
-  el.rotateZoomOut.addEventListener('click', () => zoomRotate(1 / 1.6));
+  el.rotateZoomIn.addEventListener('click', () => zoomRotate(ZOOM_STEP));
+  el.rotateZoomOut.addEventListener('click', () => zoomRotate(1 / ZOOM_STEP));
   el.rotateZoomReset.addEventListener('click', () => zoomRotate(null));
 
   el.resetButton.addEventListener('click', goHome);
