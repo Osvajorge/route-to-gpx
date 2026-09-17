@@ -8,17 +8,32 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  DRAG_SLOP_PX,
+  KEY_PAN_FRACTION,
+  MAP_MAX_SCALE,
+  MAP_MIN_SCALE,
+  MAP_ZOOM_STEP,
   MAX_LATITUDE,
   distanceTicks,
   elevationTicks,
+  homeView,
+  isDrag,
   latToWorldY,
   lonToWorldX,
+  panView,
+  pinchView,
+  pointInBox,
+  projectInFrame,
   projectTrace,
   renderProfile,
   renderTrace,
   tileLayer,
   traceFrame,
+  viewAfterKey,
+  viewFrame,
+  worldXToLon,
   worldYToLat,
+  zoomViewAt,
 } from '../assets/charts.js';
 import { measure } from '../assets/measure.js';
 
@@ -367,5 +382,258 @@ test('the axis step survives a tick being dropped for the gap label', () => {
       Math.abs(steps - Math.round(steps)) < 1e-9,
       `tick ${tick.valueM} is not a multiple of step ${profile.axis.stepM}`,
     );
+  }
+});
+
+// ------------------------------------------------------------------ map view
+//
+// Panning and zooming the re-arranger's map. A view is arithmetic on the fit,
+// so all of it is checked here rather than through a browser: what the fingers
+// and the keys produce is a view, and the view is what the drawing, the tiles
+// and the picking all read.
+
+const PHONE = { width: 324, height: 180, devicePixelRatio: 2 };
+
+/** The box point under a screen position, as a coordinate the projection can
+ *  be asked about. It is the only way to check that the ground the fingers were
+ *  on is the ground still under them. */
+function coordinateAt(frame, boxPoint) {
+  return {
+    lat: worldYToLat(frame.worldY0 + boxPoint.y / frame.unitsPerWorld),
+    lon: worldXToLon(frame.worldX0 + boxPoint.x / frame.unitsPerWorld),
+  };
+}
+
+test('no view is the drawing that was on the page before there were views', () => {
+  const frame = traceFrame(ROUTE);
+  const home = viewFrame(frame, homeView());
+  assert.deepEqual(home, frame);
+
+  const { points, measurements } = fixture();
+  assert.equal(
+    renderTrace(points, measurements, t).svg,
+    renderTrace(points, measurements, t, { view: homeView() }).svg,
+  );
+});
+
+test('zooming shows less ground, not a bigger picture', () => {
+  const frame = traceFrame(ROUTE);
+  const closer = viewFrame(frame, { scale: 4, centerX: 500, centerY: 300 });
+
+  // Four times as many box units to the world unit, so a quarter of the world
+  // in each direction is left inside the same box.
+  assert.ok(Math.abs(closer.unitsPerWorld - frame.unitsPerWorld * 4) < 1e-12);
+
+  // And the middle of the fit is still the middle of the box.
+  const middle = coordinateAt(frame, { x: 500, y: 300 });
+  const landed = projectInFrame([middle], closer)[0];
+  assert.ok(Math.abs(landed.x - 500) < 1e-6, `x ${landed.x}`);
+  assert.ok(Math.abs(landed.y - 300) < 1e-6, `y ${landed.y}`);
+});
+
+test('the ground under the fingers stays under them', () => {
+  // The whole difference between a map and a slider. Pinching on a summit has
+  // to bring the summit closer, not whatever was in the middle of the box.
+  const frame = traceFrame(ROUTE);
+  const anchor = { x: 650, y: 380 };
+  const held = coordinateAt(frame, anchor);
+
+  let view = homeView();
+  for (const factor of [2, 2, 1.37, 0.5]) {
+    view = zoomViewAt(view, factor, anchor);
+    const landed = projectInFrame([held], viewFrame(frame, view))[0];
+    assert.ok(Math.abs(landed.x - anchor.x) < 1e-6, `x ${landed.x} at ${view.scale}`);
+    assert.ok(Math.abs(landed.y - anchor.y) < 1e-6, `y ${landed.y} at ${view.scale}`);
+  }
+});
+
+test('the map cannot be pushed off its own edge', () => {
+  // A route shoved out of the box is a blank chart with no way back but the
+  // reset, on the one screen where the reset is not what anybody wanted.
+  const far = panView({ scale: 4, centerX: 500, centerY: 300 }, -9000, -9000);
+  assert.equal(far.centerX, 1000 - 1000 / 8);
+  assert.equal(far.centerY, 600 - 600 / 8);
+
+  // At the fit the whole route is already on the screen, so there is nowhere to
+  // go and the map says so by not moving.
+  assert.deepEqual(panView(homeView(), 400, 250), homeView());
+
+  // And no closer than the ceiling, however hard the fingers pull.
+  assert.equal(zoomViewAt(homeView(), 1000, { x: 500, y: 300 }).scale, MAP_MAX_SCALE);
+  assert.equal(zoomViewAt(homeView(), 0.001, { x: 500, y: 300 }).scale, MAP_MIN_SCALE);
+});
+
+test('a pinch is a spread and a drag at once, because a hand does both', () => {
+  const start = { scale: 4, centerX: 500, centerY: 300 };
+
+  // Two fingers held the same distance apart and moved together is a pan and
+  // nothing else.
+  const dragged = pinchView(
+    start,
+    { a: { x: 400, y: 300 }, b: { x: 600, y: 300 } },
+    { a: { x: 440, y: 320 }, b: { x: 640, y: 320 } },
+  );
+  assert.deepEqual(dragged, panView(start, 40, 20));
+
+  // Spread to twice the distance about a middle that did not move, and the
+  // scale doubles with that middle still under the fingers.
+  const spread = pinchView(
+    start,
+    { a: { x: 450, y: 300 }, b: { x: 550, y: 300 } },
+    { a: { x: 400, y: 300 }, b: { x: 600, y: 300 } },
+  );
+  assert.ok(Math.abs(spread.scale - 8) < 1e-12);
+  assert.deepEqual(spread, zoomViewAt(start, 2, { x: 500, y: 300 }));
+
+  // Fingers on one pixel would divide by nothing. The map stays where it is.
+  const pinched = pinchView(
+    start,
+    { a: { x: 500, y: 300 }, b: { x: 500, y: 300 } },
+    { a: { x: 500, y: 300 }, b: { x: 520, y: 300 } },
+  );
+  assert.equal(pinched.scale, 4);
+});
+
+test('the keys do what the fingers do, which is the whole feature', () => {
+  const view = { scale: 4, centerX: 500, centerY: 300 };
+
+  assert.deepEqual(viewAfterKey(view, '+'), zoomViewAt(view, MAP_ZOOM_STEP, { x: 500, y: 300 }));
+  assert.deepEqual(viewAfterKey(view, '-'), zoomViewAt(view, 1 / MAP_ZOOM_STEP, { x: 500, y: 300 }));
+  assert.deepEqual(viewAfterKey(view, 'Home'), homeView());
+
+  // The arrow points where the reader wants to go, and one press moves a fifth
+  // of what is on the screen rather than a fifth of the route.
+  // A quarter of the box is on screen at this scale, which is 250 units, so
+  // one press is 50 of them. Written out rather than worked back from the
+  // fraction, which would agree with itself whatever the fraction became.
+  const east = viewAfterKey(view, 'ArrowRight');
+  assert.ok(east.centerX > view.centerX);
+  assert.ok(Math.abs(east.centerX - view.centerX - 50) < 1e-12, `moved ${east.centerX - view.centerX}`);
+  assert.equal(KEY_PAN_FRACTION, 0.2);
+  assert.ok(viewAfterKey(view, 'ArrowLeft').centerX < view.centerX);
+  assert.ok(viewAfterKey(view, 'ArrowUp').centerY < view.centerY);
+  assert.ok(viewAfterKey(view, 'ArrowDown').centerY > view.centerY);
+
+  // Four presses cover the whole range, so the ceiling is reachable by hand.
+  let reached = homeView();
+  for (let i = 0; i < 4; i++) reached = viewAfterKey(reached, '=');
+  assert.equal(reached.scale, MAP_MAX_SCALE);
+
+  // Anything else belongs to whoever else wanted it.
+  assert.equal(viewAfterKey(view, 'Enter'), null);
+  assert.equal(viewAfterKey(view, 'PageDown'), null);
+});
+
+test('a drag is not a tap, so looking at a route never re-arranges it', () => {
+  const down = { x: 120, y: 90 };
+  assert.equal(isDrag(down, { x: 123, y: 93 }), false);
+  assert.equal(isDrag(down, { x: 120 + DRAG_SLOP_PX, y: 90 }), false);
+  assert.equal(isDrag(down, { x: 120 + DRAG_SLOP_PX + 1, y: 90 }), true);
+  assert.equal(isDrag(down, { x: 180, y: 300 }), true);
+});
+
+test('a pointer reads the same box the drawing is in', () => {
+  // The canvas is wider than the drawing's 5:3, so the picture is letterboxed
+  // inside it and the margin has to come off before anything is asked.
+  const rect = { left: 10, top: 20, width: 324, height: 180 };
+  const middle = pointInBox(rect, 10 + 162, 20 + 90);
+  assert.ok(Math.abs(middle.x - 500) < 1e-9);
+  assert.ok(Math.abs(middle.y - 300) < 1e-9);
+
+  // And it is the exact reverse of where the tile layer puts a coordinate, so
+  // a tap can be turned back into a point on the track.
+  const frame = viewFrame(traceFrame(ROUTE), { scale: 4, centerX: 500, centerY: 300 });
+  const layer = tileLayer(frame, PHONE);
+  const coords = projectInFrame(ROUTE, frame);
+  ROUTE.forEach((point, i) => {
+    const at = layer.project(point.lat, point.lon);
+    const back = pointInBox({ left: 0, top: 0, width: PHONE.width, height: PHONE.height }, at.x, at.y);
+    assert.ok(Math.abs(back.x - coords[i].x) < 1e-6, `x ${back.x} vs ${coords[i].x}`);
+    assert.ok(Math.abs(back.y - coords[i].y) < 1e-6, `y ${back.y} vs ${coords[i].y}`);
+  });
+});
+
+test('the tiles follow the view, one level for every doubling', () => {
+  const frame = traceFrame(ROUTE);
+  const fit = tileLayer(viewFrame(frame, homeView()), PHONE);
+  for (const [scale, levels] of [[2, 1], [4, 2], [8, 3], [16, 4]]) {
+    const closer = tileLayer(viewFrame(frame, { scale, centerX: 500, centerY: 300 }), PHONE);
+    assert.equal(closer.zoom, fit.zoom + levels, `scale ${scale}`);
+    // Sharper ground, not more of it: the box is the same box, so the number of
+    // tiles it takes to cover does not grow with the zoom.
+    assert.ok(closer.tiles.length <= fit.tiles.length + 4, `${closer.tiles.length} tiles`);
+  }
+});
+
+test('a pinch asks for the levels it passes through, not a plate a frame', () => {
+  // The rule the tile policy turns on. A pinch arrives as dozens of small
+  // steps; every one of them is a new view, and a view that asked the network
+  // for its own plate would be a burst of hundreds of requests for one gesture.
+  // What bounds it is that neighbouring steps want the same tiles, so the
+  // page's tile cache answers all but the first of each level.
+  const frame = traceFrame(ROUTE);
+  const wanted = new Set();
+  const levels = new Set();
+  let plates = 0;
+  for (let step = 0; step <= 60; step++) {
+    const scale = 1 + (3 * step) / 60;
+    const layer = tileLayer(viewFrame(frame, { scale, centerX: 500, centerY: 300 }), PHONE);
+    levels.add(layer.zoom);
+    plates += layer.tiles.length;
+    for (const tile of layer.tiles) wanted.add(`${tile.z}/${tile.x}/${tile.y}`);
+  }
+
+  // Three levels crossed on the way from the fit to four times it.
+  assert.equal(levels.size, 3);
+  // 346 tile rectangles were drawn across those 61 steps, and they are 33
+  // different tiles. The cache is what stands between those two numbers, so
+  // this is the figure that must stay small.
+  assert.equal(plates, 346);
+  assert.equal(wanted.size, 33);
+});
+
+test('the drawing and the ground stay one picture at every zoom', () => {
+  // The register test above, asked again of a map that has been moved: this is
+  // the failure that would put the start dot on the wrong side of a river.
+  const base = traceFrame(ROUTE);
+  for (const view of [
+    homeView(),
+    { scale: 2, centerX: 400, centerY: 250 },
+    { scale: 16, centerX: 500, centerY: 300 },
+  ]) {
+    const frame = viewFrame(base, view);
+    const coords = projectInFrame(ROUTE, frame);
+    const layer = tileLayer(frame, PHONE);
+    ROUTE.forEach((point, i) => {
+      const onScreen = layer.project(point.lat, point.lon);
+      assert.ok(
+        Math.abs(onScreen.x - (layer.traceOrigin.left + coords[i].x * layer.cssPerUnit)) < 1e-9,
+      );
+      assert.ok(
+        Math.abs(onScreen.y - (layer.traceOrigin.top + coords[i].y * layer.cssPerUnit)) < 1e-9,
+      );
+    });
+  }
+});
+
+test('a view is a view, and never a measurement', () => {
+  // The one thing zoom must not touch. The figures come from measure.js, which
+  // never sees a view, and the drawn line is the same line through the same
+  // points wherever the map is standing.
+  const { points, measurements } = fixture();
+  const fit = renderTrace(points, measurements, t);
+  const closer = renderTrace(points, measurements, t, {
+    view: { scale: 8, centerX: 300, centerY: 200 },
+  });
+  assert.equal(closer.coords.length, fit.coords.length);
+  assert.notEqual(closer.svg, fit.svg);
+
+  // Every drawn point moved by the same eight about the same point, which is
+  // what makes it the same shape seen closer rather than a different shape.
+  for (const i of [0, 37, fit.coords.length - 1]) {
+    const across = (closer.coords[i].x - 500) / (fit.coords[i].x - 300);
+    const down = (closer.coords[i].y - 300) / (fit.coords[i].y - 200);
+    assert.ok(Math.abs(across - 8) < 1e-6, `x ${across} at ${i}`);
+    assert.ok(Math.abs(down - 8) < 1e-6, `y ${down} at ${i}`);
   }
 });

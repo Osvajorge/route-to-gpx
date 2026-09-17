@@ -161,6 +161,29 @@ export function arrange(points, options = {}) {
   return { points: out, reversed, startIndex, seamIndex, seamM };
 }
 
+/**
+ * Which point of the recording an arranged point is.
+ *
+ * The exact inverse of the shuffle above, and it exists for the map. A visitor
+ * points at the drawing in front of them, which is the arrangement; the slider,
+ * the file name and every other number here count points in the order the
+ * recording was made. One of the two has to be translated, and translating it
+ * beside the shuffle it undoes is the only way the two stay in step.
+ *
+ * `index` is a position in `arrangement.points`. What comes back is a position
+ * in the recording, which is what `arrange` takes as `startIndex`, so pointing
+ * at a place on the map and moving the slider to it are the same act.
+ */
+export function sourceIndexOf(arrangement, index) {
+  const points = arrangement.points;
+  const ring = ringLength(points);
+  if (ring <= 0) return 0;
+  const inRange = Math.min(points.length - 1, Math.max(0, Math.trunc(index)));
+  // Reversing happens last, so it is undone first.
+  const before = arrangement.reversed ? points.length - 1 - inRange : inRange;
+  return (((before + arrangement.startIndex) % ring) + ring) % ring;
+}
+
 // ------------------------------------------------------------- the timestamps
 
 /** How many points carry a recorded time.

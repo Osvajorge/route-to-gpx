@@ -124,6 +124,222 @@ export function projectTrace(points) {
   return projectInFrame(points, traceFrame(points));
 }
 
+// ------------------------------------------------------------------ map view
+//
+// Moving and zooming a drawing, as arithmetic on its own fit.
+//
+// WHY THIS EXISTS. The re-arranger asks somebody to pick one recorded point out
+// of hundreds. On a phone that drawing gets a box 324 CSS px wide, and on the
+// 551 point route this was measured against, two points next to each other land
+// a median 1.1 px apart in it. The point being picked cannot be seen, so it
+// cannot be picked.
+//
+// WHAT IT COSTS THE TILE SERVER, measured before it was written. Nothing per
+// frame. A view is the same box as it was, so it takes the same handful of
+// tiles to cover it; what a zoom changes is which level they are cut from.
+// Walked from the fit to the ceiling in the 121 steps a pinch actually arrives
+// in, that route drew 754 plates and wanted 41 different tiles across five
+// levels. The page's tile cache is the whole difference between those two
+// numbers, which is why nothing here fetches anything itself.
+//
+// A view is how much closer than the fit to stand, and which point of the
+// fitted box to stand in front of: `{ scale, centerX, centerY }`, all in box
+// units, so one view means the same thing on every screen.
+//
+// It is applied by moving the frame, never by scaling the finished picture.
+// Everything downstream reads the frame: the projected track, the tiles, the
+// start dot, the gap label. One set of numbers moves all of them at once and
+// they cannot come out of register with each other, which is exactly what a CSS
+// transform over the top would have done, leaving the ground underneath at the
+// sharpness and the position it had before the fingers moved.
+
+/** No further out than the fit. The fit already holds the whole route, and the
+ *  ground beyond it is ground this drawing never claimed to be about. Going out
+ *  past it would ask the tile server for scenery. */
+export const MAP_MIN_SCALE = 1;
+
+/** As close as the map goes. It puts the 1.1 px measured above at 17, so the
+ *  point being picked can be told from the ones either side of it, and it is
+ *  four doublings, which is four tile levels and no more. */
+export const MAP_MAX_SCALE = 16;
+
+/** One press in, one press out. Two is one tile level exactly, so a step never
+ *  leaves the map between two sets of tiles, and four steps cover the range. */
+export const MAP_ZOOM_STEP = 2;
+
+/** How far one arrow key moves the map: a fifth of what is on screen, so the
+ *  ground that was in the middle is still on screen after the press. */
+export const KEY_PAN_FRACTION = 0.2;
+
+/** How far a finger may slide and still have meant to tap.
+ *
+ *  A pick that fired at the end of a pan would move the start of somebody's
+ *  route every time they looked at the far side of it. Eight px is above the
+ *  wobble of a finger held still on glass and well below a deliberate drag. */
+export const DRAG_SLOP_PX = 8;
+
+/** The box the report's trace is fitted into. */
+export function traceBox() {
+  return { width: TRACE_W, height: TRACE_H };
+}
+
+/** The whole route, which is where every drawing starts and what the reset goes
+ *  back to. */
+export function homeView(box = traceBox()) {
+  return { scale: 1, centerX: box.width / 2, centerY: box.height / 2 };
+}
+
+/** A view with the route still in it.
+ *
+ *  The window stays inside the fitted box, so the drawing cannot be pushed off
+ *  its own edge and left as blank ground with no way back but the reset. At the
+ *  fit there is nothing outside the window, so this pins it to the middle:
+ *  panning a route you can already see whole does nothing, which is the honest
+ *  answer. */
+export function clampView(view, box = traceBox()) {
+  const asked = Number.isFinite(view?.scale) ? view.scale : 1;
+  const scale = Math.min(MAP_MAX_SCALE, Math.max(MAP_MIN_SCALE, asked));
+  const halfW = box.width / (2 * scale);
+  const halfH = box.height / (2 * scale);
+  const centerX = Number.isFinite(view?.centerX) ? view.centerX : box.width / 2;
+  const centerY = Number.isFinite(view?.centerY) ? view.centerY : box.height / 2;
+  return {
+    scale,
+    centerX: Math.min(box.width - halfW, Math.max(halfW, centerX)),
+    centerY: Math.min(box.height - halfH, Math.max(halfH, centerY)),
+  };
+}
+
+/** The same fit, seen from where the view stands.
+ *
+ *  The frame is the one thing the tile layer and the projection share, so
+ *  handing them a moved frame is all it takes to move the whole picture
+ *  together. The tiles come back cut for the ground now on screen and at the
+ *  level that ground deserves, because `tileLayer` works its zoom out from
+ *  `unitsPerWorld`, which this multiplies. */
+export function viewFrame(frame, view, box = traceBox()) {
+  const at = clampView(view, box);
+  const left = at.centerX - box.width / (2 * at.scale);
+  const top = at.centerY - box.height / (2 * at.scale);
+  return {
+    worldX0: frame.worldX0 + left / frame.unitsPerWorld,
+    worldY0: frame.worldY0 + top / frame.unitsPerWorld,
+    unitsPerWorld: frame.unitsPerWorld * at.scale,
+  };
+}
+
+/** The map dragged by (dx, dy) box units, the way a finger drags paper: the
+ *  ground under the finger stays under it. */
+export function panView(view, dx, dy, box = traceBox()) {
+  const at = clampView(view, box);
+  return clampView(
+    { scale: at.scale, centerX: at.centerX - dx / at.scale, centerY: at.centerY - dy / at.scale },
+    box,
+  );
+}
+
+/** Closer or further by `factor`, with `anchor` left where it is.
+ *
+ *  Anchoring is what makes pinching and double-tapping feel like a map rather
+ *  than a slider: you get closer to the thing you put your fingers on, not to
+ *  whatever happened to be in the middle. `anchor` is in box units, the same
+ *  ones the drawing is in. */
+export function zoomViewAt(view, factor, anchor, box = traceBox()) {
+  const at = clampView(view, box);
+  const step = Number.isFinite(factor) && factor > 0 ? factor : 1;
+  const scale = Math.min(MAP_MAX_SCALE, Math.max(MAP_MIN_SCALE, at.scale * step));
+  // Where the anchor sits on the fit. That is the point that must not move, so
+  // it is found before the scale changes and put back after.
+  const held = {
+    x: at.centerX + (anchor.x - box.width / 2) / at.scale,
+    y: at.centerY + (anchor.y - box.height / 2) / at.scale,
+  };
+  return clampView(
+    {
+      scale,
+      centerX: held.x - (anchor.x - box.width / 2) / scale,
+      centerY: held.y - (anchor.y - box.height / 2) / scale,
+    },
+    box,
+  );
+}
+
+/** Two fingers, from where they were to where they are.
+ *
+ *  Pinching and dragging are one gesture, not two: the fingers spread and the
+ *  hand moves at the same time, and a map that honoured only the spread would
+ *  slide out from under them. Each pair is `{ a, b }` in box units. */
+export function pinchView(view, before, after, box = traceBox()) {
+  const wasApart = Math.hypot(before.a.x - before.b.x, before.a.y - before.b.y);
+  const nowApart = Math.hypot(after.a.x - after.b.x, after.a.y - after.b.y);
+  // Two fingers landing on one pixel would otherwise divide by nothing and
+  // throw the map to the far side of the world.
+  const factor = wasApart > 0 && nowApart > 0 ? nowApart / wasApart : 1;
+  const wasMiddle = { x: (before.a.x + before.b.x) / 2, y: (before.a.y + before.b.y) / 2 };
+  const nowMiddle = { x: (after.a.x + after.b.x) / 2, y: (after.a.y + after.b.y) / 2 };
+  const zoomed = zoomViewAt(view, factor, wasMiddle, box);
+  return panView(zoomed, nowMiddle.x - wasMiddle.x, nowMiddle.y - wasMiddle.y, box);
+}
+
+/** The view after a key press, or null when the key was not one of ours.
+ *
+ *  Null rather than the view unchanged, so the caller knows to leave the event
+ *  alone: a page that swallowed every key over a map would take the arrows away
+ *  from anybody scrolling past it.
+ *
+ *  The arrows point where the reader wants to go, plus and minus do what one
+ *  double-tap does, and Home is the whole route back. A map that can only be
+ *  reached with a finger is a map half this page's readers cannot use. */
+export function viewAfterKey(view, key, box = traceBox()) {
+  const acrossX = box.width * KEY_PAN_FRACTION;
+  const acrossY = box.height * KEY_PAN_FRACTION;
+  const middle = { x: box.width / 2, y: box.height / 2 };
+  switch (key) {
+    case 'ArrowLeft':
+      return panView(view, acrossX, 0, box);
+    case 'ArrowRight':
+      return panView(view, -acrossX, 0, box);
+    case 'ArrowUp':
+      return panView(view, 0, acrossY, box);
+    case 'ArrowDown':
+      return panView(view, 0, -acrossY, box);
+    case '+':
+    case '=':
+    case 'Add':
+      return zoomViewAt(view, MAP_ZOOM_STEP, middle, box);
+    case '-':
+    case '_':
+    case 'Subtract':
+      return zoomViewAt(view, 1 / MAP_ZOOM_STEP, middle, box);
+    case '0':
+    case 'Home':
+      return homeView(box);
+    default:
+      return null;
+  }
+}
+
+/** Whether a finger that went down at `from` and came up at `to` was dragging
+ *  the map rather than pointing at something on it. Both are in CSS pixels,
+ *  which is where the slop is a finger's worth on every screen. */
+export function isDrag(from, to) {
+  return Math.hypot(to.x - from.x, to.y - from.y) > DRAG_SLOP_PX;
+}
+
+/** Where a pointer is, in box units.
+ *
+ *  The drawing keeps its aspect ratio and is letterboxed inside its canvas, so
+ *  the margin comes off before anything can be asked about the picture. Written
+ *  once here because every caller that reads a pointer over a trace needs it,
+ *  and copies of it would disagree the first time the box changed. */
+export function pointInBox(rect, clientX, clientY, box = traceBox()) {
+  const k = Math.min(rect.width / box.width, rect.height / box.height);
+  return {
+    x: (clientX - rect.left - (rect.width - box.width * k) / 2) / k,
+    y: (clientY - rect.top - (rect.height - box.height * k) / 2) / k,
+  };
+}
+
 // ---------------------------------------------------------------- tile layer
 
 /** Everything a basemap under a drawing needs: which zoom, which tiles, where
@@ -402,8 +618,10 @@ function gapIndex(measurements) {
   return -1;
 }
 
-export function renderTrace(points, measurements, t) {
-  const frame = traceFrame(points);
+export function renderTrace(points, measurements, t, options = {}) {
+  // No view is the whole route, which is what every drawing on this page was
+  // before the re-arranger's map could be moved, and still is everywhere else.
+  const frame = viewFrame(traceFrame(points), options.view ?? homeView());
   const coords = projectInFrame(points, frame);
   const showGap = measurements.gapExceedsThreshold;
   const cut = showGap ? gapIndex(measurements) : -1;
