@@ -41,6 +41,7 @@ from pydantic import BaseModel
 from . import http, limits
 from .core import gpx
 from .http import BlockedHost
+from . import garmin
 from .sources import (
     shape as shapes,
     Route,
@@ -122,6 +123,9 @@ ERROR_STATUS = {
     "private": 404,
     "track": 422,
     "network": 422,
+    # Not "network": the source sites are fine and the visitor's own Garmin is
+    # what refused, which is a different sentence and a different repair.
+    "garmin": 422,
     "busy": 429,
 }
 
@@ -142,6 +146,21 @@ class ConvertRequest(BaseModel):
 
 class ShapeRequest(BaseModel):
     url: str
+
+
+class GarminCourseRequest(BaseModel):
+    """The file the page already holds, not a link to fetch again.
+
+    The page has the GPX by the time this button exists, so sending the text
+    costs one upload instead of a second round trip to a source site, and it
+    guarantees the course is the file the visitor was shown rather than
+    whatever the source answers a moment later.
+    """
+
+    gpx: str
+    fileName: str
+    name: str
+    activity: str = garmin.DEFAULT_ACTIVITY
 
 
 class NearPoint(BaseModel):
@@ -344,7 +363,7 @@ def health():
     # Exempt from the inbound guard: it makes no upstream call, the platform
     # calls it on a schedule, and counting it would evict real entries and
     # eventually refuse the liveness probe itself.
-    return {"ok": True}
+    return {"ok": True, "canSendToGarmin": garmin.enabled()}
 
 
 @api.get("/sports")
@@ -576,6 +595,46 @@ def nearby(body: NearbyRequest, request: Request):
         return answer
 
     return {"ok": True, **listing.as_dict()}
+
+
+if garmin.enabled():
+
+    @api.post("/garmin/course")
+    def garmin_course(request: Request, body: GarminCourseRequest):
+        """Uploads the measured route to the visitor's own Garmin, as a course.
+
+        This route is not registered at all unless GARMIN_TOKENS names a
+        session directory, so the public deployment has no such path. That is
+        the difference between a feature being off and a feature being absent,
+        and only the second one is worth promising anybody.
+
+        It spends an inbound token like every other endpoint. It opens no
+        outbound budget: those buckets exist to protect the SOURCE SITES from
+        this service, and Garmin here is the visitor's own account being
+        written to on their instruction, which is a different thing entirely.
+        """
+        client = client_key(request)
+        waiting = inbound_wait(client)
+        if waiting:
+            return busy_response(waiting)
+
+        if len(body.gpx) > http.MAX_BYTES:
+            return error_response(
+                "request", detail="that file is larger than this endpoint sends"
+            )
+
+        try:
+            saved = garmin.send_course(
+                gpx=body.gpx,
+                file_name=body.fileName or "route.gpx",
+                name=body.name or "Route",
+                activity=body.activity,
+            )
+        except garmin.GarminUnavailable as unavailable:
+            logger.warning("garmin send refused: %s", unavailable.hint)
+            return error_response("garmin", hint=unavailable.hint, detail=unavailable.detail)
+
+        return {"ok": True, "course": saved}
 
 
 app.include_router(api)

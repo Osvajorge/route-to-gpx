@@ -1,0 +1,6 @@
+# Only for the personal build, where GARMIN_TOKENS is set and the
+# "send to my Garmin" endpoint exists. The public deployment installs
+# requirements.txt alone, so it has no Garmin code path and no way to acquire
+# one: `api/garmin.py` imports this lazily and answers with an explanation
+# rather than a traceback when it is absent.
+garth>=0.4.44
