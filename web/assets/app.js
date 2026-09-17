@@ -15,6 +15,7 @@ import {
   starPortion,
   updatedMonth,
 } from './cards.js';
+import { classifyLink, linkWithin } from './links.js';
 import {
   activityChoices,
   appendPage,
@@ -133,22 +134,6 @@ function formatMonth({ year, month }) {
 // ------------------------------------------------------------------- sources
 
 /** Which service a pasted link belongs to. Returns null when we cannot read it. */
-export function classifyLink(raw) {
-  const value = raw.trim();
-  if (!value) return null;
-  if (/\.gpx($|\?)/i.test(value)) return { id: 'file' };
-
-  let host;
-  try {
-    host = new URL(value.startsWith('http') ? value : `https://${value}`).hostname;
-  } catch {
-    return null;
-  }
-  if (/(^|\.)komoot\.[a-z.]+$/i.test(host)) return { id: 'komoot', label: 'Komoot' };
-  if (/(^|\.)wikiloc\.[a-z.]+$/i.test(host)) return { id: 'wikiloc', label: 'Wikiloc' };
-  return null;
-}
-
 // --------------------------------------------------------------------- views
 
 function setView(view) {

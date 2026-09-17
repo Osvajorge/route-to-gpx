@@ -85,6 +85,8 @@ app.add_middleware(
 ADAPTERS = {
     r"(^|\.)komoot\.[a-z.]+$": komoot.fetch,
     r"(^|\.)wikiloc\.[a-z.]+$": wikiloc.fetch,
+    # Wikiloc's own shortener, and the only shape its phone app shares.
+    r"(^|\.)loc\.wiki$": wikiloc.fetch,
     r"(^|\.)alltrails\.[a-z.]+$": alltrails.fetch,
 }
 

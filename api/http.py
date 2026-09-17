@@ -74,6 +74,7 @@ ALLOWED_HOST = re.compile(
     r"^(?:[a-z0-9-]+\.)*"
     r"(?:komoot\.(?:com|de|es|fr|it|nl|pl|io|net)"
     r"|wikiloc\.(?:com|es)"
+    r"|loc\.wiki"
     r"|alltrails\.com)$",
     re.I,
 )
@@ -104,7 +105,13 @@ SITE = re.compile(r"(?:^|\.)(komoot|wikiloc|alltrails)\.[a-z]{2,}$", re.I)
 # operators ask callers to keep their volume reasonable. Left to the pattern
 # above it would spend Komoot's budget, so a Wikiloc search would eat into the
 # allowance for Komoot routes and neither limit would mean what it says.
-SITE_BY_HOST = {GEOCODER_HOST: "photon"}
+# loc.wiki is Wikiloc's own link shortener -- registered to Wikiloc Outdoor,
+# and every /t/<id> on it redirects into wikiloc.com. It is the ONLY shape a
+# route shared from the Wikiloc phone app has, so refusing it refused the
+# commonest way anyone arrives here from a phone. It spends Wikiloc's bucket
+# because it IS Wikiloc: a second bucket would double the budget for free,
+# which is the same mistake the pattern above exists to prevent.
+SITE_BY_HOST = {GEOCODER_HOST: "photon", "loc.wiki": "wikiloc"}
 GEOCODER_SITE = "photon"
 
 # 60 upstream calls a minute, bursting 30. One person using the web page

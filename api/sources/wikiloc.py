@@ -26,6 +26,11 @@ from ..http import fetch_text
 # Anchored to the end of the path, because an unanchored search over the whole
 # link also matches an id sitting in a username or a tracking parameter.
 TRAIL_ID_IN_PATH = re.compile(r"/[^/]*?-(\d+)/?$")
+# The short link, which is the ONLY shape the Wikiloc phone app shares:
+# loc.wiki/t/12925300. It redirects through open-trail-link.do into the real
+# trail page, and `_follow` re-checks the allowlist at every hop, so the id is
+# read here only to refuse a link that is not a trail before a token is spent.
+SHORT_LINK_PATH = re.compile(r"^/t/(\d+)/?$")
 # The old links still work and still carry the track, so they are still read:
 # /wikiloc/view.do?id=8001213 and /wikiloc/spatialArtifacts.do?event=view&id=...
 TRAIL_ID_IN_QUERY = re.compile(r"(?:^|&)id=(\d+)(?:&|$)")
@@ -56,6 +61,9 @@ UNIT_IN_METRES = {"km": 1000.0, "m": 1.0, "mi": 1609.344, "ft": 0.3048}
 def trail_id(url: str) -> Optional[str]:
     """The trail id, from the slug or from a legacy query string."""
     parts = urlparse(url if "//" in url else f"//{url}")
+    found = SHORT_LINK_PATH.match(parts.path)
+    if found:
+        return found.group(1)
     found = TRAIL_ID_IN_PATH.search(parts.path)
     if found:
         return found.group(1)
