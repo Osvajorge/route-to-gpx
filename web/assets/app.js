@@ -16,6 +16,7 @@ import {
   updatedMonth,
 } from './cards.js';
 import { classifyLink, linkWithin } from './links.js';
+import { makeMovable, steppedView, ZOOM_STEP } from './mapview.js';
 import {
   activityChoices,
   appendPage,
@@ -1054,117 +1055,67 @@ function liveTraceSurfaces() {
 }
 
 /** One trace, drawn into one figure, with the ground under it. */
-/** Gives one drawing a map's manners: drag to move, pinch to zoom, and the
- *  keyboard doing both.
+/** One drawing made movable, in the terms mapview.js asks for.
  *
- *  WHY ONLY HERE. The re-arranger asks somebody to pick a point on a ring, and
- *  on a phone the whole loop is drawn into a box a few hundred pixels wide,
- *  where the candidates are a few pixels apart. Every other trace on this page
- *  is a picture to read rather than a thing to work in, so none of them get
- *  this and none of them pay for it.
- *
- *  A DRAG IS NOT A TAP, and that distinction is the whole reason a map can
- *  both move and be picked from. A pointer that travelled further than the
- *  slop moved the map; one that did not chose a start point.
- *
- *  Nothing here fetches a tile. The view is redrawn and `paintBasemap` decides
- *  for itself whether the ground it already holds still fits, which is what
- *  keeps a pinch from walking the tile server. */
-function makeMapMovable(surface) {
-  const canvas = surface.canvas;
-  if (!canvas) return;
-
-  // A map that a finger can drag must not also scroll the dialog under it.
-  canvas.style.touchAction = 'none';
-  canvas.tabIndex = 0;
-
-  const active = new Map();
-  let pinchFrom = null;
-  let pressedAt = null;
-  let moved = false;
-
-  const boxOf = (event) => pointInBox(canvas.getBoundingClientRect(), event.clientX, event.clientY);
-
-  const redraw = () => {
-    if (!rotateDraft) return;
-    drawTrace(surface, rotateDraft.arranged.points, rotateDraft.after);
-  };
-
-  const twoFingers = () => {
-    const [a, b] = [...active.values()];
-    return { a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } };
-  };
-
-  canvas.addEventListener('pointerdown', (event) => {
-    canvas.setPointerCapture(event.pointerId);
-    active.set(event.pointerId, boxOf(event));
-    if (active.size === 1) {
-      pressedAt = boxOf(event);
-      moved = false;
-    } else if (active.size === 2) {
-      pinchFrom = twoFingers();
-      // A second finger ends any tap the first one was making.
-      moved = true;
-    }
-  });
-
-  canvas.addEventListener('pointermove', (event) => {
-    if (!active.has(event.pointerId)) return;
-    const now = boxOf(event);
-    const before = active.get(event.pointerId);
-    active.set(event.pointerId, now);
-
-    if (active.size >= 2 && pinchFrom) {
-      const after = twoFingers();
-      surface.view = pinchView(surface.view, pinchFrom, after);
-      pinchFrom = after;
-      redraw();
-      return;
-    }
-
-    if (pressedAt && !moved && isDrag(pressedAt, now)) moved = true;
-    if (!moved) return;
-
-    surface.view = panView(surface.view, now.x - before.x, now.y - before.y);
-    redraw();
-  });
-
-  const release = (event) => {
-    if (!active.has(event.pointerId)) return;
-    const at = active.get(event.pointerId);
-    active.delete(event.pointerId);
-    if (active.size < 2) pinchFrom = null;
-
-    // A press that never travelled is a choice, not a drag.
-    if (active.size === 0 && pressedAt && !moved) pickStartAt(surface, at);
-    if (active.size === 0) pressedAt = null;
-  };
-  canvas.addEventListener('pointerup', release);
-  canvas.addEventListener('pointercancel', release);
-
-  canvas.addEventListener('dblclick', (event) => {
-    event.preventDefault();
-    surface.view = zoomViewAt(surface.view, 2, boxOf(event));
-    redraw();
-  });
-
-  canvas.addEventListener(
-    'wheel',
-    (event) => {
-      event.preventDefault();
-      surface.view = zoomViewAt(surface.view, event.deltaY < 0 ? 1.2 : 1 / 1.2, boxOf(event));
-      redraw();
+ *  The view lives on the surface, so each drawing keeps its own and none of
+ *  them can move another. */
+function movableFor(surface, redraw, onPress = null) {
+  return makeMovable(surface.canvas, {
+    getView: () => surface.view,
+    setView: (view) => {
+      surface.view = view;
     },
-    { passive: false },
-  );
-
-  canvas.addEventListener('keydown', (event) => {
-    const next = viewAfterKey(surface.view, event.key);
-    if (!next) return;
-    event.preventDefault();
-    surface.view = next;
-    redraw();
+    redraw,
+    onPress,
   });
+}
+
+/** A press on a small drawing opens it properly.
+ *
+ *  A route drawn into a card on a phone is a shape rather than a map, and
+ *  somebody about to walk it wants to see where it goes. The small drawings
+ *  stay still pictures and never move, which is exactly what lets a press on
+ *  one mean "show me this properly" instead of competing with a drag. */
+function openMap(points, measurements, title) {
+  if (!points || points.length < 2) return;
+
+  mapSurface.view = homeView();
+  mapSurface.points = points;
+  mapSurface.reading = measurements;
+  el.mapTitle.textContent = title || t('map.title');
+  el.mapZoomIn.setAttribute('aria-label', t('map.zoomin'));
+  el.mapZoomIn.title = t('map.zoomin');
+  el.mapZoomOut.setAttribute('aria-label', t('map.zoomout'));
+  el.mapZoomOut.title = t('map.zoomout');
+  el.mapZoomReset.textContent = t('map.zoomreset');
+  el.mapZoomReset.setAttribute('aria-label', t('map.zoomreset'));
+  el.mapClose.innerHTML = icon('close');
+  el.mapClose.setAttribute('aria-label', t('dialog.close'));
+  el.mapHint.textContent = `${t('map.hint')} ${t('map.hint.keys')}`;
+
+  openDialog(el.mapDialog, {
+    returnFocusTo: document.activeElement,
+    onClose: () => {
+      // However it closed -- the button, Escape, or the backdrop -- the
+      // listeners come off. This is the only hook all three go through.
+      if (mapRelease) mapRelease();
+      mapRelease = null;
+      mapSurface.points = null;
+    },
+  });
+  drawTrace(mapSurface, points, measurements);
+
+  // Attached on open and taken off on close, because this drawing is built and
+  // thrown away every time and listeners left behind would stack up.
+  if (mapRelease) mapRelease();
+  mapRelease = movableFor(mapSurface, () => {
+    drawTrace(mapSurface, mapSurface.points, mapSurface.reading);
+  });
+  el.mapCanvas?.focus();
+}
+
+function redrawMap() {
+  if (mapSurface.points) drawTrace(mapSurface, mapSurface.points, mapSurface.reading);
 }
 
 /** A press on the map, turned into a start point on the ring.
@@ -1886,6 +1837,11 @@ let rotateSubject = null;
  *  nothing else, so the file that arrives is exactly the one the numbers above
  *  the button describe. */
 let rotateDraft = null;
+
+// The opened map. One surface, reused, but its listeners are attached on open
+// and removed on close: see openMap.
+let mapSurface = null;
+let mapRelease = null;
 const rotateChoice = { reverse: false, startIndex: 0 };
 
 // How long the drawing lags the slider. Short enough that it reads as the
@@ -4238,10 +4194,23 @@ function collect() {
   el.rotateDownload = document.getElementById('rotate-download');
   el.rotateFilename = document.getElementById('rotate-filename');
   surfaces.rotate = chartSurface(document.getElementById('rotate-trace'));
+
+  el.mapDialog = document.getElementById('map-dialog');
+  el.mapTitle = document.getElementById('map-title');
+  el.mapHint = document.getElementById('map-hint');
+  el.mapClose = document.getElementById('map-close');
+  el.mapZoomIn = document.getElementById('map-zoom-in');
+  el.mapZoomOut = document.getElementById('map-zoom-out');
+  el.mapZoomReset = document.getElementById('map-zoom-reset');
+  mapSurface = chartSurface(document.getElementById('map-trace'));
+  mapSurface.view = homeView();
+  el.mapCanvas = mapSurface.canvas;
   // The one drawing on this page that can be moved. Every other trace is the
   // whole route and has nothing to pan to.
   surfaces.rotate.view = homeView();
-  makeMapMovable(surfaces.rotate);
+  movableFor(surfaces.rotate, () => {
+    if (rotateDraft) drawTrace(surfaces.rotate, rotateDraft.arranged.points, rotateDraft.after);
+  }, (where) => pickStartAt(surfaces.rotate, where));
 }
 
 function submit() {
@@ -4472,6 +4441,55 @@ function wireDialogs() {
   });
 
   el.rotateClose.addEventListener('click', () => closeDialog());
+
+  // The opened map: its own controls, and its listeners taken off on close.
+  el.mapClose.addEventListener('click', () => closeDialog());
+  el.mapZoomIn.addEventListener('click', () => {
+    mapSurface.view = steppedView(mapSurface.view, ZOOM_STEP);
+    redrawMap();
+  });
+  el.mapZoomOut.addEventListener('click', () => {
+    mapSurface.view = steppedView(mapSurface.view, 1 / ZOOM_STEP);
+    redrawMap();
+  });
+  el.mapZoomReset.addEventListener('click', () => {
+    mapSurface.view = steppedView(mapSurface.view, null);
+    redrawMap();
+  });
+
+  // Every SMALL trace opens the map. They never move themselves, which is what
+  // lets a press on one mean this and nothing else.
+  for (const surface of [surfaces.trace, surfaces.preview]) {
+    if (!surface?.canvas) continue;
+    surface.canvas.style.cursor = 'zoom-in';
+    const open = () => {
+      const held = surface.points || state.result?.track?.points;
+      const reading = surface.measurements || state.result?.measurements;
+      openMap(held, reading, state.result?.track?.name || state.result?.source?.title);
+    };
+    surface.canvas.addEventListener('click', open);
+
+    // The canvas is already a slider -- it reads the elevation at a distance
+    // under the pointer -- so it cannot also announce itself as a button. The
+    // keyboard and a screen reader get a real button instead, in the chart's
+    // own head beside the basemap switch, which is where the other controls
+    // for this drawing already are.
+    const head = surface.figure?.querySelector('.chart-head-end');
+    if (head && !head.querySelector('[data-open-map]')) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chart-toggle';
+      button.dataset.openMap = '';
+      // Named here as well as in render(), because render() has already run by
+      // the time this is built and the button would sit there unlabelled until
+      // the next one.
+      button.textContent = t('map.open');
+      button.title = t('map.open');
+      button.addEventListener('click', open);
+      head.prepend(button);
+      surface.openMapButton = button;
+    }
+  }
   el.rotateReverse.addEventListener('click', () => {
     rotateChoice.reverse = !rotateChoice.reverse;
     renderRotate();

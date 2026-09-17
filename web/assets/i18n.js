@@ -337,6 +337,10 @@ const STRINGS = {
       'Saved to Garmin Connect and queued for {device}. It arrives on the next sync, under Navigate then Courses.',
     'garmin.note.saved':
       'Saved to Garmin Connect. No watch was queued, so open Garmin Connect and use Send to Device.',
+    'map.open': 'Open the map',
+    'map.title': 'Route map',
+    'map.hint': 'Drag to move. Pinch, scroll or use the buttons to zoom.',
+    'map.hint.keys': 'Arrows move. Plus and minus zoom. Zero fits the whole route.',
     'map.zoomin': 'Zoom in',
     'map.zoomout': 'Zoom out',
     'map.zoomreset': 'Fit',
@@ -780,6 +784,10 @@ const STRINGS = {
       'Guardado en Garmin Connect y en cola para {device}. Llega en la siguiente sincronización, en Navegar y luego Recorridos.',
     'garmin.note.saved':
       'Guardado en Garmin Connect. No se encoló ningún reloj: abre Garmin Connect y usa Enviar al dispositivo.',
+    'map.open': 'Abrir el mapa',
+    'map.title': 'Mapa de la ruta',
+    'map.hint': 'Arrastra para mover. Pellizca, rueda o usa los botones para el zoom.',
+    'map.hint.keys': 'Las flechas mueven. Más y menos hacen zoom. Cero encuadra la ruta entera.',
     'map.zoomin': 'Acercar',
     'map.zoomout': 'Alejar',
     'map.zoomreset': 'Ajustar',

@@ -320,37 +320,42 @@ test('the send button says what the receiving app will do to the numbers', () =>
   assert.match(js, /aria-description', t\('step2\.send\.note'\)/);
 });
 
-test('only the re-arranger gets a map that moves, and it gets the whole set', () => {
-  // The re-arranger asks somebody to pick a point on a ring, and on a phone the
-  // whole loop is drawn into a box a few hundred pixels wide where the
-  // candidates are a few pixels apart. Every other trace is a picture to read.
-  assert.match(js, /surfaces\.rotate\.view = homeView\(\)/);
-  assert.match(js, /makeMapMovable\(surfaces\.rotate\)/);
-  assert.doesNotMatch(js, /makeMapMovable\(surfaces\.(trace|preview)\)/);
+test('the small drawings never move, which is what lets a press on one mean something', () => {
+  // A route drawn into a card on a phone is a shape rather than a map. Pressing
+  // one opens it properly; if those drawings also panned, a press would be
+  // competing with a drag and neither would be reliable.
+  assert.match(js, /movableFor\(surfaces\.rotate/, 'the re-arranger lost its movable map');
+  assert.match(js, /mapRelease = movableFor\(mapSurface/, 'the opened map is not movable');
+  assert.doesNotMatch(js, /movableFor\(surfaces\.(trace|preview)/, 'a small drawing was made movable');
 
-  const movable = body('makeMapMovable');
-  for (const gesture of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel', 'dblclick', 'keydown']) {
-    assert.match(movable, new RegExp(`'${gesture}'`), `no ${gesture} handler`);
-  }
-  // A finger dragging a map must not scroll the dialog under it.
-  assert.match(movable, /touchAction = 'none'/);
-  // And it has to be reachable without a pointer at all.
-  assert.match(movable, /tabIndex = 0/);
+  // And the gestures come from the module, not from a copy living here.
+  assert.match(js, /from '\.\/mapview\.js'/);
+  assert.doesNotMatch(js, /function makeMapMovable/, 'the old in-file copy came back');
 });
 
-test('a drag moves the map and a press chooses a start, and they cannot be confused', () => {
-  // This is the whole reason one drawing can both be moved and be picked from.
-  // Measured in a browser on a real ring: a press moved the start from 0 to 76,
-  // and a drag after zooming moved the map and left the start where it was.
-  const movable = body('makeMapMovable');
-  assert.match(movable, /isDrag\(pressedAt, now\)/, 'travel is not measured');
-  assert.match(
-    movable,
-    /if \(active\.size === 0 && pressedAt && !moved\) pickStartAt/,
-    'a press that travelled can still choose a start',
-  );
-  // A second finger ends any tap the first was making.
-  assert.match(movable, /active\.size === 2[\s\S]{0,200}moved = true/);
+test('pressing a small drawing opens the map, by pointer and by keyboard alike', () => {
+  // A pointer-only way in has been a defect in this project before.
+  assert.match(js, /for \(const surface of \[surfaces\.trace, surfaces\.preview\]\)/);
+  assert.match(js, /surface\.canvas\.addEventListener\('click', open\)/, 'a press does not open it');
+
+  // The canvas is ALREADY a slider -- it reads elevation at a distance under
+  // the pointer -- so it must not also claim to be a button: two roles on one
+  // element means the second is silently lost. The keyboard gets a real button
+  // instead, in the chart's own head beside the basemap switch.
+  assert.doesNotMatch(js, /canvas\.setAttribute\('role', 'button'\)/, 'the slider role was overwritten');
+  assert.match(js, /button\.dataset\.openMap/, 'no real button for the keyboard');
+  assert.match(js, /button\.addEventListener\('click', open\)/);
+  assert.match(js, /button\.textContent = t\('map\.open'\)/, 'the button has no name');
+});
+
+test('a map that closes takes its listeners with it, however it was closed', () => {
+  // The opened map is built and destroyed every time. The button, Escape and
+  // the backdrop all close it, and openDialog's onClose is the only hook all
+  // three go through, so the teardown lives there and nowhere else.
+  const opened = body('openMap');
+  assert.match(opened, /if \(mapRelease\) mapRelease\(\)/, 'a second open would stack listeners');
+  assert.match(opened, /onClose: \(\) => \{/, 'teardown is not on the close hook');
+  assert.match(opened, /mapRelease = null/);
 });
 
 test('the view is the surface own, so every other drawing is still the whole route', () => {
@@ -365,4 +370,12 @@ test('a press on the drawing is carried back through the arrangement before it m
   assert.match(pick, /nearestOnTrace\(coords, cumulative/);
   assert.match(pick, /sourceIndexOf\(rotateDraft\.arranged, index\)/);
   assert.match(pick, /dispatchEvent\(new Event\('input'/, 'the slider is set without telling anybody');
+});
+
+test('the button that opens the map is named the moment it is built', () => {
+  // render() has already run by the time wire() creates this button, so naming
+  // it only in render() leaves it blank until something else redraws the page.
+  // It was blank, measured in a browser, until this was added.
+  const wired = js.slice(js.indexOf('button.dataset.openMap'));
+  assert.match(wired.slice(0, 400), /button\.textContent = t\('map\.open'\)/, 'born unlabelled');
 });

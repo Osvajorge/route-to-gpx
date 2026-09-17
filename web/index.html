@@ -429,6 +429,56 @@
       </div>
     </div>
 
+    <!-- THE MAP, OPENED. A route drawn into a card on a phone is a shape, not
+         a map: a walker about to do it wants to see where it actually goes,
+         and that needs the whole screen and a view that moves. Pressing any
+         trace opens this; the small drawings stay still pictures, which is
+         what lets a press on them mean "show me properly" rather than
+         competing with a drag. -->
+    <div
+      class="dialog-veil map-veil"
+      id="map-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="map-title"
+      hidden
+    >
+      <div class="dialog map-dialog" tabindex="-1">
+        <div class="dialog-head map-head">
+          <h2 class="dialog-title" id="map-title"></h2>
+          <span class="map-controls">
+            <button class="chart-toggle" id="map-zoom-out" type="button">&minus;</button>
+            <button class="chart-toggle" id="map-zoom-in" type="button">+</button>
+            <button class="chart-toggle" id="map-zoom-reset" type="button"></button>
+            <!-- No basemap switch here on purpose. The one on the report is
+                 global: turn the ground off there and this opens without it
+                 too, so the privacy the colophon promises still holds, and
+                 this head is not carrying a second copy of a control that
+                 already exists. -->
+          </span>
+          <button class="icon-button dialog-close" id="map-close" type="button"></button>
+        </div>
+
+        <figure class="chart map-chart" id="map-trace" data-chart="trace">
+          <div class="chart-canvas">
+            <canvas class="chart-map" aria-hidden="true" hidden></canvas>
+            <svg class="chart-svg" role="img"></svg>
+            <span class="gap-label" hidden></span>
+          </div>
+          <figcaption class="chart-foot">
+            <!-- drawTrace writes into both of these on every redraw, so they
+                 have to exist even where the dialog's own head already names
+                 the route. The title repeats what the head says, so it is
+                 hidden from sight and left for a screen reader. -->
+            <h3 class="chart-title visually-hidden"></h3>
+            <p class="chart-caption"></p>
+            <p class="chart-attribution"></p>
+            <p class="chart-hint" id="map-hint"></p>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+
     <!-- THE RE-ARRANGER. Reverse, and on a ring, start somewhere else. The
          order in the body is the order the argument runs: what was detected,
          the two controls, the drawing, what the result measures, and last of
