@@ -51,12 +51,109 @@ test('every road to the report takes focus with it', () => {
   // preview dialog. Step two replaces step one, so whatever was focused is
   // hidden and focus falls to the top of the document with nothing said. It was
   // fixed on the dialog's road alone, which left the two ordinary ones silent.
-  assert.match(body('showReport'), /el\.downloadButton\.focus\(\)/);
+  assert.match(body('showReport'), /el\.downloadButton\.focus\(/);
   assert.equal(
-    times('el.downloadButton.focus()'),
+    times('el.downloadButton.focus('),
     1,
     'focus belongs in showReport, where all three roads pass, and nowhere else',
   );
+});
+
+test('the report opens at its own first line, not at the foot of the page', () => {
+  // Taking focus to Download used to take the page there too. The report
+  // arrives under an entrance animation whose transform makes #report the
+  // containing block for the download bar, which is `fixed` at phone width, so
+  // the browser scrolled the whole document down to reveal it. Measured at
+  // 375x812: a conversion begun at scrollY 0 ended at 1024, the bottom of the
+  // scroll, below the title, the distance, the ascent and the gap warning.
+  const report = body('showReport');
+  assert.match(report, /el\.downloadButton\.focus\(\{ preventScroll: true \}\)/);
+  // And the page is put where the answer starts. This is also the line that
+  // rescues a browser too old to know the option and scroll anyway.
+  assert.match(report, /window\.scrollTo\(0, 0\)/);
+  assert.ok(
+    report.indexOf('preventScroll') < report.indexOf('window.scrollTo'),
+    'the scroll comes after the focus, or it would be the focus that had the last word',
+  );
+});
+
+test("the report is on the history, so the phone's own Back leaves it", () => {
+  // The view changed and the history did not, so the back gesture did what it
+  // does on a page nobody navigated: left the site, measurement and all.
+  assert.match(body('showReport'), /rememberReportEntry\(\)/);
+  assert.match(body('rememberReportEntry'), /history\.pushState\(\{ step: REPORT_ENTRY \}/);
+  // Guarded: the preview dialog can show a report over a report, and two
+  // entries for one report is a Back that has to be pressed twice.
+  assert.match(body('rememberReportEntry'), /if \(history\.state\?\.step === REPORT_ENTRY\) return/);
+
+  const wired = body('wire');
+  assert.match(wired, /window\.addEventListener\('popstate'/);
+  // A dialog is the thing on top, so Back takes that away first and puts the
+  // entry back, rather than resetting the page out from under an open dialog.
+  assert.match(wired, /dialogIsOpen\(el\.previewDialog\) \|\| dialogIsOpen\(el\.rotateDialog\)/);
+  assert.match(wired, /closeDialog\(\);\s*\n\s*rememberReportEntry\(\)/);
+  assert.match(wired, /if \(state\.view === 'report'\) leaveReport\(\)/);
+});
+
+test('every way back to step one spends the entry the report added', () => {
+  // The button and the masthead go through the history rather than straight to
+  // reset, or the entry would outlive the report and the next Back would be a
+  // press that visibly does nothing.
+  const home = body('goHome');
+  assert.match(home, /history\.back\(\)/);
+  assert.match(home, /history\.state\?\.step === REPORT_ENTRY/);
+  // And pressing it anywhere but the report does nothing at all: the masthead
+  // is a way home, not a way to wipe a link somebody is halfway through typing.
+  assert.match(home, /if \(state\.view !== 'report'\) return/);
+  assert.match(body('wire'), /el\.resetButton\.addEventListener\('click', goHome\)/);
+});
+
+test('the masthead is a control, by pointer and by keyboard alike', () => {
+  // A span in the markup, and pressing it did nothing at all. Its accessible
+  // name is the wordmark it already holds, which is the name a logo goes by.
+  const wired = body('wire');
+  assert.match(wired, /el\.wordmark\.setAttribute\('role', 'button'\)/);
+  assert.match(wired, /el\.wordmark\.tabIndex = 0/);
+  assert.match(wired, /el\.wordmark\.addEventListener\('click', goHome\)/);
+  // A role is a promise about the keyboard too, and a span keeps neither half.
+  assert.match(wired, /el\.wordmark\.addEventListener\('keydown'/);
+  assert.match(wired, /event\.key !== 'Enter' && event\.key !== ' '/);
+  assert.match(body('collect'), /el\.wordmark = document\.querySelector\('\.wordmark'\)/);
+});
+
+test('a position that never arrived is told apart from one that was refused', () => {
+  // All three used to be two: a timeout was folded in with "this browser
+  // cannot give a position", so the one outcome worth trying again was the one
+  // worded as hopeless, and the visitor read it as a button that does not work.
+  const ask = body('useMyLocation');
+  assert.match(ask, /error\.code === error\.PERMISSION_DENIED\) outcome = 'refused'/);
+  assert.match(ask, /error\.code === error\.TIMEOUT\) outcome = 'timedout'/);
+  assert.match(ask, /let outcome = 'unavailable'/);
+  assert.equal(
+    times("? 'refused' : 'unavailable'"),
+    0,
+    'the two-way split that lost the timeout is back',
+  );
+});
+
+test('the wait for a fix is long enough for a phone that has to look', () => {
+  const bound = /const GEO_TIMEOUT_MS = (\d+);/.exec(js);
+  assert.ok(bound, 'the wait for a position has no name and no bound');
+  const ms = Number(bound[1]);
+  // Ten seconds was the old bound and is short for a cold fix on a handset.
+  assert.ok(ms > 10000, 'still the bound that reported slow fixes as broken ones');
+  assert.ok(ms <= 60000, 'a wait nobody would sit through');
+  assert.match(body('useMyLocation'), /timeout: GEO_TIMEOUT_MS/);
+});
+
+test('a sentence that has not reached i18n.js yet is not shown as a key', () => {
+  // `translate` hands back the key when no language has the sentence, so the
+  // timeout's own wording would read as `geo.timedout` on screen until it
+  // lands. Until then it falls back to the outcome it used to be folded into.
+  const sentence = body('geoSentence');
+  assert.match(sentence, /text === key/);
+  assert.match(sentence, /t\('geo\.unavailable'\)/);
+  assert.match(body('renderNearbyForm'), /geoSentence\(finder\.nearby\.geo\)/);
 });
 
 test('a results panel has its live region before it has anything to say', () => {

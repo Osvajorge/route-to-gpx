@@ -403,7 +403,22 @@ function showReport(result) {
   //
   // Here rather than at each caller: three roads reach the report, this was on
   // one of them, and the other two were the same silent jump.
-  el.downloadButton.focus();
+  //
+  // Without `preventScroll` that focus moved the page as well. The report
+  // arrives under an entrance animation, and for as long as that runs its
+  // transform makes #report the containing block for anything `fixed` inside
+  // it, which on a phone is the download bar. The browser therefore reads
+  // Download as sitting at the foot of the report rather than against the
+  // viewport, and scrolls the document down to it: measured at 375x812, a
+  // conversion begun at the top of the page ended 1024px down, which is the
+  // bottom of the scroll. The visitor arrived below the title, the distance,
+  // the ascent and the gap warning, looking at the privacy notice. So focus
+  // moves and the page does not, and the page is then put where the answer
+  // starts. The scroll is also what rescues a browser too old to know the
+  // option, which would otherwise ignore it and jump.
+  el.downloadButton.focus({ preventScroll: true });
+  window.scrollTo(0, 0);
+  rememberReportEntry();
 }
 
 function reset() {
@@ -415,6 +430,60 @@ function reset() {
   // The painted ground belongs to the route that is being left behind.
   hideBasemap(surfaces.trace);
   setView('idle');
+}
+
+// The one entry this page puts on the browser's own history, and all that is
+// written on it.
+const REPORT_ENTRY = 'report';
+
+/** Puts the report on the history, so that Back comes back to step one.
+ *
+ *  The view used to change without the history changing with it, so the back
+ *  gesture did what it does on any page that was never navigated: it left the
+ *  site, and took the measurement with it. That gesture is the first thing a
+ *  phone visitor reaches for. An entry here costs nothing and buys it.
+ *
+ *  Guarded, because the report can be shown again over itself from the preview
+ *  dialog, and two entries for one report would mean pressing Back twice. */
+function rememberReportEntry() {
+  if (history.state?.step === REPORT_ENTRY) return;
+  history.pushState({ step: REPORT_ENTRY }, '');
+}
+
+/** Back to step one: the masthead, the button on the bar and the back gesture
+ *  all end here.
+ *
+ *  Through the history rather than straight to `reset`, so that the entry the
+ *  report added is spent rather than left behind. Leaving the report by a
+ *  button while its entry stayed on the stack would make the next Back a press
+ *  that visibly does nothing.
+ *
+ *  A report the visitor has not downloaded is left without a warning, and that
+ *  is deliberate: nothing is lost that a second press of Convert does not get
+ *  back, the link is still on screen in the field, and a confirmation box on
+ *  the masthead would be the loudest thing on a page whose whole manner is
+ *  quiet. */
+function goHome() {
+  // Already at the start. The masthead is a way home, never a way to wipe a
+  // link somebody is halfway through typing.
+  if (state.view !== 'report') return;
+  if (history.state?.step === REPORT_ENTRY) {
+    history.back();
+    return;
+  }
+  leaveReport();
+}
+
+function leaveReport() {
+  el.input.value = '';
+  reset();
+  // Back to the tab the visitor came from, with the rows they were looking at
+  // still on it. Losing a page of results because you opened one of them is
+  // the kind of thing that makes a tool annoying.
+  focusActiveField();
+  // Step one is shorter than the report, so without this the visitor comes
+  // back somewhere down the middle of it.
+  window.scrollTo(0, 0);
 }
 
 /** Hands the browser a moment to paint the stage that just changed.
@@ -2297,6 +2366,31 @@ function readCoordinate(text, limit) {
 
 // --------------------------------------------------------------- my location
 
+// How long to wait for a position before calling it a timeout.
+//
+// Ten seconds was the old bound, and ten seconds is short for a phone. A
+// handset that has not been asked where it is for a while has to find out from
+// scratch, and that is regularly slower than this; every one of those waits
+// used to end in a sentence telling the visitor their browser cannot do this
+// at all. Thirty is long enough to be worth waiting out and short enough that
+// the answer still arrives while the button is being looked at.
+//
+// A judgement, not a measurement: the phone this was reported from is not
+// something this project can time from here.
+const GEO_TIMEOUT_MS = 30000;
+
+/** The sentence for one geolocation outcome.
+ *
+ *  `translate` hands back the key itself when no language has a sentence for
+ *  it, so a key that has not reached i18n.js yet would put `geo.timedout` on
+ *  screen where a sentence belongs. Until it lands, a timeout reads as the
+ *  outcome it used to be folded into rather than as a fault in the page. */
+function geoSentence(outcome) {
+  const key = `geo.${outcome}`;
+  const text = t(key);
+  return text === key ? t('geo.unavailable') : text;
+}
+
 /** Asked once, on the click, and never on load or on a timer.
  *
  *  A refusal is a choice, not a failure: it is answered with the two ways of
@@ -2320,11 +2414,19 @@ function useMyLocation() {
       renderFinder();
     },
     (error) => {
-      finder.nearby.geo =
-        error.code === error.PERMISSION_DENIED ? 'refused' : 'unavailable';
+      // Three different things happen here and two of them used to share a
+      // sentence. A fix that was still on its way when the clock ran out was
+      // reported as a browser that cannot give a position, so the one outcome
+      // worth trying again was the one worded as hopeless, and the visitor
+      // read it as a button that does not work. Pressing the button after a
+      // timeout asks again from scratch; its own sentence is what says so.
+      let outcome = 'unavailable';
+      if (error.code === error.PERMISSION_DENIED) outcome = 'refused';
+      if (error.code === error.TIMEOUT) outcome = 'timedout';
+      finder.nearby.geo = outcome;
       renderFinder();
     },
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+    { enableHighAccuracy: false, timeout: GEO_TIMEOUT_MS, maximumAge: 60000 },
   );
 }
 
@@ -2532,7 +2634,7 @@ function renderNearbyForm() {
   el.geoHere.innerHTML = `${icon('crosshair')}<span>${t('nearby.here')}</span>`;
   el.placeOpen.innerHTML = `${icon('search')}<span>${t('nearby.place')}</span>`;
   el.placeOpen.setAttribute('aria-expanded', finder.place.open ? 'true' : 'false');
-  el.geoNote.textContent = finder.nearby.geo ? t(`geo.${finder.nearby.geo}`) : '';
+  el.geoNote.textContent = finder.nearby.geo ? geoSentence(finder.nearby.geo) : '';
 
   el.nearbyLatLabel.textContent = t('nearby.lat');
   el.nearbyLngLabel.textContent = t('nearby.lng');
@@ -3757,6 +3859,7 @@ function collect() {
   el.stepOne = document.getElementById('step-one');
   el.skip = document.querySelector('.skip-link');
   el.langButton = document.getElementById('lang-toggle');
+  el.wordmark = document.querySelector('.wordmark');
   el.heading = document.getElementById('step1-heading');
   el.subLink = document.getElementById('sub-link');
   el.subSearch = document.getElementById('sub-search');
@@ -3932,13 +4035,34 @@ function wire() {
 
   el.downloadButton.addEventListener('click', downloadResult);
 
-  el.resetButton.addEventListener('click', () => {
-    el.input.value = '';
-    reset();
-    // Back to the tab the visitor came from, with the rows they were looking
-    // at still on it. Losing a page of results because you opened one of them
-    // is the kind of thing that makes a tool annoying.
-    focusActiveField();
+  el.resetButton.addEventListener('click', goHome);
+
+  // The masthead is the way home on every other site, and here it was a label.
+  // It is a span in the markup, so what makes it a control is done from here
+  // until the markup carries a button of its own. Its accessible name is the
+  // wordmark it already holds, which is the name a site's own logo goes by.
+  el.wordmark.setAttribute('role', 'button');
+  el.wordmark.tabIndex = 0;
+  el.wordmark.addEventListener('click', goHome);
+  el.wordmark.addEventListener('keydown', (event) => {
+    // A role is a promise about the keyboard as much as about the pointer, and
+    // a span keeps neither half on its own.
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    // Space would otherwise scroll the page instead of pressing anything.
+    event.preventDefault();
+    goHome();
+  });
+
+  window.addEventListener('popstate', () => {
+    // A dialog is the thing on top, so it is the thing Back takes away first.
+    // The entry goes back on, because the report underneath is still the view
+    // and still owes the visitor a Back of its own.
+    if (dialogIsOpen(el.previewDialog) || dialogIsOpen(el.rotateDialog)) {
+      closeDialog();
+      rememberReportEntry();
+      return;
+    }
+    if (state.view === 'report') leaveReport();
   });
 
   // The same feature as the drop below, for anyone not using a pointer.
