@@ -24,7 +24,11 @@
   </head>
 
   <body>
-    <a class="skip-link" href="#tabs">Skip to the tabs</a>
+    <!-- Points at <main> and not at the tabs: #tabs lives inside #step-one,
+         which app.js hides for the whole of the report, so on every report
+         this link led to an element that was not in the document any more and
+         moved nothing. <main> is the one target both views share. -->
+    <a class="skip-link" href="#app">Skip to the content</a>
 
     <div class="shell">
       <header class="masthead">
@@ -70,11 +74,14 @@
         </div>
       </noscript>
 
-      <main id="app" data-view="idle">
+      <!-- tabindex="-1" so the skip link above lands focus here rather than
+           only scrolling: a fragment target that cannot hold focus leaves the
+           next Tab back at the top of the document. -->
+      <main id="app" data-view="idle" tabindex="-1">
         <section class="step" id="step-one" aria-labelledby="step1-heading">
           <!-- Three ways of arriving at one URL, not three products. Whichever
                tab is open, the route still goes through the same conversion. -->
-          <div class="tabs" id="tabs" role="tablist" tabindex="-1">
+          <div class="tabs" id="tabs" role="tablist">
             <button
               class="tab"
               id="tab-search"
@@ -290,9 +297,13 @@
             <p class="method-body" id="method-sampling"></p>
           </details>
 
-          <figure class="chart" id="trace" data-chart="trace">
+          <!-- Named by its own title. A figure takes its name from the whole
+               figcaption, and the head of a trace carries controls, so this one
+               announced itself as "Route trace Hide map" on the report and the
+               re-arranger's as "Route trace - + Fit Hide map". -->
+          <figure class="chart" id="trace" data-chart="trace" aria-labelledby="trace-title">
             <figcaption class="chart-head">
-              <h2 class="chart-title"></h2>
+              <h2 class="chart-title" id="trace-title"></h2>
               <span class="chart-head-end">
                 <span class="chart-reading"></span>
                 <button id="map-toggle" class="chart-toggle" type="button" data-map-toggle></button>
@@ -369,21 +380,21 @@
       hidden
     >
       <div class="dialog" tabindex="-1">
-        <header class="dialog-head">
+        <div class="dialog-head">
           <div class="dialog-identity">
             <p class="dialog-kicker" id="preview-kicker"></p>
             <h2 class="dialog-title" id="preview-title"></h2>
             <p class="source-line" id="preview-source"></p>
           </div>
           <button class="icon-button dialog-close" id="preview-close" type="button"></button>
-        </header>
+        </div>
 
         <div class="dialog-body">
           <div class="tiles" id="preview-tiles"></div>
 
-          <figure class="chart" id="preview-trace" data-chart="trace">
+          <figure class="chart" id="preview-trace" data-chart="trace" aria-labelledby="preview-trace-title">
             <figcaption class="chart-head">
-              <h3 class="chart-title"></h3>
+              <h3 class="chart-title" id="preview-trace-title"></h3>
               <span class="chart-head-end">
                 <button class="chart-toggle" type="button" data-map-toggle></button>
               </span>
@@ -410,11 +421,11 @@
           <p class="dialog-note" id="preview-note"></p>
         </div>
 
-        <footer class="dialog-foot">
+        <div class="dialog-foot">
           <button class="primary-button" id="preview-download" type="button"></button>
           <button class="ghost-button" id="preview-adjust" type="button"></button>
           <button class="link-button" id="preview-report" type="button"></button>
-        </footer>
+        </div>
       </div>
     </div>
 
@@ -431,14 +442,14 @@
       hidden
     >
       <div class="dialog" tabindex="-1">
-        <header class="dialog-head">
+        <div class="dialog-head">
           <div class="dialog-identity">
             <p class="dialog-kicker" id="rotate-kicker"></p>
             <h2 class="dialog-title" id="rotate-title"></h2>
             <p class="source-line" id="rotate-route"></p>
           </div>
           <button class="icon-button dialog-close" id="rotate-close" type="button"></button>
-        </header>
+        </div>
 
         <div class="dialog-body">
           <p class="field-note" id="rotate-detected"></p>
@@ -473,9 +484,9 @@
             <button class="link-button" id="rotate-reset" type="button"></button>
           </div>
 
-          <figure class="chart" id="rotate-trace" data-chart="trace">
+          <figure class="chart" id="rotate-trace" data-chart="trace" aria-labelledby="rotate-trace-title">
             <figcaption class="chart-head">
-              <h3 class="chart-title"></h3>
+              <h3 class="chart-title" id="rotate-trace-title"></h3>
               <span class="chart-head-end">
                 <!-- A phone has no wheel and no keyboard, so a pinch that does
                      not register leaves no way to zoom at all. These are that
@@ -509,7 +520,7 @@
           <p class="dialog-note" id="rotate-notrim"></p>
         </div>
 
-        <footer class="dialog-foot rotate-foot">
+        <div class="dialog-foot rotate-foot">
           <!-- Above the button, not beside it and not after it. A seam this
                tool opened is the last thing read before the file is taken. -->
           <div id="rotate-seam" class="panel-warn warning-line" role="status" hidden></div>
@@ -517,7 +528,7 @@
             <button class="primary-button" id="rotate-download" type="button"></button>
             <p class="dialog-filename" id="rotate-filename"></p>
           </div>
-        </footer>
+        </div>
       </div>
     </div>
 
