@@ -1683,8 +1683,22 @@ h1 {
   color: var(--accent);
 }
 
+/* THE READOUT STAYS INSIDE THE DRAWING IT BELONGS TO.
+ *
+ * The overlays in here climb to z-index 4, and on a phone the fixed action
+ * bar also sits at 4. Same number, and the charts come after the bar in
+ * the markup, so a tie is decided by document order and the readout wins: it
+ * paints over the Download button rather than under it. Nothing but the
+ * `overflow: hidden` above keeps that from being visible today, and a clip is
+ * a weak promise — it holds only while the box happens to stop short of the
+ * bar.
+ *
+ * `isolation: isolate` makes this box a stacking context, so the numbers
+ * inside it are ranked against each other and against nothing else. The box
+ * itself then meets the bar at z-index auto, which loses to 4 every time. */
 .chart-canvas {
   position: relative;
+  isolation: isolate;
   border-radius: var(--radius-inner);
   background: var(--bg);
   overflow: hidden;
@@ -2501,12 +2515,24 @@ html.dialog-open body {
   .shell {
     --shell-pad: 12px;
 
-    /* What the fixed download bar takes off the bottom of the viewport: its
-     * 1px top border, 12px of padding, the 50px button, 12px more, and the
-     * home indicator under all of it. Measured at 375x812: 75px with no inset.
+    /* What the fixed download bar takes off the bottom of the viewport, at the
+     * tallest it can get: its 1px top border, 12px of padding, the 50px
+     * primary button, the 8px between rows, a 46px second row, 12px more
+     * padding, and the home indicator under all of it. 129px with no inset.
      * Published here because the bar is out of flow, so whatever has to keep
-     * clear of it cannot read its height for itself. */
-    --action-bar: calc(75px + env(safe-area-inset-bottom));
+     * clear of it cannot read its height for itself.
+     *
+     * THE TALLEST, NOT THE USUAL. The bar is one row whenever one row holds
+     * it and two rows when it does not, and which of the two happens depends
+     * on how wide the button labels are in the language being read: measured
+     * at 360px, "Download GPX" fits on one line and "Descargar GPX" does not.
+     * No media query can ask that question, so the reservation answers the
+     * worse case. The cost when the bar is one row is 54px of empty scroll
+     * past the last line of the page. The cost of guessing the other way was
+     * measured at 360x844 in Spanish: the bar stood 95.8px tall against a 75px
+     * reservation, and the bottom 20.8px of the colophon sat behind it with
+     * nowhere further to scroll. Air is the cheaper mistake. */
+    --action-bar: calc(129px + env(safe-area-inset-bottom));
 
     padding-top: 14px;
   }
@@ -2662,25 +2688,55 @@ html.dialog-open body {
     align-items: stretch;
   }
 
+  /* THE BAR REFLOWS RATHER THAN COLLIDES.
+   *
+   * Three controls share one line here and the line has no slack left in it.
+   * Measured at 390x844 in Spanish: 196.7px of button, 46px of icon, 91.3px of
+   * link, two 12px gaps and two 16px margins come to 390.0px, to the pixel. So
+   * the width that works is the width that only just works, and one longer
+   * word takes it apart — measured at 360x844, "Descargar GPX" broke onto a
+   * second line inside its button and the bar grew from 75px to 95.8px with
+   * nothing told to expect it.
+   *
+   * Wrapping is the answer rather than shrinking the controls, because the two
+   * secondary controls carry words and a word that has been squeezed is a word
+   * that has to be guessed at. When the line runs out, the last control drops
+   * to a second row whole. */
   .report-actions {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 4;
-    gap: 12px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    column-gap: 12px;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     background: var(--bg);
     border-top: 1px solid var(--surface-line);
   }
 
+  /* The primary is the only control that grows into spare width, and the only
+   * one that keeps a floor under it. 180px is what its own label needs to stay
+   * on one line: measured in Spanish, the button reads "Descargar GPX" on one
+   * line at 181.7px wide and on two at 166.7px. Below that floor the whole
+   * button drops to a row of its own and takes the full width, which is more
+   * room than it was asking for. */
   #download {
-    flex: 1;
+    flex: 1 1 180px;
     min-height: 50px;
   }
 
+  /* Both secondary controls held to the thumb floor the rest of this block
+   * already holds the page to. The link needed it: a link is as tall as its
+   * own text, and "New link" measured 72.5 x 29.6 at 390 — wide enough to hit
+   * and not tall enough. Centred, because `.link-button` aligns itself to the
+   * top of whatever holds it, which on a 50px row leaves it hanging. */
+  #report-adjust,
   #reset {
     flex: none;
+    align-self: center;
+    min-height: 46px;
   }
 
   /* The bar is fixed, so the page has to hold a gap the height of it or the
