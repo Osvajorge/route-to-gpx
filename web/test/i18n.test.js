@@ -301,3 +301,30 @@ test('the activity note says who narrows the list and never counts pages for the
     assert.match(said, /our server|nuestro servidor/i);
   }
 });
+
+test('every outcome useMyLocation can reach has a sentence in both languages', () => {
+  // geoSentence falls back to geo.unavailable when a key is missing, which is
+  // a kindness that hides a defect: a `timedout` outcome was added to the code
+  // and its string never was, so a slow fix -- the one outcome worth trying
+  // again -- was reported as a browser that cannot give a position. That is
+  // the exact bug the outcome had been split apart to end.
+  //
+  // Read out of app.js rather than listed here, so an outcome added later is
+  // caught by this test rather than by somebody on a phone.
+  const app = readFileSync(fileURLToPath(new URL('../assets/app.js', import.meta.url)), 'utf8');
+  const start = app.indexOf('function useMyLocation');
+  assert.notEqual(start, -1);
+  const source = app.slice(start, app.indexOf('\n}\n', start));
+
+  const outcomes = new Set(
+    [...source.matchAll(/(?:geo\s*=\s*|outcome\s*=\s*)'([a-z]+)'/g)].map((m) => m[1]),
+  );
+  assert.ok(outcomes.size >= 4, `only found ${[...outcomes]}`);
+
+  for (const lang of LANGUAGES) {
+    for (const outcome of outcomes) {
+      const key = `geo.${outcome}`;
+      assert.notEqual(translate(lang, key), key, `${lang} has no ${key}`);
+    }
+  }
+});

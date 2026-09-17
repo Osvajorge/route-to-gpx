@@ -60,7 +60,9 @@ const STRINGS = {
     'geo.asking': 'Asking your browser where you are.',
     'geo.filled': 'Latitude and longitude filled in from your browser.',
     'geo.refused':
-      'Your browser did not share a position. Type the coordinates below, or search a place.',
+      'Your browser did not share a position. Allow location for this page in its settings, or type the coordinates below.',
+    'geo.timedout':
+      'Your browser took too long to find you. Press again to try once more, or type the coordinates below.',
     'geo.unavailable':
       'This browser cannot give a position. Type the coordinates below, or search a place.',
 
@@ -325,6 +327,14 @@ const STRINGS = {
     'step2.download': 'Download GPX',
     'step2.garmin': 'Send to my Garmin',
     'step2.garmin.sending': 'Sending',
+    'garmin.yourWatch': 'your watch',
+    'garmin.note.queued':
+      'Saved to Garmin Connect and queued for {device}. It arrives on the next sync, under Navigate then Courses.',
+    'garmin.note.saved':
+      'Saved to Garmin Connect. No watch was queued, so open Garmin Connect and use Send to Device.',
+    'map.zoomin': 'Zoom in',
+    'map.zoomout': 'Zoom out',
+    'map.zoomreset': 'Fit',
     'step2.garmin.sent': 'On its way to your watch',
     // The course reached the account but not the queue. Different instruction,
     // so a different sentence: it is there, and it needs one tap to travel.
@@ -536,7 +546,9 @@ const STRINGS = {
     'geo.asking': 'Preguntando al navegador dónde estás.',
     'geo.filled': 'Latitud y longitud rellenadas desde tu navegador.',
     'geo.refused':
-      'Tu navegador no ha compartido la posición. Escribe las coordenadas abajo, o busca un lugar.',
+      'Tu navegador no ha compartido la posición. Permite la ubicación para esta página en sus ajustes, o escribe las coordenadas abajo.',
+    'geo.timedout':
+      'Tu navegador tardó demasiado en encontrarte. Pulsa otra vez para reintentar, o escribe las coordenadas abajo.',
     'geo.unavailable':
       'Este navegador no puede dar una posición. Escribe las coordenadas abajo, o busca un lugar.',
 
@@ -752,6 +764,14 @@ const STRINGS = {
     'step2.download': 'Descargar GPX',
     'step2.garmin': 'Enviar a mi Garmin',
     'step2.garmin.sending': 'Enviando',
+    'garmin.yourWatch': 'tu reloj',
+    'garmin.note.queued':
+      'Guardado en Garmin Connect y en cola para {device}. Llega en la siguiente sincronización, en Navegar y luego Recorridos.',
+    'garmin.note.saved':
+      'Guardado en Garmin Connect. No se encoló ningún reloj: abre Garmin Connect y usa Enviar al dispositivo.',
+    'map.zoomin': 'Acercar',
+    'map.zoomout': 'Alejar',
+    'map.zoomreset': 'Ajustar',
     'step2.garmin.sent': 'De camino a tu reloj',
     'step2.garmin.saved': 'Guardado en Garmin Connect',
     'step2.garmin.note':

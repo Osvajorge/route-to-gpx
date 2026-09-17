@@ -271,6 +271,12 @@
             </div>
           </div>
 
+          <!-- What happened to a route sent to Garmin. A button that changed
+               its own label said it too quietly to notice on a phone, and the
+               bar it sits in is fixed to the bottom and wraps. role=status so
+               it is spoken when it appears. -->
+          <p id="garmin-note" class="panel-note" role="status" hidden></p>
+
           <div id="tiles" class="tiles"></div>
 
           <!-- WHAT THE ASCENT WAS MADE FROM. The gap tile prints the one
@@ -471,6 +477,13 @@
             <figcaption class="chart-head">
               <h3 class="chart-title"></h3>
               <span class="chart-head-end">
+                <!-- A phone has no wheel and no keyboard, so a pinch that does
+                     not register leaves no way to zoom at all. These are that
+                     way, and they are also the keyboard's and a screen
+                     reader's. -->
+                <button id="rotate-zoom-out" class="chart-toggle" type="button">&minus;</button>
+                <button id="rotate-zoom-in" class="chart-toggle" type="button">+</button>
+                <button id="rotate-zoom-reset" class="chart-toggle" type="button"></button>
                 <button class="chart-toggle" type="button" data-map-toggle></button>
               </span>
             </figcaption>

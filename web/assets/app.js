@@ -716,6 +716,17 @@ function renderReport() {
     state.garminCourse && !state.garminCourse.queuedForDevice
       ? t('step2.garmin.savednote')
       : t('step2.garmin.note');
+
+  // A button that changes its own label says it too quietly, and on a phone it
+  // sits in a bar fixed to the bottom that the eye is not on. The sentence
+  // names the watch, because "sent" without saying where is not an answer.
+  const sent = state.garminCourse;
+  el.garminNote.hidden = !sent;
+  if (sent) {
+    el.garminNote.textContent = sent.queuedForDevice
+      ? t('garmin.note.queued', { device: sent.deviceName || t('garmin.yourWatch') })
+      : t('garmin.note.saved');
+  }
   el.sendButton.innerHTML = `${icon('share')}<span>${t('step2.send')}</span>`;
   // What the receiving app does to the numbers belongs on the button that
   // hands it over, not in a note somebody scrolls past.
@@ -2031,6 +2042,13 @@ function renderRotate() {
   const startWords = t('rotate.start.value', { km: formatKm(startM, 1) });
   el.rotateStart.setAttribute('aria-valuetext', startWords);
   el.rotateStartValue.textContent = startWords;
+
+  el.rotateZoomIn.setAttribute('aria-label', t('map.zoomin'));
+  el.rotateZoomIn.title = t('map.zoomin');
+  el.rotateZoomOut.setAttribute('aria-label', t('map.zoomout'));
+  el.rotateZoomOut.title = t('map.zoomout');
+  el.rotateZoomReset.textContent = t('map.zoomreset');
+  el.rotateZoomReset.setAttribute('aria-label', t('map.zoomreset'));
 
   el.rotateReset.textContent = t('rotate.reset');
   el.rotateReset.hidden = !changed;
@@ -4166,6 +4184,10 @@ function collect() {
   el.downloadButton = document.getElementById('download');
   el.sendButton = document.getElementById('send-file');
   el.garminButton = document.getElementById('send-garmin');
+  el.garminNote = document.getElementById('garmin-note');
+  el.rotateZoomIn = document.getElementById('rotate-zoom-in');
+  el.rotateZoomOut = document.getElementById('rotate-zoom-out');
+  el.rotateZoomReset = document.getElementById('rotate-zoom-reset');
   el.reportAdjust = document.getElementById('report-adjust');
   el.resetButton = document.getElementById('reset');
   el.tiles = document.getElementById('tiles');
@@ -4282,6 +4304,18 @@ function wire() {
   el.downloadButton.addEventListener('click', downloadResult);
   el.sendButton.addEventListener('click', sendResult);
   el.garminButton.addEventListener('click', sendToGarmin);
+
+  // The same three moves the wheel and the keyboard make, for the phone that
+  // has neither.
+  const zoomRotate = (factor) => {
+    const surface = surfaces.rotate;
+    const box = { x: 500, y: 300 };
+    surface.view = factor === null ? homeView() : zoomViewAt(surface.view, factor, box);
+    if (rotateDraft) drawTrace(surface, rotateDraft.arranged.points, rotateDraft.after);
+  };
+  el.rotateZoomIn.addEventListener('click', () => zoomRotate(1.6));
+  el.rotateZoomOut.addEventListener('click', () => zoomRotate(1 / 1.6));
+  el.rotateZoomReset.addEventListener('click', () => zoomRotate(null));
 
   el.resetButton.addEventListener('click', goHome);
 
