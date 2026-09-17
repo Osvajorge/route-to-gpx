@@ -328,3 +328,54 @@ test('every outcome useMyLocation can reach has a sentence in both languages', (
     }
   }
 });
+
+test('the caption under the link field does not name the button under the caption', () => {
+  // Four lines of mono at 390, and the last clause of them named Choose a .gpx
+  // file, which is the visible label of the button 40px below. The three link
+  // shapes and the drop are the facts nothing else on that screen carries, so
+  // those are what stayed and those are what is pinned here.
+  for (const lang of LANGUAGES) {
+    const said = translate(lang, 'step1.hint');
+    assert.match(said, /komoot\.com\/tour/, `${lang} drops the tour link shape`);
+    assert.match(said, /komoot\.com\/smarttour/, `${lang} drops the smarttour link shape`);
+    assert.match(said, /wikiloc\.com/, `${lang} drops Wikiloc`);
+    assert.match(said, /\.gpx/, `${lang} drops the file you already have`);
+    assert.doesNotMatch(
+      said,
+      /\bbelow\b|\babajo\b/i,
+      `${lang} sends the reader to a control already in front of them: ${said}`,
+    );
+  }
+});
+
+test('four lines on the good path are captions and footnotes, not paragraphs', () => {
+  // None of these lost a fact. Each lost a clause that something else on the
+  // same screen already says, and the budget is what each came out at with a
+  // little room, so a clause growing back fails here rather than on a phone.
+  //
+  //   step1.hint       159 -> 127  the button under it says "choose it below"
+  //   provenance       111 ->  95  named the file twice in one sentence
+  //   rotate.rule       71 ->  63  the tail of a 245-character paragraph that
+  //                                stood between the reader and the two
+  //                                controls the re-arranger exists for
+  //   step2.send.note  200 -> 184  never seen by anybody: it is the button's
+  //                                aria-description, read out in full every
+  //                                time the button takes focus
+  //
+  // The budgets answer the longer of the two languages, because both are read
+  // by somebody and only one of them can set the number.
+  const budget = {
+    'step1.hint': 152,
+    provenance: 106,
+    'rotate.rule': 66,
+    'step2.send.note': 197,
+  };
+  const fill = { floor: '30', ceiling: '1000' };
+  for (const lang of LANGUAGES) {
+    for (const [key, cap] of Object.entries(budget)) {
+      const said = translate(lang, key, fill);
+      assert.ok(!said.includes('{'), `${lang} ${key} left a placeholder: ${said}`);
+      assert.ok(said.length <= cap, `${lang} ${key} is ${said.length} against ${cap}: ${said}`);
+    }
+  }
+});
