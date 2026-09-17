@@ -510,7 +510,6 @@ const STRINGS = {
       'Charts and card outlines sit on OpenStreetMap tiles, so they see your IP address and roughly where your routes are. Hide map stops it.',
     'footer.processing.fonts':
       'Google Fonts serves the two typefaces, so Google sees your IP address as the page opens, before you press anything.',
-    'footer.source': 'Source code',
   },
 
   es: {
@@ -920,7 +919,6 @@ const STRINGS = {
       'Gráficos y contornos usan teselas de OpenStreetMap, así que ven tu dirección IP y aproximadamente dónde están tus rutas. Ocultar mapa lo apaga.',
     'footer.processing.fonts':
       'Google Fonts sirve las dos tipografías, así que Google ve tu dirección IP al abrirse la página, antes de que pulses nada.',
-    'footer.source': 'Código fuente',
   },
 };
 

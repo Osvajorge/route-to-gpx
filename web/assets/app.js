@@ -1889,7 +1889,6 @@ function renderFooter() {
   ]
     .map((key) => `<span>${t(key)}</span>`)
     .join('');
-  el.footerSource.textContent = t('footer.source');
 }
 
 // -------------------------------------------------------------- the dialogs
@@ -4230,7 +4229,6 @@ function collect() {
   el.secondary = document.getElementById('secondary');
   el.provenance = document.getElementById('provenance');
   el.footerProcessing = document.getElementById('footer-processing');
-  el.footerSource = document.getElementById('footer-source');
 
   el.previewDialog = document.getElementById('preview-dialog');
   el.previewKicker = document.getElementById('preview-kicker');
