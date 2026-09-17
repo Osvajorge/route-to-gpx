@@ -61,6 +61,36 @@ export function worldYToLat(worldY) {
   return (Math.atan(Math.sinh(Math.PI * (1 - 2 * worldY))) * 180) / Math.PI;
 }
 
+/** A recording in world units, worked out once and kept.
+ *
+ *  A pinch asks for the same projection of the same recording sixty times a
+ *  second, and the expensive half of it -- a tangent and an inverse hyperbolic
+ *  sine per point -- does not depend on where the fingers are. Only the
+ *  subtract and the multiply below do. So the trigonometry is done once per
+ *  recording and what a frame costs is two arithmetic operations per point.
+ *
+ *  Held weakly against the array the caller owns, so a route the page has
+ *  finished with takes its numbers with it. Nothing here edits a recording in
+ *  place -- a re-arranged route is a new array -- so what is kept cannot go
+ *  stale under it. Two plain arrays rather than objects: a day-long recording
+ *  is tens of thousands of points, and this is a copy of all of them. */
+const worldUnits = new WeakMap();
+
+function worldOf(points) {
+  const held = worldUnits.get(points);
+  if (held && held.length === points.length) return held;
+  const count = points.length;
+  const wx = new Float64Array(count);
+  const wy = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    wx[i] = lonToWorldX(points[i].lon);
+    wy[i] = latToWorldY(points[i].lat);
+  }
+  const made = { wx, wy, length: count };
+  worldUnits.set(points, made);
+  return made;
+}
+
 /** How a shape sits in a box: the world point that lands at (0, 0), and how
  *  many box units one world unit covers. Mercator keeps angles, so one factor
  *  serves both axes, and that single factor is what lets the tile layer
@@ -77,9 +107,10 @@ export function fitFrame(points, box) {
   let maxWY = -Infinity;
   // A long recording is tens of thousands of points, which is more arguments
   // than Math.min(...array) can take, so the bounds are found by walking.
-  for (const p of points) {
-    const wx = lonToWorldX(p.lon);
-    const wy = latToWorldY(p.lat);
+  const world = worldOf(points);
+  for (let i = 0; i < world.length; i++) {
+    const wx = world.wx[i];
+    const wy = world.wy[i];
     if (wx < minWX) minWX = wx;
     if (wx > maxWX) maxWX = wx;
     if (wy < minWY) minWY = wy;
@@ -111,10 +142,15 @@ export function traceFrame(points) {
 }
 
 export function projectInFrame(points, frame) {
-  return points.map((p) => ({
-    x: (lonToWorldX(p.lon) - frame.worldX0) * frame.unitsPerWorld,
-    y: (latToWorldY(p.lat) - frame.worldY0) * frame.unitsPerWorld,
-  }));
+  const world = worldOf(points);
+  const out = new Array(world.length);
+  for (let i = 0; i < world.length; i++) {
+    out[i] = {
+      x: (world.wx[i] - frame.worldX0) * frame.unitsPerWorld,
+      y: (world.wy[i] - frame.worldY0) * frame.unitsPerWorld,
+    };
+  }
+  return out;
 }
 
 /** Track points as viewBox coordinates. There is no north-south flip here:
@@ -153,10 +189,44 @@ export function projectTrace(points) {
 // transform over the top would have done, leaving the ground underneath at the
 // sharpness and the position it had before the fingers moved.
 
-/** No further out than the fit. The fit already holds the whole route, and the
- *  ground beyond it is ground this drawing never claimed to be about. Going out
- *  past it would ask the tile server for scenery. */
+/** No further out than the fit, for a drawing that is only ever looked at. A
+ *  chart on a report is an illustration of one route and nothing else, so it
+ *  stays where it was put. */
 export const MAP_MIN_SCALE = 1;
+
+/** No further out than the route at a quarter of the window, for a map.
+ *
+ *  A map that stopped at the fit could never show the valley the route does not
+ *  enter, which is half of what somebody reads a map for the night before. A
+ *  quarter each way is sixteen times the route's own area: the village below
+ *  the ridge and the road to the trailhead, and not a continent.
+ *
+ *  It does not cost the tile server anything, which was measured before it was
+ *  written. Going out one step drops the tile level by one at the same time, so
+ *  the same window still takes the same handful of tiles: on the 551 point
+ *  route in a 390x677 phone canvas, 12 tiles at the fit, 12 at this floor, and
+ *  12 pushed as far into the corner as the margin below allows, against the
+ *  ceiling of 64 in `tileLayer`. What limits this is meaning, not tiles. */
+export const MAP_ROAM_MIN_SCALE = 0.25;
+
+/** How far past the fitted box a map may be pushed, as a share of the window.
+ *
+ *  A half means the centre of the window stays inside the box the route was
+ *  fitted into. At the fit that is exactly half a screen of new ground in any
+ *  direction with the other half still route. Zoomed in it is half a screen
+ *  past the box, and the box has corners a diagonal route never visits, so the
+ *  route can be off the screen there -- as it could before any of this, at the
+ *  same zoom, under the old rule. What answers that is Fit, which is a labelled
+ *  button, the 0 key and the Home key, and which lands back on the drawing the
+ *  map opened with.
+ *
+ *  The alternatives were weighed and refused. A multiple of the route's own box
+ *  would let a 2 km stroll be pushed behind a mountain range while a 140 km ride
+ *  barely moved, because the allowance would grow with the route rather than
+ *  with the screen. Unbounded panning turns
+ *  "where has my route gone" into a page reload, which is the one thing a
+ *  drawing this page has already measured must never need. */
+export const ROAM_MARGIN = 0.5;
 
 /** As close as the map goes. It puts the 1.1 px measured above at 17, so the
  *  point being picked can be told from the ones either side of it, and it is
@@ -184,30 +254,60 @@ export function traceBox() {
 }
 
 /** The whole route, which is where every drawing starts and what the reset goes
- *  back to. */
+ *  back to.
+ *
+ *  It carries no permission either way, because the fit is the same view under
+ *  both rules: the route whole, in the middle. Whatever moves it next says what
+ *  that move is allowed to do. */
 export function homeView(box = traceBox()) {
   return { scale: 1, centerX: box.width / 2, centerY: box.height / 2 };
 }
 
-/** A view with the route still in it.
+/** Which floor a view is held to, in one place: the clamp and the zoom both
+ *  need it and a second copy of it would be a map that stops in one direction
+ *  and not the other. */
+function scaleFloor(view, box) {
+  return (view?.roam ?? box?.roam) === true ? MAP_ROAM_MIN_SCALE : MAP_MIN_SCALE;
+}
+
+/** A view with the route still findable from it.
  *
- *  The window stays inside the fitted box, so the drawing cannot be pushed off
- *  its own edge and left as blank ground with no way back but the reset. At the
- *  fit there is nothing outside the window, so this pins it to the middle:
- *  panning a route you can already see whole does nothing, which is the honest
- *  answer. */
+ *  TWO RULES, AND WHICH ONE APPLIES IS SAID OUT LOUD. A drawing that is only
+ *  ever looked at is PINNED: its window stays inside the fitted box, so it
+ *  cannot be pushed off its own edge, and at the fit it cannot move at all,
+ *  because panning a route you can already see whole would do nothing. That is
+ *  the right rule for the chart on the report and for a card, and it was the
+ *  wrong rule for the map that opens: it made a map you cannot look around,
+ *  which is a picture. A drawing that ROAMS may be pushed half a window past
+ *  the fitted box in any direction and pulled out to a quarter of the fit.
+ *
+ *  THE FLAG TRAVELS ON THE VIEW, not on the box, because the view is the one
+ *  thing that reaches every clamp: the gesture makes a view, the page stores
+ *  it, and `renderTrace` clamps it again a frame later through `viewFrame`,
+ *  where no box of the caller's is in hand. A box may carry `roam` to say what
+ *  a view it produces is allowed; the view then carries it onward itself. A
+ *  drawing nobody made movable never sees either, and is pinned exactly as it
+ *  was before any of this. */
 export function clampView(view, box = traceBox()) {
+  const roams = (view?.roam ?? box?.roam) === true;
+  const floor = scaleFloor(view, box);
   const asked = Number.isFinite(view?.scale) ? view.scale : 1;
-  const scale = Math.min(MAP_MAX_SCALE, Math.max(MAP_MIN_SCALE, asked));
+  const scale = Math.min(MAP_MAX_SCALE, Math.max(floor, asked));
   const halfW = box.width / (2 * scale);
   const halfH = box.height / (2 * scale);
+  // Half a window each way, which puts the edge of the fitted box no further in
+  // than the middle of the screen.
+  const marginX = roams ? 2 * ROAM_MARGIN * halfW : 0;
+  const marginY = roams ? 2 * ROAM_MARGIN * halfH : 0;
   const centerX = Number.isFinite(view?.centerX) ? view.centerX : box.width / 2;
   const centerY = Number.isFinite(view?.centerY) ? view.centerY : box.height / 2;
-  return {
+  const at = {
     scale,
-    centerX: Math.min(box.width - halfW, Math.max(halfW, centerX)),
-    centerY: Math.min(box.height - halfH, Math.max(halfH, centerY)),
+    centerX: Math.min(box.width - halfW + marginX, Math.max(halfW - marginX, centerX)),
+    centerY: Math.min(box.height - halfH + marginY, Math.max(halfH - marginY, centerY)),
   };
+  if (roams) at.roam = true;
+  return at;
 }
 
 /** The same fit, seen from where the view stands.
@@ -232,8 +332,11 @@ export function viewFrame(frame, view, box = traceBox()) {
  *  ground under the finger stays under it. */
 export function panView(view, dx, dy, box = traceBox()) {
   const at = clampView(view, box);
+  // Spread rather than rebuilt, so a view that was allowed to roam is still
+  // allowed to after it has moved. A fresh literal here dropped the permission
+  // and the next clamp pulled the map back inside the route.
   return clampView(
-    { scale: at.scale, centerX: at.centerX - dx / at.scale, centerY: at.centerY - dy / at.scale },
+    { ...at, centerX: at.centerX - dx / at.scale, centerY: at.centerY - dy / at.scale },
     box,
   );
 }
@@ -247,7 +350,11 @@ export function panView(view, dx, dy, box = traceBox()) {
 export function zoomViewAt(view, factor, anchor, box = traceBox()) {
   const at = clampView(view, box);
   const step = Number.isFinite(factor) && factor > 0 ? factor : 1;
-  const scale = Math.min(MAP_MAX_SCALE, Math.max(MAP_MIN_SCALE, at.scale * step));
+  // The same floor the clamp below would apply. Worked out here as well because
+  // the anchoring needs the scale it is about to land on, not the one it asked
+  // for: a zoom that was cut short by the floor and anchored as if it had not
+  // been would slide the ground out from under the fingers at the far end.
+  const scale = Math.min(MAP_MAX_SCALE, Math.max(scaleFloor(at, box), at.scale * step));
   // Where the anchor sits on the fit. That is the point that must not move, so
   // it is found before the scale changes and put back after.
   const held = {
@@ -256,6 +363,7 @@ export function zoomViewAt(view, factor, anchor, box = traceBox()) {
   };
   return clampView(
     {
+      ...at,
       scale,
       centerX: held.x - (anchor.x - box.width / 2) / scale,
       centerY: held.y - (anchor.y - box.height / 2) / scale,
@@ -538,6 +646,44 @@ export function elevationTicks(minM, maxM, maxLabels) {
  *  the gaps are measured from every recorded point, upstream of this file. */
 const DRAWN_POINTS = 2000;
 
+/** The same line, while a hand is still moving it.
+ *
+ *  A map under the fingers is read as a shape going past, and the budget above
+ *  is not a shape budget: it sits above the length of most recordings, so a
+ *  1 444 point route redrew all 1 444 points on every pointermove, three paths
+ *  over them and two of those through a blur, while a 200 point route redrew
+ *  200. The pinch went at the length of the recording, which is the one thing a
+ *  gesture must not do.
+ *
+ *  Five hundred across a 1000 unit box is a vertex every two units, finer than
+ *  a pixel on the phone this was complained from. Measured at the fit against
+ *  the recording itself: on the 551 point Komoot route the furthest a dropped
+ *  point falls from the moving line is 1.9 units and the average 0.03, and on a
+ *  20 000 point track 0.31 and 0.09, against a line drawn 2.2 units wide inside
+ *  a halo 5 wide. The whole recording is drawn again on the frame after the
+ *  hand comes off. */
+const MOVING_POINTS = 500;
+
+/** That budget, at the zoom it is being drawn at.
+ *
+ *  The error above is in the picture's own units, so standing closer magnifies
+ *  it along with everything else: a point 1.9 units off the line at the fit is
+ *  30 units off at the ceiling, and that is a line visibly beside the ground it
+ *  claims to be on. So the budget doubles with every doubling of the scale,
+ *  which halves the error back, and the dropped points stay inside the line
+ *  they are drawn under wherever the fingers are.
+ *
+ *  It starts doubling at twice the fit rather than at the fit, because 1.9
+ *  units doubled is 3.8 and the halo the line sits in is 5 wide. Four times the
+ *  fit reaches the resting budget, and past that a moving drawing simply is the
+ *  resting drawing -- which is also where most of the route has left the screen,
+ *  so it is the cheap end to give up. */
+function movingBudget(scale) {
+  const closer = Math.max(1, Number.isFinite(scale) ? scale : 1);
+  const doublings = Math.max(0, Math.ceil(Math.log2(closer)) - 1);
+  return Math.min(DRAWN_POINTS, MOVING_POINTS * 2 ** doublings);
+}
+
 /** The same line through fewer points, chosen so the drawing keeps its shape.
  *
  *  Largest-Triangle-Three-Buckets: one point per bucket, the one making the
@@ -604,8 +750,45 @@ function pathThrough(pts) {
   return d;
 }
 
-function pathFrom(coords, from, to) {
-  return pathThrough(thinForDrawing(coords.slice(from, to + 1)));
+/** One run of the recording, thinned once and kept in world units.
+ *
+ *  Choosing in world units rather than in box units is exact rather than an
+ *  approximation. A view is a uniform scale and a shift, so every candidate
+ *  triangle in `thinForDrawing` has its area multiplied by the same number, and
+ *  the point that wins its bucket wins it at every zoom and every position. So
+ *  the choosing happens once per recording and budget, and a frame under a
+ *  moving finger only has to project what was already chosen: a few hundred
+ *  points instead of the whole recording, and no thinning at all.
+ *
+ *  Held weakly against the caller's own array, like the world units it reads. */
+const drawnRuns = new WeakMap();
+
+function drawnRun(points, from, to, budget) {
+  let runs = drawnRuns.get(points);
+  if (!runs) {
+    runs = new Map();
+    drawnRuns.set(points, runs);
+  }
+  const key = `${from}:${to}:${budget}`;
+  const held = runs.get(key);
+  if (held) return held;
+
+  const world = worldOf(points);
+  const run = new Array(to - from + 1);
+  for (let i = from; i <= to; i++) run[i - from] = { x: world.wx[i], y: world.wy[i] };
+  const kept = thinForDrawing(run, budget);
+  runs.set(key, kept);
+  return kept;
+}
+
+function pathFrom(points, from, to, budget, frame) {
+  let d = '';
+  for (const p of drawnRun(points, from, to, budget)) {
+    const x = (p.x - frame.worldX0) * frame.unitsPerWorld;
+    const y = (p.y - frame.worldY0) * frame.unitsPerWorld;
+    d += (d === '' ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }
+  return d;
 }
 
 /** Index of the point right after the largest gap. */
@@ -621,17 +804,34 @@ function gapIndex(measurements) {
 export function renderTrace(points, measurements, t, options = {}) {
   // No view is the whole route, which is what every drawing on this page was
   // before the re-arranger's map could be moved, and still is everywhere else.
-  const frame = viewFrame(traceFrame(points), options.view ?? homeView());
-  const coords = projectInFrame(points, frame);
+  const view = options.view ?? homeView();
+  const frame = viewFrame(traceFrame(points), view);
   const showGap = measurements.gapExceedsThreshold;
   const cut = showGap ? gapIndex(measurements) : -1;
+  // One recorded point, where this frame puts it. The three the markup needs
+  // are asked for one at a time, because the whole recording projected is a
+  // question only the cursor and the press ever ask, and they ask it once.
+  const at = (i) => {
+    const world = worldOf(points);
+    return {
+      x: (world.wx[i] - frame.worldX0) * frame.unitsPerWorld,
+      y: (world.wy[i] - frame.worldY0) * frame.unitsPerWorld,
+    };
+  };
+  // A hand still on the glass asks for a moving map, which is read at a moving
+  // map's resolution. Whoever moved the view said so on the view itself,
+  // because a view is all a redraw is handed.
+  const budget = view?.moving === true ? movingBudget(view.scale) : DRAWN_POINTS;
 
   // Split the drawn track either side of the gap so the gap itself is never
   // painted as if it were recorded ground.
   const segments =
-    cut > 0 && cut < coords.length
-      ? [pathFrom(coords, 0, cut - 1), pathFrom(coords, cut, coords.length - 1)]
-      : [pathFrom(coords, 0, coords.length - 1)];
+    cut > 0 && cut < points.length
+      ? [
+          pathFrom(points, 0, cut - 1, budget, frame),
+          pathFrom(points, cut, points.length - 1, budget, frame),
+        ]
+      : [pathFrom(points, 0, points.length - 1, budget, frame)];
 
   const grid = [];
   for (let x = 100; x < TRACE_W; x += 100) {
@@ -648,9 +848,9 @@ export function renderTrace(points, measurements, t, options = {}) {
 
   let gapMarkup = '';
   let gapAnchor = null;
-  if (cut > 0 && cut < coords.length) {
-    const a = coords[cut - 1];
-    const b = coords[cut];
+  if (cut > 0 && cut < points.length) {
+    const a = at(cut - 1);
+    const b = at(cut);
     // End marks sit across the chord, so the eye reads "the recording stopped
     // here and resumed there" rather than "there is a dot".
     const dx = b.x - a.x;
@@ -666,7 +866,7 @@ export function renderTrace(points, measurements, t, options = {}) {
     gapAnchor = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   }
 
-  const start = coords[0];
+  const start = at(0);
   const svg = `<svg viewBox="0 0 ${TRACE_W} ${TRACE_H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${t('chart.trace')}">
       <g class="chart-grid">${grid.join('')}</g>
       ${glow}${line}${gapMarkup}
@@ -677,7 +877,22 @@ export function renderTrace(points, measurements, t, options = {}) {
       </g>
     </svg>`;
 
-  return { svg, coords, gapAnchor, viewBox: { w: TRACE_W, h: TRACE_H }, frame };
+  // `coords` is every recorded point in this frame, which is what the cursor
+  // and the press search. It is worked out when it is asked for and not before:
+  // a pinch redraws sixty times a second and asks for it none of those times,
+  // and on a day-long recording it is tens of thousands of objects built for a
+  // question nobody put.
+  let searched = null;
+  return {
+    svg,
+    gapAnchor,
+    viewBox: { w: TRACE_W, h: TRACE_H },
+    frame,
+    get coords() {
+      if (!searched) searched = projectInFrame(points, frame);
+      return searched;
+    },
+  };
 }
 
 /** `options.compact` asks for the phone's tick counts. It is a count, not a

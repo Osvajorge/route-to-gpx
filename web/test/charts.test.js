@@ -12,7 +12,9 @@ import {
   KEY_PAN_FRACTION,
   MAP_MAX_SCALE,
   MAP_MIN_SCALE,
+  MAP_ROAM_MIN_SCALE,
   MAP_ZOOM_STEP,
+  ROAM_MARGIN,
   MAX_LATITUDE,
   distanceTicks,
   elevationTicks,
@@ -28,6 +30,7 @@ import {
   renderProfile,
   renderTrace,
   tileLayer,
+  traceBox,
   traceFrame,
   viewAfterKey,
   viewFrame,
@@ -461,6 +464,99 @@ test('the map cannot be pushed off its own edge', () => {
   // And no closer than the ceiling, however hard the fingers pull.
   assert.equal(zoomViewAt(homeView(), 1000, { x: 500, y: 300 }).scale, MAP_MAX_SCALE);
   assert.equal(zoomViewAt(homeView(), 0.001, { x: 500, y: 300 }).scale, MAP_MIN_SCALE);
+});
+
+test('a map may be looked around, and a chart on a report may not', () => {
+  // The complaint this answers: "el mapa es estatico, si quiero ver que hay al
+  // rededor deberia de poder". At the fit the old rule had nowhere to pan, so
+  // the map was a picture of a route with no road to it and no village below
+  // it. A drawing that roams says so on the view; one that does not is pinned
+  // exactly as it always was.
+  const roaming = { width: 1000, height: 600, roam: true };
+
+  // Half a window past the fitted box, and not one unit further, however hard
+  // the finger pulls. Half a window is the same as saying the middle of the
+  // screen stays inside the box the route was fitted into, which at the fit is
+  // half a screen of new ground with the other half still route.
+  const pushed = panView(homeView(), -9000, -9000, roaming);
+  assert.equal(pushed.centerX, 1000);
+  assert.equal(pushed.centerY, 600);
+  assert.equal(ROAM_MARGIN, 0.5);
+  assert.equal(panView(homeView(), 9000, 9000, roaming).centerX, 0);
+
+  // The permission travels on the view from there, because the next clamp is
+  // inside renderTrace and has no box of anybody's in hand.
+  assert.equal(pushed.roam, true);
+  assert.deepEqual(panView(pushed, 0, 0), pushed, 'the view forgot it may roam');
+
+  // And a drawing that never asked stays where it was put.
+  assert.deepEqual(panView(homeView(), 400, 250), homeView());
+  assert.equal(panView({ scale: 4, centerX: 500, centerY: 300 }, -9000, 0).centerX, 1000 - 1000 / 8);
+});
+
+test('zooming out shows more than the route, down to a quarter of it', () => {
+  const roaming = { width: 1000, height: 600, roam: true };
+
+  // A map is pulled out until the route fills a quarter of the window each way,
+  // which is sixteen times its own area of ground around it.
+  assert.equal(zoomViewAt(homeView(), 0.001, { x: 500, y: 300 }, roaming).scale, MAP_ROAM_MIN_SCALE);
+  assert.equal(MAP_ROAM_MIN_SCALE, 0.25);
+
+  // The chart on the report still stops at the fit, where it always stopped.
+  assert.equal(zoomViewAt(homeView(), 0.001, { x: 500, y: 300 }).scale, MAP_MIN_SCALE);
+
+  // Going out costs the tile server nothing: a step out drops the tile level
+  // with it, so the window takes the same handful of tiles it always took.
+  const frame = traceFrame(ROUTE);
+  const fit = tileLayer(viewFrame(frame, homeView()), PHONE);
+  const far = tileLayer(
+    viewFrame(frame, { scale: MAP_ROAM_MIN_SCALE, centerX: 500, centerY: 300, roam: true }),
+    PHONE,
+  );
+  assert.equal(far.zoom, fit.zoom - 2, 'two steps out is two tile levels');
+  // The same window takes the same handful, give or take the row and column a
+  // shifted tile grid costs. What would be alarming is a count that grew with
+  // the ground on screen, which is what going out without dropping a level does.
+  assert.ok(
+    far.tiles.length <= fit.tiles.length + 4,
+    `${far.tiles.length} tiles against ${fit.tiles.length}`,
+  );
+  assert.ok(far.tiles.length <= 64, 'past the ceiling in tileLayer');
+});
+
+test('whatever the fingers did, Fit is the whole route again', () => {
+  // The other half of letting go of the edges. A map that can be pushed off its
+  // own route has to have one press that brings it back, and it has to land
+  // exactly where the drawing started rather than near it.
+  const roaming = { width: 1000, height: 600, roam: true };
+  let view = homeView();
+  view = zoomViewAt(view, 0.4, { x: 100, y: 80 }, roaming);
+  view = panView(view, -4000, -4000, roaming);
+  assert.notDeepEqual(view, homeView(), 'the map never left the fit');
+  assert.deepEqual(viewAfterKey(view, 'Home', roaming), homeView());
+
+  // And the drawing that comes back is the drawing that was there at the start.
+  const { points, measurements } = fixture();
+  assert.equal(
+    renderTrace(points, measurements, t, { view: homeView() }).svg,
+    renderTrace(points, measurements, t).svg,
+  );
+});
+
+test('a view that has roamed is drawn where it stands, not shoved back', () => {
+  // The clamp inside renderTrace runs a frame after the gesture and knows
+  // nothing about which drawing this is. If the permission did not travel on
+  // the view, every roamed frame would be pulled back inside the route and the
+  // map would fight the finger.
+  const { points, measurements } = fixture();
+  const box = traceBox();
+  const roamed = panView(homeView(), -box.width, 0, { ...box, roam: true });
+  const drawn = renderTrace(points, measurements, t, { view: roamed });
+  const home = renderTrace(points, measurements, t, { view: homeView() });
+
+  const startX = (svg) => Number(/<circle cx="([\d.-]+)"[^>]*class="trace-start"/.exec(svg)[1]);
+  // Half a window is 500 box units, and the drawing moved by exactly that.
+  assert.ok(Math.abs(startX(home.svg) - startX(drawn.svg) - 500) < 0.1, startX(drawn.svg));
 });
 
 test('a pinch is a spread and a drag at once, because a hand does both', () => {
