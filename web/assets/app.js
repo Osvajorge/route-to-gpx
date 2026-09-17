@@ -4214,8 +4214,18 @@ function collect() {
 }
 
 function submit() {
-  const value = el.input.value.trim();
+  // THE LINK, not what was pasted around it. `classifyLink` was already
+  // extracting it to decide which source to name, but this sent the raw field
+  // on to the server, so a route shared from a phone showed the right label
+  // and then failed to convert: Wikiloc's app puts a whole sentence on the
+  // clipboard and Komoot's adds four tracking parameters.
+  //
+  // The field is rewritten as well as read, so what is about to be converted
+  // is what the visitor can see. A conversion whose subject is invisible is
+  // one nobody can check, and checkable is the whole argument here.
+  const value = linkWithin(el.input.value);
   if (!value) return;
+  if (el.input.value !== value) el.input.value = value;
   convertFromUrl(value);
 }
 
@@ -4261,7 +4271,7 @@ function wire() {
     // the fallback for a refused clipboard was a field nobody could type into.
     el.input.focus();
     readClipboard().then((text) => {
-      if (text) el.input.value = text.trim();
+      if (text) el.input.value = linkWithin(text);
     });
   });
 

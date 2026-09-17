@@ -379,3 +379,30 @@ test('the button that opens the map is named the moment it is built', () => {
   const wired = js.slice(js.indexOf('button.dataset.openMap'));
   assert.match(wired.slice(0, 400), /button\.textContent = t\('map\.open'\)/, 'born unlabelled');
 });
+
+test('what is converted is the link, not what was pasted around it', () => {
+  // THE DEFECT THIS PINS. linkWithin existed, was tested, and was called by
+  // classifyLink to decide which source to name -- and submit() then sent
+  // `el.input.value.trim()` on to the server regardless. So a route shared
+  // from a phone showed the right label and refused to convert, which reads as
+  // "the link is not supported" and is not what happened.
+  //
+  // The function being right and the call site being wrong is the same shape
+  // as the allowlist defect earlier in this repo's history: every test aimed
+  // at the function, none at the path a person actually takes.
+  const sending = body('submit');
+  assert.match(sending, /linkWithin\(el\.input\.value\)/, 'submit sends the raw field again');
+  assert.doesNotMatch(sending, /el\.input\.value\.trim\(\)/, 'the raw field came back');
+  assert.match(sending, /convertFromUrl\(value\)/);
+
+  // And the field shows what is about to be converted. A conversion whose
+  // subject is invisible is one nobody can check.
+  assert.match(sending, /el\.input\.value !== value/, 'the field keeps the prose');
+});
+
+test('the paste button puts a link in the field, not a sentence', () => {
+  // Wikiloc's app writes "!Mira esta ruta de @Wikiloc! <url> (<name>)" to the
+  // clipboard. Pasting that left the prose in the field even once submit was
+  // fixed, so the visitor saw something that did not look like a link.
+  assert.match(js, /el\.input\.value = linkWithin\(text\)/, 'paste keeps the prose');
+});
