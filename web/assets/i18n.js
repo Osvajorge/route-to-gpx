@@ -12,7 +12,7 @@ const STRINGS = {
     'lang.switch': 'Cambiar a español',
 
     'doc.title': 'Route to GPX',
-    'skip.main': 'Skip to the tabs',
+    'skip.main': 'Skip to the content',
 
     'step1.heading': 'Get a GPX file, and the numbers behind it.',
     'tabs.label': 'How to find the route',
@@ -21,10 +21,15 @@ const STRINGS = {
     'tab.link': 'Link',
     'step1.sub.link':
       'Paste a Komoot or Wikiloc link. We rebuild the track, measure it, and show you where the recording has holes.',
+    // "Converting a row is what measures it" named a thing the reader cannot
+    // see -- there are no rows on screen, there are cards -- and spent its
+    // second sentence on an instruction instead of on the fact that makes the
+    // instruction matter: until a route is converted, every figure in the list
+    // belongs to the site it came from.
     'step1.sub.search':
-      'Look a route up on the source site by name. Converting a row is what measures it.',
+      'Look a route up on the source site by name. Every figure on a result is the site\'s own until you convert it.',
     'step1.sub.nearby':
-      'Give a point and how far around it to look. Converting a row is what measures it.',
+      'Give a point and how far around it to look. Every figure on a result is the site\'s own until you convert it.',
     'field.prefix': 'URL',
     // Says the visible word first. The field is named for a screen reader by
     // this string, and a name that did not carry the word printed beside the
@@ -383,12 +388,15 @@ const STRINGS = {
     'compare.notPublished': 'not published by the source',
     'gap.at': 'at km {km}',
     'gap.threshold': 'threshold {threshold} m',
-    'gap.none': 'no gap over {threshold} m',
+    // Under a figure that is itself a gap. "No gap over 285 m" read as a
+    // denial of the 146 m printed directly above it, so it now says where
+    // that 146 m sits instead of saying what is not there.
+    'gap.none': 'below the {threshold} m threshold',
 
     // Ascent is the output of three parameters, and a reader who sees ours
     // disagree with the source's is owed all three. Folded away, because the
     // disagreement is the headline and the arithmetic is not.
-    'method.summary': 'How ascent is measured',
+    'method.summary': 'How we measured this ascent',
     'method.sampling':
       "The height profile is sampled every {step} m, never finer than the recording's own spacing, then median filtered over {window} samples. A turn under {noise} m is jitter, not climbing.",
     'chart.trace': 'Route trace',
@@ -446,8 +454,11 @@ const STRINGS = {
       'One recorded time is dropped: re-ordering makes it wrong, and none is invented to replace it.',
     'rotate.times.many':
       '{count} recorded times are dropped: re-ordering makes them wrong, and none are invented to replace them.',
+    // The order clause was dropped: this line is shown before anything has been
+    // re-arranged too, where "in a different order" was a sentence about a
+    // change the reader had not made.
     'rotate.notrim':
-      'Nothing is trimmed: every point of the recording is in the file, in a different order.',
+      'Nothing is trimmed: every point of the recording is in the file.',
     'rotate.unchanged': 'Nothing has been changed yet, so this is the recording as it arrived.',
     'rotate.download': 'Download this arrangement',
     'rotate.filename': 'Saved as {name}',
@@ -501,7 +512,7 @@ const STRINGS = {
     'lang.switch': 'Switch to English',
 
     'doc.title': 'Ruta a GPX',
-    'skip.main': 'Ir a las pestañas',
+    'skip.main': 'Ir al contenido',
 
     'step1.heading': 'Consigue el GPX, y los números que hay detrás.',
     'tabs.label': 'Cómo encontrar la ruta',
@@ -511,9 +522,9 @@ const STRINGS = {
     'step1.sub.link':
       'Pega un enlace de Komoot o de Wikiloc. Reconstruimos el track, lo medimos y te enseñamos dónde tiene agujeros la grabación.',
     'step1.sub.search':
-      'Busca una ruta por su nombre en el sitio de origen. Convertir una fila es lo que la mide.',
+      'Busca una ruta por su nombre en el sitio de origen. Cada cifra de un resultado es del sitio hasta que la conviertes.',
     'step1.sub.nearby':
-      'Da un punto y cuánto mirar a su alrededor. Convertir una fila es lo que la mide.',
+      'Da un punto y cuánto mirar a su alrededor. Cada cifra de un resultado es del sitio hasta que la conviertes.',
     'field.prefix': 'URL',
     'field.label': 'URL de la ruta',
     'field.placeholder': 'Pega aquí el enlace de la ruta',
@@ -794,7 +805,7 @@ const STRINGS = {
     'measure.descent': 'Desnivel negativo',
     'measure.rawAscent': 'Desnivel crudo',
     'measure.rawAscent.note': 'sin filtro',
-    'measure.elevation.raw': 'el archivo trae {min}-{max}',
+    'measure.elevation.raw': 'el fichero trae {min}-{max}',
     'measure.points': 'Puntos',
     'measure.spacing': 'Espaciado medio',
     'measure.elevation': 'Altitud',
@@ -803,9 +814,9 @@ const STRINGS = {
     'compare.notPublished': 'el origen no lo publica',
     'gap.at': 'en el km {km}',
     'gap.threshold': 'umbral {threshold} m',
-    'gap.none': 'ningún salto de más de {threshold} m',
+    'gap.none': 'bajo el umbral de {threshold} m',
 
-    'method.summary': 'Cómo se mide el desnivel',
+    'method.summary': 'Cómo hemos medido este desnivel',
     'method.sampling':
       'El perfil de alturas se muestrea cada {step} m, nunca más fino que el espaciado del propio registro, y pasa un filtro de mediana de {window} muestras. Un cambio de sentido de menos de {noise} m es ruido, no desnivel.',
     'chart.trace': 'Trazado',
@@ -823,7 +834,7 @@ const STRINGS = {
       'Suelo bajo los contornos: © colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
 
     'warning.gap':
-      '{gap} m sin grabar en el km {km}. Tu reloj trazará una recta por ahí. Mira ese tramo antes de ir.',
+      '{gap} m sin grabar en el km {km}. Tu reloj lo cruzará en línea recta. Comprueba ese tramo antes de ir.',
 
     // Los dos diálogos que abre una tarjeta. Los dos son trabajo nuestro en la
     // máquina de quien mira, y por eso ninguno nombra a un sitio de origen
@@ -860,7 +871,7 @@ const STRINGS = {
     'rotate.times.many':
       'Se quitan {count} horas grabadas: reordenar las deja mal, y no se inventa ninguna para sustituirlas.',
     'rotate.notrim':
-      'No se recorta nada: todos los puntos de la grabación están en el fichero, en otro orden.',
+      'No se recorta nada: todos los puntos de la grabación están en el fichero.',
     'rotate.unchanged': 'Todavía no has cambiado nada, así que esto es la grabación tal y como llegó.',
     'rotate.download': 'Descargar esta disposición',
     'rotate.filename': 'Se guarda como {name}',
@@ -880,10 +891,10 @@ const STRINGS = {
 
     'provenance':
       'El enlace original queda escrito en el fichero, en <code>&lt;metadata&gt;&lt;link&gt;</code> y en el nombre del track.',
-    // Un archivo soltado se devuelve exactamente como llegó, así que la frase de
+    // Un fichero soltado se devuelve exactamente como llegó, así que la frase de
     // arriba sería falsa justo donde no hay procedencia que conservar.
     'provenance.none':
-      'Este es tu propio archivo, devuelto exactamente como lo soltaste. No se le ha escrito nada ni se le ha quitado nada.',
+      'Este es tu propio fichero, devuelto exactamente como lo soltaste. No se le ha escrito nada ni se le ha quitado nada.',
     'provenance.file': '{name} · {size}',
     'source.line': '{source} · leído {when}',
     'source.file': 'Tu fichero',
