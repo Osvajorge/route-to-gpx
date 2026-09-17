@@ -3144,7 +3144,26 @@ html.dialog-open body {
 /* THE MAP, OPENED. A route drawn into a card is a shape; this is the map. It
    takes the whole screen because that is the point of opening it, and the
    drawing inside takes everything the head does not, so the biggest thing on
-   screen is the route rather than the furniture around it. */
+   screen is the route rather than the furniture around it.
+
+   NO INSET, BECAUSE THE DIALOG INSIDE IS ALREADY THE WHOLE SCREEN. The veil
+   below 641px already drops its padding, and this one has to as well: the box
+   it holds is 100dvh tall, so against 22px of padding above and below it is
+   44px taller than the veil that centres it, and the veil turns into a
+   scroller nobody asked for.
+
+   Measured at 1440x900 before this rule: the veil reported a scrollHeight of
+   922 against a clientHeight of 900 and had scrolled itself to 10, which put
+   the head holding the close button and the three zoom buttons at y = -10.
+   Scroll the veil back and the OpenStreetMap credit in the foot leaves the
+   bottom of the screen instead. Twenty-two pixels was the whole travel a wheel
+   had on that screen, and the page behind is held still by
+   `html.dialog-open`, so the reader could neither read the map's own furniture
+   nor move anything else. The same was true at 1280x800. */
+.map-veil {
+  padding: 0;
+}
+
 .map-veil .dialog.map-dialog {
   width: min(100vw, 100%);
   max-width: none;
@@ -3155,6 +3174,21 @@ html.dialog-open body {
   flex-direction: column;
   gap: 0;
   padding: 0;
+
+  /* IT FADES IN AND DOES NOT TRAVEL. Every other dialog is shorter than the
+     veil, so `dialog-in`'s 10px of slide has somewhere to start from. This one
+     is exactly the veil's height, so the slide began 10px past the bottom, the
+     veil had 10px to scroll for the length of the animation, and Chrome's
+     scroll anchoring caught it there and kept it: measured at both 1280x800
+     and 1440x900, two and a half seconds after it opened, scrollTop 10 against
+     a box that should have had nothing to scroll. */
+  animation-name: map-dialog-in;
+}
+
+@keyframes map-dialog-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .map-head {

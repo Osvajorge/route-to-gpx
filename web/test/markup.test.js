@@ -161,6 +161,34 @@ test('neither finder lede names a row, because there are no rows on screen', () 
   }
 });
 
+test('the sentence saying what the gap means reads before the drawings of it', () => {
+  // THE GAP IS SAID FOUR TIMES ON THE REPORT: the Largest gap tile, the label
+  // on the trace, the caption under it, and this line. Three of those are
+  // labels on a picture. This one is the only thing on the page that asks the
+  // reader to do something, and it sat under both drawings: measured at
+  // 1440x900 it began 1145px down a 1554px page, so on that screen a reader
+  // met the number four times and the instruction never, unless they scrolled.
+  //
+  // So it reads straight after the figure it is about, before the method fold
+  // and before either drawing.
+  const report = html.slice(html.indexOf('<section class="step" id="report"'));
+  assert.ok(report.length > 0, 'the report section is gone from index.html');
+
+  const at = (id) => {
+    const found = report.indexOf(`id="${id}"`);
+    assert.notEqual(found, -1, `#${id} is gone from the report`);
+    return found;
+  };
+
+  assert.ok(at('tiles') < at('warning'), 'the warning reads before the figure it is about');
+  assert.ok(at('warning') < at('method'), 'the arithmetic fold outranks the instruction');
+  assert.ok(at('warning') < at('trace'), 'the warning reads after the trace again');
+  assert.ok(at('warning') < at('profile'), 'the warning reads after the profile again');
+
+  // It is still announced when it appears, which is what it is for on a phone.
+  assert.match(tag('warning'), /role="status"/);
+});
+
 test('one Spanish word for a file, not two', () => {
   // `provenance.none` and `measure.elevation.raw` said "archivo" while eleven
   // other strings said "fichero", including the button that opens one and the

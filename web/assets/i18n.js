@@ -41,8 +41,13 @@ const STRINGS = {
     'action.converting': 'Working',
     'action.example': 'Load an example',
     'action.choosefile': 'Choose a .gpx file',
+    // The last clause used to be "drop it anywhere on this page, or choose it
+    // below". The button 40px under it says Choose a .gpx file, so the hint was
+    // spending a line of a four-line caption naming a control the reader can
+    // already see. Measured at 390 with the link tab open: four lines of mono,
+    // 74px of a 976px page.
     'step1.hint':
-      'komoot.com/tour/… · komoot.com/smarttour/… · any wikiloc.com trail page · or measure a .gpx you already have: drop it anywhere on this page, or choose it below',
+      'komoot.com/tour/… · komoot.com/smarttour/… · any wikiloc.com trail page · or drop a .gpx you already have anywhere on this page',
     'step1.drop': 'Drop the .gpx to measure it',
 
     'search.label': 'What to look for',
@@ -362,7 +367,7 @@ const STRINGS = {
     // and 535 m of ascent came back from Garmin as 13,615 m and 598 m. The
     // numbers on this page describe the file; the watch describes its own.
     'step2.send.note':
-      'Hands the file to another app, such as Garmin Connect. An app that imports a route usually redraws its elevation from its own map, so your watch will not show the figures above. The file is unchanged.',
+      'Hands the file to another app, such as Garmin Connect, unchanged. An app that imports a route usually redraws elevation from its own map, so your watch will not show the figures above.',
     'step2.reset': 'New link',
     'measure.distance': 'Distance',
     // How much of the distance above is a straight line over ground nobody
@@ -436,8 +441,12 @@ const STRINGS = {
 
     'rotate.kicker': 'Re-arrange',
     'rotate.lede': 'Turn it around, or move where it starts.',
+    // Appended to whichever shape sentence was detected, in one paragraph at
+    // the head of the dialog. On an open route that paragraph came to 245
+    // characters before the reader reached a control, so this tail is written
+    // as the footnote it is rather than as a third sentence.
     'rotate.rule':
-      'The allowance is 2% of the route\'s own length, between {floor} m and {ceiling} m.',
+      'The allowance is 2% of the route\'s length, from {floor} m to {ceiling} m.',
     'rotate.detected.closed':
       'Closed ring. The recording ends where it started, so moving the start costs nothing.',
     'rotate.detected.near':
@@ -479,8 +488,11 @@ const STRINGS = {
     'rotate.desc.times': 'Recorded times were dropped because the order changed. None were invented.',
     'rotate.desc.measured': 'Measured after the change: {km} km, {ascent} m of ascent.',
 
+    // A caption on the file name under it, so it is written as one. It said
+    // "is written into the file, in X and in the track name", which names the
+    // file twice and the writing once more than the reader needs.
     'provenance':
-      'The original link is written into the file, in <code>&lt;metadata&gt;&lt;link&gt;</code> and in the track name.',
+      'The original link is in the file: <code>&lt;metadata&gt;&lt;link&gt;</code> and the track name.',
     // A dropped file is handed back exactly as it arrived, so the sentence
     // above would be false precisely where there is no provenance to keep.
     'provenance.none':
@@ -538,7 +550,7 @@ const STRINGS = {
     'action.example': 'Cargar un ejemplo',
     'action.choosefile': 'Elegir un fichero .gpx',
     'step1.hint':
-      'komoot.com/tour/… · komoot.com/smarttour/… · cualquier página de ruta de wikiloc.com · o mide un .gpx que ya tengas: suéltalo en cualquier punto de la página, o elígelo abajo',
+      'komoot.com/tour/… · komoot.com/smarttour/… · cualquier página de ruta de wikiloc.com · o suelta un .gpx que ya tengas en cualquier punto de la página',
     'step1.drop': 'Suelta el .gpx para medirlo',
 
     'search.label': 'Qué buscar',
@@ -802,7 +814,7 @@ const STRINGS = {
       'Puede que tu sesión de Garmin haya caducado; en ese caso vuelve a entrar con la herramienta que la creó. El fichero está bien: descárgalo e impórtalo a mano.',
     'step2.send': 'Enviar a una app',
     'step2.send.note':
-      'Entrega el fichero a otra app, como Garmin Connect. Una app que importa una ruta suele recalcular el desnivel con su propio mapa, así que tu reloj no mostrará las cifras de arriba. El fichero no cambia.',
+      'Entrega el fichero a otra app, como Garmin Connect, sin cambiarlo. Una app que importa una ruta suele recalcular el desnivel con su propio mapa, así que tu reloj no mostrará las cifras de arriba.',
     'step2.reset': 'Otro enlace',
     'measure.distance': 'Distancia',
     'measure.distance.gaps': 'en saltos {gaps}',
@@ -857,7 +869,7 @@ const STRINGS = {
     'rotate.kicker': 'Reordenar',
     'rotate.lede': 'Dale la vuelta, o mueve el punto de salida.',
     'rotate.rule':
-      'El margen es el 2% de la longitud de la propia ruta, entre {floor} m y {ceiling} m.',
+      'El margen es el 2% de la longitud de la ruta, de {floor} m a {ceiling} m.',
     'rotate.detected.closed':
       'Anillo cerrado. La grabación termina donde empezó, así que mover la salida no cuesta nada.',
     'rotate.detected.near':
@@ -898,7 +910,7 @@ const STRINGS = {
     'rotate.desc.measured': 'Medido después del cambio: {km} km y {ascent} m de desnivel positivo.',
 
     'provenance':
-      'El enlace original queda escrito en el fichero, en <code>&lt;metadata&gt;&lt;link&gt;</code> y en el nombre del track.',
+      'El enlace original está en el fichero: <code>&lt;metadata&gt;&lt;link&gt;</code> y el nombre del track.',
     // Un fichero soltado se devuelve exactamente como llegó, así que la frase de
     // arriba sería falsa justo donde no hay procedencia que conservar.
     'provenance.none':

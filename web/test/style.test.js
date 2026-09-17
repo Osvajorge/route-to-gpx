@@ -659,3 +659,46 @@ test('the first screen has more than one interval down it', () => {
   // what pays that back, and it is only worth having while the floor is.
   assert.match(narrowRule('#choose-file'), /margin-top:\s*-\d+px/);
 });
+
+test('a dialog asking for the whole screen is not held in a veil with an inset', () => {
+  // THE WIDE SCREEN THAT WOULD NOT SCROLL. `.dialog-veil` is a centred flex box
+  // with `overflow-y: auto` and 22px of padding, and every other dialog in it
+  // subtracts that padding by hand: `.dialog` is capped at 100dvh - 44px. The
+  // opened map asked for a flat 100dvh, so it was 44px taller than the box
+  // centring it, and `align-items: center` puts that overflow above the scroll
+  // origin where nothing can reach it.
+  //
+  // Measured at 1440x900 before this rule, and the same at 1280x800: the veil
+  // reported scrollHeight 922 against clientHeight 900 and had scrolled itself
+  // to 10, so the head carrying the close button and the three zoom buttons sat
+  // at y = -10. Wind the veil back to 0 and the OpenStreetMap credit in the foot
+  // leaves the bottom of the screen instead. Twenty-two pixels was the whole
+  // travel a wheel had, and `html.dialog-open` holds the page behind still, so
+  // there was nothing else on that screen a wheel could move.
+  //
+  // The narrow block already drops the padding for the same reason. This is the
+  // wide half of the same rule.
+  const veil = Number(/padding:\s*(\d+)px/.exec(declarations('.dialog-veil'))[1]);
+  assert.ok(veil > 0, 'the veil no longer insets, so this rule has nothing to answer');
+
+  const map = declarations('.map-veil');
+  assert.match(map, /padding:\s*0/, 'the opened map is inset inside a screen-high box again');
+
+  // And it is still asking for the whole screen, which is what makes the inset
+  // a contradiction rather than a preference.
+  const dialog = declarations('.map-veil .dialog.map-dialog');
+  assert.match(dialog, /height:\s*100dvh/);
+  assert.match(narrowRule('.dialog-veil'), /padding:\s*0/);
+
+  // THE SAME BOX MAY NOT ARRIVE FROM OUTSIDE ITSELF EITHER. `dialog-in` starts
+  // at translateY(10px), which every other dialog can afford because it is
+  // shorter than the veil. This one is the veil's own height, so for the length
+  // of the animation it stood 10px past the bottom, Chrome's scroll anchoring
+  // caught the veil there and left it: measured at 1280x800 and at 1440x900,
+  // two and a half seconds after opening, scrollTop 10 on a box that should
+  // have had nothing to scroll. It fades instead.
+  assert.match(dialog, /animation-name:\s*map-dialog-in/, 'the opened map travels again');
+  const arrival = block('@keyframes map-dialog-in');
+  assert.doesNotMatch(arrival, /transform/, 'the opened map arrives from off its own veil again');
+  assert.match(arrival, /opacity/, 'the opened map no longer fades in at all');
+});
