@@ -37,12 +37,19 @@ import { icon } from './icons.js';
 import { buildGpx, measure, parseGpx } from './measure.js';
 import {
   fitFrame,
+  homeView,
   indexAtDistance,
+  isDrag,
   nearestOnTrace,
+  panView,
+  pinchView,
+  pointInBox,
   projectInFrame,
   renderProfile,
   renderTrace,
   tileLayer,
+  viewAfterKey,
+  zoomViewAt,
 } from './charts.js';
 import { closeDialog, dialogIsOpen, openDialog } from './modal.js';
 import {
@@ -53,6 +60,7 @@ import {
   LOOP_FLOOR_M,
   loopCheck,
   ringLength,
+  sourceIndexOf,
 } from './rotate.js';
 
 // Where the link-fetching service lives. A browser cannot read another site
@@ -1035,8 +1043,142 @@ function liveTraceSurfaces() {
 }
 
 /** One trace, drawn into one figure, with the ground under it. */
+/** Gives one drawing a map's manners: drag to move, pinch to zoom, and the
+ *  keyboard doing both.
+ *
+ *  WHY ONLY HERE. The re-arranger asks somebody to pick a point on a ring, and
+ *  on a phone the whole loop is drawn into a box a few hundred pixels wide,
+ *  where the candidates are a few pixels apart. Every other trace on this page
+ *  is a picture to read rather than a thing to work in, so none of them get
+ *  this and none of them pay for it.
+ *
+ *  A DRAG IS NOT A TAP, and that distinction is the whole reason a map can
+ *  both move and be picked from. A pointer that travelled further than the
+ *  slop moved the map; one that did not chose a start point.
+ *
+ *  Nothing here fetches a tile. The view is redrawn and `paintBasemap` decides
+ *  for itself whether the ground it already holds still fits, which is what
+ *  keeps a pinch from walking the tile server. */
+function makeMapMovable(surface) {
+  const canvas = surface.canvas;
+  if (!canvas) return;
+
+  // A map that a finger can drag must not also scroll the dialog under it.
+  canvas.style.touchAction = 'none';
+  canvas.tabIndex = 0;
+
+  const active = new Map();
+  let pinchFrom = null;
+  let pressedAt = null;
+  let moved = false;
+
+  const boxOf = (event) => pointInBox(canvas.getBoundingClientRect(), event.clientX, event.clientY);
+
+  const redraw = () => {
+    if (!rotateDraft) return;
+    drawTrace(surface, rotateDraft.arranged.points, rotateDraft.after);
+  };
+
+  const twoFingers = () => {
+    const [a, b] = [...active.values()];
+    return { a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } };
+  };
+
+  canvas.addEventListener('pointerdown', (event) => {
+    canvas.setPointerCapture(event.pointerId);
+    active.set(event.pointerId, boxOf(event));
+    if (active.size === 1) {
+      pressedAt = boxOf(event);
+      moved = false;
+    } else if (active.size === 2) {
+      pinchFrom = twoFingers();
+      // A second finger ends any tap the first one was making.
+      moved = true;
+    }
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!active.has(event.pointerId)) return;
+    const now = boxOf(event);
+    const before = active.get(event.pointerId);
+    active.set(event.pointerId, now);
+
+    if (active.size >= 2 && pinchFrom) {
+      const after = twoFingers();
+      surface.view = pinchView(surface.view, pinchFrom, after);
+      pinchFrom = after;
+      redraw();
+      return;
+    }
+
+    if (pressedAt && !moved && isDrag(pressedAt, now)) moved = true;
+    if (!moved) return;
+
+    surface.view = panView(surface.view, now.x - before.x, now.y - before.y);
+    redraw();
+  });
+
+  const release = (event) => {
+    if (!active.has(event.pointerId)) return;
+    const at = active.get(event.pointerId);
+    active.delete(event.pointerId);
+    if (active.size < 2) pinchFrom = null;
+
+    // A press that never travelled is a choice, not a drag.
+    if (active.size === 0 && pressedAt && !moved) pickStartAt(surface, at);
+    if (active.size === 0) pressedAt = null;
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+
+  canvas.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    surface.view = zoomViewAt(surface.view, 2, boxOf(event));
+    redraw();
+  });
+
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      event.preventDefault();
+      surface.view = zoomViewAt(surface.view, event.deltaY < 0 ? 1.2 : 1 / 1.2, boxOf(event));
+      redraw();
+    },
+    { passive: false },
+  );
+
+  canvas.addEventListener('keydown', (event) => {
+    const next = viewAfterKey(surface.view, event.key);
+    if (!next) return;
+    event.preventDefault();
+    surface.view = next;
+    redraw();
+  });
+}
+
+/** A press on the map, turned into a start point on the ring.
+ *
+ *  The drawing shows the CURRENT arrangement, and the slider counts along the
+ *  ORIGINAL, so the index the picture gives back has to be carried through the
+ *  rotation and the reversal before it means anything to the control beside
+ *  it. `sourceIndexOf` is that arithmetic, and it is in rotate.js where the
+ *  arrangement is. */
+function pickStartAt(surface, at) {
+  if (!rotateDraft || !surface.drawn) return;
+  const coords = surface.drawn.coords;
+  const cumulative = surface.measurements?.cumulative;
+  if (!coords || !coords.length || !cumulative) return;
+
+  const { index } = nearestOnTrace(coords, cumulative, at.x, at.y);
+  const source = sourceIndexOf(rotateDraft.arranged, index);
+  el.rotateStart.value = String(source);
+  el.rotateStart.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function drawTrace(surface, points, measurements) {
-  const drawn = renderTrace(points, measurements, t);
+  // A surface with no view of its own is the whole route, which is every
+  // drawing on this page except the re-arranger's.
+  const drawn = renderTrace(points, measurements, t, { view: surface.view });
   surface.drawn = drawn;
   surface.measurements = measurements;
   surface.svg.innerHTML = drawn.svg;
@@ -4074,6 +4216,10 @@ function collect() {
   el.rotateDownload = document.getElementById('rotate-download');
   el.rotateFilename = document.getElementById('rotate-filename');
   surfaces.rotate = chartSurface(document.getElementById('rotate-trace'));
+  // The one drawing on this page that can be moved. Every other trace is the
+  // whole route and has nothing to pan to.
+  surfaces.rotate.view = homeView();
+  makeMapMovable(surfaces.rotate);
 }
 
 function submit() {

@@ -167,6 +167,8 @@ def test_the_queued_message_is_a_list_because_a_bare_object_is_a_500(monkeypatch
     965 -- created, queued, synced, and the course was under Navigate >
     Courses -- which is why this shape is pinned rather than trusted.
     """
+    # The ids below are invented. The real ones this was written against
+    # belong to somebody's account and say nothing a test needs to say.
     sent = {}
 
     class Recording:
@@ -176,8 +178,8 @@ def test_the_queued_message_is_a_list_because_a_bare_object_is_a_500(monkeypatch
             sent["json"] = kwargs.get("json")
             return {}
 
-    device = {"id": 3460964122, "name": "Forerunner 965"}
-    assert garmin._queue_on_device(Recording(), 515580837, device, "Sant Pere") is True
+    device = {"id": 4000000001, "name": "Forerunner 965"}
+    assert garmin._queue_on_device(Recording(), 9000000002, device, "Sant Pere") is True
 
     assert sent["path"] == "/device-service/devicemessage/messages"
     assert sent["method"] == "POST"
@@ -185,14 +187,14 @@ def test_the_queued_message_is_a_list_because_a_bare_object_is_a_500(monkeypatch
     assert len(sent["json"]) == 1
 
     message = sent["json"][0]
-    assert message["deviceId"] == 3460964122
+    assert message["deviceId"] == 4000000001
     assert message["messageType"] == "courses"
     assert message["fileType"] == "FIT"
-    assert message["metaDataId"] == 515580837
+    assert message["metaDataId"] == 9000000002
     # Relative, and no leading slash. The watch fetches this itself at sync
     # time, so this service never downloads the FIT.
     assert message["messageUrl"] == (
-        "course-service/course/fit/515580837/3460964122?elevation=true"
+        "course-service/course/fit/9000000002/4000000001?elevation=true"
     )
     assert not message["messageUrl"].startswith("/")
 
@@ -219,10 +221,10 @@ def test_the_watch_is_asked_for_rather_than_written_down():
     class Answering:
         def connectapi(self, path, method="GET", **kwargs):
             assert path == "/device-service/deviceservice/mylastused"
-            return {"userDeviceId": 3460964122, "lastUsedDeviceName": "Forerunner 965"}
+            return {"userDeviceId": 4000000001, "lastUsedDeviceName": "Forerunner 965"}
 
     assert garmin._last_used_device(Answering()) == {
-        "id": 3460964122,
+        "id": 4000000001,
         "name": "Forerunner 965",
     }
 

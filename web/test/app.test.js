@@ -319,3 +319,50 @@ test('the send button says what the receiving app will do to the numbers', () =>
   assert.match(js, /el\.sendButton\.title = t\('step2\.send\.note'\)/);
   assert.match(js, /aria-description', t\('step2\.send\.note'\)/);
 });
+
+test('only the re-arranger gets a map that moves, and it gets the whole set', () => {
+  // The re-arranger asks somebody to pick a point on a ring, and on a phone the
+  // whole loop is drawn into a box a few hundred pixels wide where the
+  // candidates are a few pixels apart. Every other trace is a picture to read.
+  assert.match(js, /surfaces\.rotate\.view = homeView\(\)/);
+  assert.match(js, /makeMapMovable\(surfaces\.rotate\)/);
+  assert.doesNotMatch(js, /makeMapMovable\(surfaces\.(trace|preview)\)/);
+
+  const movable = body('makeMapMovable');
+  for (const gesture of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel', 'dblclick', 'keydown']) {
+    assert.match(movable, new RegExp(`'${gesture}'`), `no ${gesture} handler`);
+  }
+  // A finger dragging a map must not scroll the dialog under it.
+  assert.match(movable, /touchAction = 'none'/);
+  // And it has to be reachable without a pointer at all.
+  assert.match(movable, /tabIndex = 0/);
+});
+
+test('a drag moves the map and a press chooses a start, and they cannot be confused', () => {
+  // This is the whole reason one drawing can both be moved and be picked from.
+  // Measured in a browser on a real ring: a press moved the start from 0 to 76,
+  // and a drag after zooming moved the map and left the start where it was.
+  const movable = body('makeMapMovable');
+  assert.match(movable, /isDrag\(pressedAt, now\)/, 'travel is not measured');
+  assert.match(
+    movable,
+    /if \(active\.size === 0 && pressedAt && !moved\) pickStartAt/,
+    'a press that travelled can still choose a start',
+  );
+  // A second finger ends any tap the first was making.
+  assert.match(movable, /active\.size === 2[\s\S]{0,200}moved = true/);
+});
+
+test('the view is the surface own, so every other drawing is still the whole route', () => {
+  assert.match(body('drawTrace'), /renderTrace\(points, measurements, t, \{ view: surface\.view \}\)/);
+});
+
+test('a press on the drawing is carried back through the arrangement before it means anything', () => {
+  // The drawing shows the CURRENT arrangement and the slider counts along the
+  // ORIGINAL, so an index off the picture is meaningless until it is rotated
+  // and un-reversed. sourceIndexOf is that arithmetic.
+  const pick = body('pickStartAt');
+  assert.match(pick, /nearestOnTrace\(coords, cumulative/);
+  assert.match(pick, /sourceIndexOf\(rotateDraft\.arranged, index\)/);
+  assert.match(pick, /dispatchEvent\(new Event\('input'/, 'the slider is set without telling anybody');
+});
